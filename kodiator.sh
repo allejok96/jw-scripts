@@ -39,16 +39,16 @@ error()
 
 show_help()
 {
-    cat<<-EOF
-    Indexera tv.jw.org och spara videolänkarna i STRM-filer.
+    cat<<EOF
+Indexera tv.jw.org och spara videolänkarna i STRM-filer.
 
-    Användning: kodiator [alternativ] [nyckel] [katalog]
-      --no-recursive        Hämta inte automatiskt de filer som hänvisas till
-                            i mediatorfilerna
-      --no-cleanup          Ta inte bort tempfiler
-      nyckel                Namn på mediatorfil att ladda hem
-      katalog               Katalog att spara STRM-filerna i
-    EOF
+Användning: kodiator [alternativ] [nyckel] [katalog]
+  --no-recursive        Hämta inte automatiskt de filer som hänvisas till
+                        i mediatorfilerna
+  --no-cleanup          Ta inte bort tempfiler
+  nyckel                Namn på mediatorfil att ladda hem
+  katalog               Katalog att spara STRM-filerna i
+EOF
     exit
 }
 
@@ -287,7 +287,7 @@ CLEANUP=1
 [[ $1 = --no-recursive ]] && RECURSIVE=0 && shift
 [[ $1 = --no-cleanup ]] && CLEANUP=0 && shift
 
-dir_root="${1:-/tmp/kodi}"
+dir_root="${1:-/tmp/kodiator}"
 
 url_root="http://mediator.jw.org/v1/categories/E/"
 url_sub="${2:-VideoOnDemand}"
