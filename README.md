@@ -1,6 +1,6 @@
 # jw-kodiator
 
-This is a shellscript I wrote so I could watch JW Broadcasting on my Raspberry pi running Kodi.
+This is a bash script I wrote so I could watch JW Broadcasting (tv.jw.org) on my Raspberry pi running Kodi (XBMC).
 
 It downloads and parses files from mediator.jw.org, which I guess are ment to be used by Roku. Then it creates a directory structure with the different categories from Video on Demand and stores the video URLs in strm-files.
 
