@@ -2,13 +2,10 @@
 
 This is a bash script I wrote so I could watch JW Broadcasting (tv.jw.org) on my Raspberry pi running Kodi (XBMC).
 
-It downloads and parses files from mediator.jw.org, which I guess are ment to be used by Roku. Then it creates a directory structure with the different categories from Video on Demand and stores the video URLs in strm-files.
+Then i discovered that someone actually made an add-on a month earlier:
+https://github.com/ca0abinary/plugin.video.jwtv-unofficial
 
-This script is not beautiful, nor easy to wrap ones head around. The comments is in swedish (because that's what I speak). Maybe I'll translate it in the future.
-
-It requires bash, egrep, curl and GNU sed to work.
-
-The best would be to have a Kodi addon that does this on the fly, but I can't script anything but bash for the moment.
+Which kind of makes this script useless.
 
 ## Usage:
     kodiator [options] [KEY] [DIRECTORY]
@@ -16,3 +13,5 @@ The best would be to have a Kodi addon that does this on the fly, but I can't sc
       --no-cleanup          Do not remove temp files.
       KEY                   The name of the file to download. Default: VideoOnDemand
       DIRECTORY             Directory to store the files. Default: /tmp/kodi
+
+The script downloads and parses files from mediator.jw.org, creates a directory structure with the different categories and stores the video URLs in strm-files. It requires bash, egrep, curl and GNU sed to work.
