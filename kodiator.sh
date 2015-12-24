@@ -52,52 +52,38 @@ unsquash_file()
     # progressiveDownloadURL: title: or label:
     # Also keep the characters {}[] and lines ending with { or [
 
-    sed -n '
-    # If the row only contains {} [] or is empth, skip it
-    # Note: If we do not do this, there will be an infinite amount
-    # of newlines created after that character
-    /^[][{}]\?\n/ {
-        # Print text up to newline
-        P
-        # Restart on next line
-        D
-    }
+    sed '
 
-    # Put newline after {} [] and ,
-    #  ^                   Beginning of row
-    # [^]["{},]*           Any number och characters but no special characters/quotes
-    #                      Note: ] must be first in the [list]
-    # "[^"]*"              A "quote", does not contain any "
-    # \(  -"-  \)*         Any number of quotes
-    # \(  -"-  \)*         Any number of non-quotes followed by quotes
-    # &\n                  Replace it with itself and a newline (add newline)
-    s/^\([^]["{},]*\("[^"]*"\)*\)*[][{},]/&\n/
+# Add a newline after all "special" characters
+s/[][{},]/&\n/g
 
-    # Put ending parantheses on separate row
-    # ^.*          Characters in the beginning (needed?)
-    # \([]}]\)     Remember the bracket
-    # \n           Followed by a newline
-    # \n\1\n       Replace it with newline, bracket, newline
-    s/^.*\([]}]\)\n/\n\1\n/
+' | sed -n '
 
-    # Remove unnecessary linex
-    # ^                  Beginning of row
-    # "\( ... \)"        A quote with one of the string below
-    # :                  Followed by :
-    # \|                 ... or ...
-    # [][{}]\n           A special character in the end of the row
-    # !D                 Remove if the line DOES NOT match
-    /^"\(name\|key\|progressiveDownloadURL\|title\|label\)":\|[][{}]\n/ !D
+: start
 
-    # Remove ending commas
-    s/,\n/\n/
+# Does this row have an uneven number of citation marks
+# - that means that the quote continues on the next line
+/^\([^"\n]*"[^"\n]*"\)*[^"\n]*"[^"\n]*$/ {
 
-    # Print the line up to newline
-    P
+# Append the next line of input
+N
 
-    # Remove the text up to newline and restart on next line
-    D
-    '
+# Remove the newline between the two input lines
+s/\n//g
+
+# Go back to start
+# (Test the line again)
+b start
+}
+
+# If the line is OK, print it
+p
+
+' | sed '
+
+# Remove all ending commas
+s/,$//
+'
 }
 
 parse_lines()
@@ -117,7 +103,7 @@ parse_lines()
                 ;;
             *:\{|*:\[)
                 # Create new "sub array"
-                new_sub_array ${line%:*}
+                new_sub_array "${line%:*}"
                 ;;
             *\}|*\])
                 # We go "up" one array
@@ -125,7 +111,7 @@ parse_lines()
                 ;;
             *:*)
                 # Save variable
-                new_variable ${line%%:*} "${line#*:}"
+                new_variable "${line%%:*}" "${line#*:}"
                 ;;
         esac
     done
@@ -168,9 +154,9 @@ new_variable()
     variable=${variable//_/UNDERSCORE}
 
     # Add the variable to the current array
-    eval ${array_now}'+=('${variable}')' || error
+    eval "${array_now}"'+=('"${variable}"')' || error
     # Give the variable a value
-    eval ${array_now}_${variable}'="'${value}'"' || error
+    eval "${array_now}_${variable}"'="'"${value}"'"' || error
 }
 
 recursive_read()
@@ -195,12 +181,12 @@ recursive_read()
     #
     # ^.*_               All characters until the last underscore
     # //                 Remove them
-    case $(echo $array_now | sed 's/[0-9_]*$//; s/^.*_//') in
+    case "$(printf '%s\n' "$array_now" | sed 's/[0-9_]*$//; s/^.*_//')" in
         category|subcategories|media)
 
             # Use "name" or "title" as direcotry name, depending on which there
-            name="$(eval 'echo ${'${array_now}'_name}')"
-            title="$(eval 'echo ${'${array_now}'_title}')"
+            name="$(eval 'echo ${'"${array_now}"'_name}')"
+            title="$(eval 'echo ${'"${array_now}"'_title}')"
             sub_dir="${name:-${title}}"
             # Remove underscores, if any
             sub_dir="${sub_dir//\//}"
@@ -215,7 +201,7 @@ recursive_read()
             fi
 
             # URL to another mediator-file
-            url_next="$(eval 'echo ${'${array_now}'_key}')"
+            url_next="$(eval 'echo ${'"${array_now}"'_key}')"
             if [[ ${url_next} ]] && ((RECURSIVE)); then
                 # Start new instance of kodiator and point it to the other URL
                 # (do not remove the files with URL history)
@@ -227,9 +213,9 @@ recursive_read()
         files)
 
             # Video URL
-            link="$(eval 'echo ${'${array_now}'_progressiveDownloadURL}')"
+            link="$(eval 'echo ${'"${array_now}"'_progressiveDownloadURL}')"
             # File to save the link in (remove underscores, if any)
-            file_name="$(eval 'echo ${'${array_now}'_label}')"
+            file_name="$(eval 'echo ${'"${array_now}"'_label}')"
             file_name="${file_name//\//}"
             # Create the file
             if [[ ${file_name} && ${link} ]]; then
@@ -247,7 +233,7 @@ recursive_read()
     for sub_array in "$@"; do
 
         # Skip empty variables (or declare will get upset)
-        [[ -z $(eval 'echo ${'${array_now}_${sub_array}'}') ]] && continue
+        [[ -z $(eval 'echo ${'"${array_now}_${sub_array}"'}') ]] && continue
 
         # Check if it is an array
         if declare -p ${array_now}_${sub_array} | egrep -q '^declare -a'; then
@@ -258,7 +244,7 @@ recursive_read()
             eval '(recursive_read \
                 "${dir_next}" \
                 ${array_now}_${sub_array} \
-                ${'${array_now}_${sub_array}'[@]}\
+                ${'"${array_now}_${sub_array}"'[@]}\
                 )' || error
         fi
     done
@@ -269,7 +255,7 @@ lang_check()
     # Arguments: LANGUAGE
     (
         curl --silent "$lang_list_url" || error "Unable to download language list"
-    ) | egrep -q '"code":"'$1'"'
+    ) | egrep -q '"code":"'"$1"'"'
 }
 
 lang_list()
@@ -338,8 +324,8 @@ while [[ $1 ]]; do
         --no-cleanup) CLEANUP=0
             ;;
         --lang)
-            if lang_check $2; then
-                LANG_CODE=$2
+            if lang_check "$2"; then
+                LANG_CODE="$2"
                 shift
             else
                 lang_list
@@ -387,7 +373,7 @@ echo "$url_sub: Processing"
 ) | unsquash_file > "${temp_file}" || error
 
 # Process and save all values in variables
-parse_lines ${array_root} < "${temp_file}" || error
+parse_lines "${array_root}" < "${temp_file}" || error
 
 [[ ${!array_root} ]] || error "$url_sub: Nothing to save"
 
@@ -395,7 +381,7 @@ parse_lines ${array_root} < "${temp_file}" || error
 eval 'recursive_read \
     "${dir_root}" \
     ${array_root} \
-    ${'${array_root}'[@]}\
+    ${'"${array_root}"'[@]}\
     ' || error
 
 cleanup
