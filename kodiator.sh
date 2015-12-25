@@ -2,317 +2,182 @@
 #
 # kodiator
 #
-# Requires: egrep, GNU sed, curl
+# Requires: GNU sed, curl/wget
 #
 # Index tv.jw.org by processing the files from mediator.jw.org
-# and create a hirarchy of variables and arrays. Then read that
-# hirarchy and create directories containing .strm files (which
-# is text file with URLs that Kodi can open).
+# and create m3u playlists, which can be played by e.g. Kodi.
+# Thereby the name Kodiator.
 #
 
 cleanup()
 {
-    if (( CLEANUP )); then
-        [[ -e /tmp/.kodiator ]] && rm "${temp_file}"
-        [[ -e /tmp/.kodiator.history ]] && rm "${history_file}"
-    fi
+    [[ -e /tmp/.kodiator.history ]] && rm "${history_file}"
 }
 
 error()
 {
-    echo "${@:-Something went wrong, exiting}" 1>&2
-    cleanup
+    echo "${@:-Something went wrong}" 1>&2
     exit 1
 }
 
 show_help()
 {
     cat<<EOF
-Index tv.jw.org and save the video links in .strm files
+Index tv.jw.org and save the video links in m3u playlists
 
-Usage: kodiator [options] [KEY] [DIRECTORY]
+Usage: kodiator [options] [DIRECTORY]
   --lang LANGUAGE       Language to download. Selecting no language
                         will show a list of available language codes
-  --no-recursive        Just download this file
-  --no-cleanup          Keep temporary files
-  KEY                   Name of the file to download and process
-  DIRECTORY             Directory to save the .strm files in
+  --no-recursive        Just download this file/category
+  --category CATEGORY   Name of the file/category to index
+  DIRECTORY             Directory to save the playlists in
 
   
 EOF
     exit
 }
 
+# Add newline around squiggly and square brackets and replace commas with newline
+# but do nothing if they are quoted
 unsquash_file()
 {
-    # Reads on stdin
-
-    # Add newline after , {} and [] but not inside quotes
-    # Remove all lines but the ones containing name: key:
-    # progressiveDownloadURL: title: or label:
-    # Also keep the characters {}[] and lines ending with { or [
-
     sed '
-
-# Add a newline after all "special" characters
-s/[][{},]/&\n/g
+	# Add a newline after all "special" characters
+	# Note how the character list starts with an ]
+	# Smart huh?
+	s/[][{},]/\n&\n/g
 
 ' | sed -n '
-
-: start
-
-# Does this row have an uneven number of citation marks
-# - that means that the quote continues on the next line
-/^\([^"\n]*"[^"\n]*"\)*[^"\n]*"[^"\n]*$/ {
-
-# Append the next line of input
-N
-
-# Remove the newline between the two input lines
-s/\n//g
-
-# Go back to start
-# (Test the line again)
-b start
-}
-
-# If the line is OK, print it
-p
-
+	: start
+	# Does this row have an uneven number of citation marks?
+	# That means that the quote continues on the next line...
+	/^\([^"\n]*"[^"\n]*"\)*[^"\n]*"[^"\n]*$/ {
+	    # Append the next line of input
+	    N
+	    # Remove the newline between the two lines of input
+	    s/\n//g   
+	    # Go back to start again
+	    b start
+	}
+	# If the line is fine, print it
+	p
 ' | sed '
-
-# Remove all ending commas
-s/,$//
+	# Remove all commas and empty lines
+	/^,\?$/d
 '
 }
 
+# Read the formated json file on stdin
+# write videos to playlists
+# create new playlists for each category
+# and download and parse the json files for that category
 parse_lines()
-{
-    # Reads on stdin
-    # Arguments: ARRAY
-    # Note: ARRAY must NOT contain any spaces or :
-
-    # Start by going into the "root array"
-    array_now=${1}
-
-    while read line; do
-        case "${line}" in
-            \{|\[)
-                # Create new "sub array", without name
-                new_sub_array
-                ;;
-            *:\{|*:\[)
-                # Create new "sub array"
-                new_sub_array "${line%:*}"
-                ;;
-            *\}|*\])
-                # We go "up" one array
-                array_now=${array_now%_*}
-                ;;
-            *:*)
-                # Save variable
-                new_variable "${line%%:*}" "${line#*:}"
-                ;;
-        esac
+{    
+    # Read stdin
+    while read -r; do
+	case "$REPLY" in
+	    # Move down to a new sublevel
+	    \{|\[)
+		# If the current level has name and key = new sub-playlist
+		if [[ ${name[$level]} && ${key[$level]} ]]; then
+		    # Process the file for $key
+		    ((RECURSIVE)) && "$0" --category "${key[$level]}"
+		    # Print the name of the new playlist to the current one
+		    print_to_file "# ${name[$level]}"
+		    print_to_file "${key[$level]}.m3u"
+		    filename+=([$level]="${key[$level]}")
+		fi
+		# Change level
+		level+=1
+		;;
+	    # Move one level up
+	    \}|\])
+		# If the current level has title and url = video
+		if [[ ${title[$level]} && ${url[$level]} ]]; then
+		    # Print to the playlist
+		    print_to_file "# ${title[$level]}"
+		    print_to_file "${url[$level]}"
+		fi
+		# Unset all the variables for this level
+		unset title[$level] name[$level] key[$level] url[$level] filename[$level]
+		# Change level
+		level+=-1
+		;;
+	    "title":*)
+		title+=([$level]="$REPLY")
+		;;
+	    "name":*)
+		name+=([$level]="$REPLY")
+		;;
+	    "key":*)
+		key+=([$level]="$REPLY")
+		;;
+	    "progressiveDownloadURL":*)
+		url+=([$level]="$REPLY")
+		;;
+	esac
     done
 }
 
-new_sub_array()
+# Print text to the playlist file that's set
+# in the array $filename
+print_to_file()
 {
-    # Arguments: "VARIABLE"
-
-    # Remove quotations marks and underscores
-    sub_array=${1//\"/}
-    sub_array=${sub_array//_/UNDERSCORE}
-
-    # Check if it has a name
-    if [[ -z ${sub_array} ]]; then
-        # Give the variable a random name
-        # (repeat til we find a free one)
-        sub_array=$RANDOM
-        while declare -p ${array_now}_${sub_array} &>/dev/null; do
-            sub_array=$RANDOM
-        done
+    # The current filename is the last one in the array
+    local file="$savedir/${filename[-1]}.m3u"
+    # Create directory
+    if [[ ! -e $savedir ]]; then
+	mkdir -p "$savedir" || error "$savedir: Failed to create directory"
     fi
-
-    # Add new "sub array"
-    eval "${array_now}+=($sub_array)"
-    # We go in to it
-    array_now=${array_now}_${sub_array}
+    # Add header to file if it doesn't exist
+    [[ ! -e $file ]] && echo "#EXTM3U" > "$file"
+    printf '%s\n' "$*" >> "$file"
 }
 
-new_variable()
-{
-    # Arguments: "VARIABLE" "VALUE"
-    #            "VARIABLE" VALUE
-
-    # Remove quotations marks
-    variable=${1//\"/}
-    value="${2//\"/}"
-
-    # Remove underscore from the variable name
-    variable=${variable//_/UNDERSCORE}
-
-    # Add the variable to the current array
-    eval "${array_now}"'+=('"${variable}"')' || error
-    # Give the variable a value
-    eval "${array_now}_${variable}"'="'"${value}"'"' || error
-}
-
-recursive_read()
-{
-    # Arguments: DIRECTORY ARRAY SUB-ARRAYS ...
-
-    # Current directory in the filesystem
-    dir_now="${1}"
-    dir_next="${dir_now}"
-    shift
-
-    # Current array
-    array_now=${1}
-    shift
-
-    # Save important variables (from "sub arrays")
-
-    # Decide if we should write files, create dirs or download files
-    #
-    # [0-9_]*$           Underscores and numbers in the end of the line
-    # //                 Remove them
-    #
-    # ^.*_               All characters until the last underscore
-    # //                 Remove them
-    case "$(printf '%s\n' "$array_now" | sed 's/[0-9_]*$//; s/^.*_//')" in
-        category|subcategories|media)
-
-            # Use "name" or "title" as direcotry name, depending on which there
-            name="$(eval 'echo ${'"${array_now}"'_name}')"
-            title="$(eval 'echo ${'"${array_now}"'_title}')"
-            sub_dir="${name:-${title}}"
-            # Remove underscores, if any
-            sub_dir="${sub_dir//\//}"
-
-            if [[ ${sub_dir} ]]; then
-                # Create the directory
-                if [[ ! -e "${dir_now}/${sub_dir}" ]]; then
-                    mkdir -p "${dir_now}/${sub_dir}" || error
-                fi
-                # The dir to move into, next round
-                dir_next="${dir_now}/${sub_dir}"
-            fi
-
-            # URL to another mediator-file
-            url_next="$(eval 'echo ${'"${array_now}"'_key}')"
-            if [[ ${url_next} ]] && ((RECURSIVE)); then
-                # Start new instance of kodiator and point it to the other URL
-                # (do not remove the files with URL history)
-                "$0" --no-cleanup "${dir_now}" "${url_next}" || echo "$url_sub: Continuing"
-            fi
-
-            ;;
-
-        files)
-
-            # Video URL
-            link="$(eval 'echo ${'"${array_now}"'_progressiveDownloadURL}')"
-            # File to save the link in (remove underscores, if any)
-            file_name="$(eval 'echo ${'"${array_now}"'_label}')"
-            file_name="${file_name//\//}"
-            # Create the file
-            if [[ ${file_name} && ${link} ]]; then
-                echo "${link}" > "${dir_now}/${file_name}.strm" || error
-            fi
-            ;;
-
-        images)
-            # Skip all contens of "images"
-            return
-            ;;
-    esac
-
-    # Process the "sub arrays"
-    for sub_array in "$@"; do
-
-        # Skip empty variables (or declare will get upset)
-        [[ -z $(eval 'echo ${'"${array_now}_${sub_array}"'}') ]] && continue
-
-        # Check if it is an array
-        if declare -p ${array_now}_${sub_array} | egrep -q '^declare -a'; then
-
-            # Repeat this for every "sub array"
-            # Note: Do this in a sub-shell so that our current variables
-            # will stay unaffected
-            eval '(recursive_read \
-                "${dir_next}" \
-                ${array_now}_${sub_array} \
-                ${'"${array_now}_${sub_array}"'[@]}\
-                )' || error
-        fi
-    done
-}
-
-lang_check()
-{
-    # Arguments: LANGUAGE
-    (
-        curl --silent "$lang_list_url" || error "Unable to download language list"
-    ) | egrep -q '"code":"'"$1"'"'
-}
-
+# Download the language list and make it readable
+# Note: This is probably not very failsafe
 lang_list()
 {
-    # Make the language list readable
-    # Note: This is probably not very failsafe
-    #
-    # sed 1:
-    # Make newline at every opening bracket
-    # where a new language starts
-    #
-    # sed 2:
-    # Replace "name":"LANG" ... "code":"CODE"
-    # with LANG CODE
-    #
-    # Sort it
-    #
-    # sed 3:
-    # Switch LANG with CODE and vice versa
-    #
-    # Make a nice list with columns
-
-    curl --silent "$lang_list_url" \
+    # 1. Download the list
+    # 2. Make newline at every opening bracket
+    #    where a new language starts
+    # 3. Replace "name":"LANG" ... "code":"CODE"
+    #    with LANG CODE
+    # 4. Sort it
+    # 5. Switch place on LANG and CODE
+    # 6. Make a nice list with columns
+    curl --silent "$1" \
         | sed 's/{/\n/g' \
         | sed -n 's/.*"name":"\([^"]*\)".*"code":"\([^"]*\)".*/\1:\2/p' \
         | sort \
         | sed 's/\(.*\):\(.*\)/\2:\1/' \
         | column -t -s :
-    exit
 }
 
 # Clean up before exit
-trap cleanup SIGINT SIGTERM SIGHUP
+trap 'cleanup' SIGINT SIGTERM SIGHUP
 
 # Check requirements
-for command in sed egrep curl; do
-    type $command &>/dev/null || error "This script requires $command"
-done
-
-# Check if sed is GNU or not
+type sed &>/dev/null || error "This script requires GNU sed"
+if type curl &>/dev/null; then
+    CURL=1
+else
+    type wget &>/dev/null || error "This script requires curl or wget"
+    CURL=0
+fi
 sed --version | egrep -q "GNU sed" || cat <<EOF
-
 Warning:
 This script is build for and tested only with GNU sed.
-It looks like you maybe are using a different version of sed.
-If thats not the case, just ignore this message :)
+It looks like you are using a different version of sed,
+so I can't guarrantee that it will work for you.
+Just saying :)
 
 EOF
 
-# Settings
+export lang savedir
+lang=E
 RECURSIVE=1
-CLEANUP=1
-# Export language so all sub-shells have the same setting
-export LANG_CODE
-
-# URL to language list
-lang_list_url="http://mediator.jw.org/v1/languages/E/web"
+category=VideoOnDemand
 
 # Arguments
 while [[ $1 ]]; do
@@ -321,16 +186,20 @@ while [[ $1 ]]; do
             ;;
         --no-recursive) RECURSIVE=0
             ;;
-        --no-cleanup) CLEANUP=0
-            ;;
         --lang)
-            if lang_check "$2"; then
-                LANG_CODE="$2"
+	    langurl="http://mediator.jw.org/v1/languages/E/web"
+            if curl --silent "$langurl" | grep -q "\"code\":\"$2\""; then
+                lang="$2"
                 shift
             else
-                lang_list
+                lang_list "$langurl"
+		exit
             fi
             ;;
+	--category)
+	    category="$2"
+	    shift
+	    ;;
         --*) error "Unknown flag: $1"
             ;;
         *) break
@@ -339,51 +208,18 @@ while [[ $1 ]]; do
     shift
 done
 
-# The default language to download
-[[ -z $LANG_CODE ]] && LANG_CODE=E
+savedir="${1:-./kodiator/$lang}"
 
-dir_root="${1:-/tmp/kodiator/$LANG_CODE}"
+# Check the history if we processed this already
+histfile="/tmp/.kodiator.history"
+[[ -e $histfile ]] && grep "^${category}$" "$histfile" && exit
+echo "$category" | tee -a "$histfile"
 
-url_root="http://mediator.jw.org/v1/categories/${LANG_CODE}/"
-url_sub="${2:-VideoOnDemand}"
-url_suffix="?detailed=1"
+# Download and parse the json file
+baseurl="http://mediator.jw.org/v1/categories/$lang/${category}?detailed=1"
+if ((CURL)); then
+    curl --silent "$baseurl" || error "Failed to download file"
+else
+    wget --quiet -O - "$baseurl" || error "Failed to download file"
+fi | unsquash_file | parse_lines || error
 
-history_file="/tmp/.kodiator.history"
-temp_file="/tmp/.kodiator.tmp"
-array_root="kodiator_${url_sub}"
-
-
-##### HEAD
-
-
-# Do not process already processed files
-[[ -e ${history_file} ]] && egrep -q "^${url_sub}$" "${history_file}" && exit
-# Write to history file
-echo "${url_sub}" >> "${history_file}"
-
-echo "$url_sub: Processing"
-
-# Download and process the file
-# Note: Here, a pipe is used. Commands in a pipe is run in a sub-shell.
-# Thus we can not keep the variables saved by these commands.
-# So we dump the output to a file and let parse_lines() deal with creating
-# the variables later.
-(
-    curl --silent "${url_root}${url_sub}${url_suffix}" || error "$url_sub: Download failed"
-) | unsquash_file > "${temp_file}" || error
-
-# Process and save all values in variables
-parse_lines "${array_root}" < "${temp_file}" || error
-
-[[ ${!array_root} ]] || error "$url_sub: Nothing to save"
-
-# Read the variables and create directories containing STRM-files.
-eval 'recursive_read \
-    "${dir_root}" \
-    ${array_root} \
-    ${'"${array_root}"'[@]}\
-    ' || error
-
-cleanup
-
-echo "$url_sub: Done"
