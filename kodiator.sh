@@ -11,7 +11,9 @@
 
 cleanup()
 {
-    [[ -e /tmp/.kodiator.history ]] && rm "${history_file}"
+    # The history file needs to be keeped all the time kodiator is running
+    # The CLEANUP variable is so that the subprocesses don't remove it.
+    ((CLEANUP)) && [[ -e /tmp/.kodiator.history ]] && rm "$histfile"
 }
 
 error()
@@ -30,6 +32,7 @@ Usage: kodiator [options] [DIRECTORY]
                         will show a list of available language codes
   --no-recursive        Just download this file/category
   --category CATEGORY   Name of the file/category to index
+  --quality QUALITY	Choose between 240, 360, 480 and 720
   DIRECTORY             Directory to save the playlists in
 
   
@@ -69,69 +72,82 @@ unsquash_file()
 
 # Read the formated json file on stdin
 # write videos to playlists
-# create new playlists for each category
-# and download and parse the json files for that category
+# and download and parse new categories
+#
+# GIGANT CAVEATS:
+# "key" must be followed by "name"
+# "title" must come before "progressiveDownloadURL"
+#
 parse_lines()
-{    
+{
     # Read stdin
     while read -r; do
-	case "$REPLY" in
-	    # Move down to a new sublevel
-	    \{|\[)
-		# If the current level has name and key = new sub-playlist
-		if [[ ${name[$level]} && ${key[$level]} ]]; then
-		    # Process the file for $key
-		    ((RECURSIVE)) && "$0" --category "${key[$level]}"
-		    # Print the name of the new playlist to the current one
-		    print_to_file "# ${name[$level]}"
-		    print_to_file "${key[$level]}.m3u"
-		    filename+=([$level]="${key[$level]}")
+	# Remove quotes from REPLY
+	input="${REPLY//\"/}"
+	case "$input" in
+	    key:*)
+		echo $input
+		key="${input#*:}"
+		;;
+	    name:*)
+		echo $input
+		name="${input#*:}"
+		# Start a new instance - download and parse category
+		if ((RECURSIVE)) && ! grep -q "$key" "$histfile"; then
+		    [[ $key != "$category" ]] && print_to_file "# $name" "$key.m3u"
+		    ("$0" --no-cleanup --category "$key")
 		fi
-		# Change level
-		level+=1
 		;;
-	    # Move one level up
-	    \}|\])
-		# If the current level has title and url = video
-		if [[ ${title[$level]} && ${url[$level]} ]]; then
-		    # Print to the playlist
-		    print_to_file "# ${title[$level]}"
-		    print_to_file "${url[$level]}"
+	    title:*)
+		echo $input
+		# If there is a title an url, print them
+		if [[ $title && $url ]]; then
+		    print_to_file "# $title" "$url"
+		    # Unset title and url so they don't get repeated
+		    unset title url
 		fi
-		# Unset all the variables for this level
-		unset title[$level] name[$level] key[$level] url[$level] filename[$level]
-		# Change level
-		level+=-1
+		# Save the new title
+		title="${input#*:}"
 		;;
-	    "title":*)
-		title+=([$level]="$REPLY")
+	    # If the url is the quality we want - save it
+	    progressiveDownloadURL:*${quality}P.mp4)
+		url="${input#*:}"
 		;;
-	    "name":*)
-		name+=([$level]="$REPLY")
-		;;
-	    "key":*)
-		key+=([$level]="$REPLY")
-		;;
-	    "progressiveDownloadURL":*)
-		url+=([$level]="$REPLY")
+	    # If the url is some other quality, check if it's better
+	    progressiveDownloadURL:*)
+		if [[ $url ]]; then
+		    n="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/'<<< "${input#*:}")" # new quality
+		    o="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/' <<< "$url")" # old quality
+		    # Better than the old one, but not bigger than maximum
+		    [[ $n -gt $o && $n -lt $quality ]] && url="${input#*:}"
+		fi
 		;;
 	esac
     done
+
+    # If there is a title and url left when we reach EOF
+    # save them to the playlist
+    if [[ $title && $url ]]; then
+	print_to_file "# $title" "$url"
+    fi
 }
 
 # Print text to the playlist file that's set
 # in the array $filename
 print_to_file()
 {
-    # The current filename is the last one in the array
-    local file="$savedir/${filename[-1]}.m3u"
     # Create directory
     if [[ ! -e $savedir ]]; then
 	mkdir -p "$savedir" || error "$savedir: Failed to create directory"
     fi
-    # Add header to file if it doesn't exist
-    [[ ! -e $file ]] && echo "#EXTM3U" > "$file"
-    printf '%s\n' "$*" >> "$file"
+    # Start on an empty file if it doesn't exist or if it isn't in history
+    if [[ ! -e $savedir/$category.m3u ]] || ! grep -q "$category" "$histfile"; then
+	    echo "#EXTM3U" > "$savedir/$category.m3u"
+    fi
+    # Write to file
+    printf '%s\n' "$@" >> "$savedir/$category.m3u"
+    # Remove the title
+    unset title url
 }
 
 # Download the language list and make it readable
@@ -155,7 +171,7 @@ lang_list()
 }
 
 # Clean up before exit
-trap 'cleanup' SIGINT SIGTERM SIGHUP
+trap 'cleanup' SIGINT SIGTERM SIGHUP EXIT
 
 # Check requirements
 type sed &>/dev/null || error "This script requires GNU sed"
@@ -169,15 +185,10 @@ sed --version | egrep -q "GNU sed" || cat <<EOF
 Warning:
 This script is build for and tested only with GNU sed.
 It looks like you are using a different version of sed,
-so I can't guarrantee that it will work for you.
+so I canot guarrantee that it will work for you.
 Just saying :)
 
 EOF
-
-export lang savedir
-lang=E
-RECURSIVE=1
-category=VideoOnDemand
 
 # Arguments
 while [[ $1 ]]; do
@@ -200,6 +211,14 @@ while [[ $1 ]]; do
 	    category="$2"
 	    shift
 	    ;;
+	--quality)
+	    quality="$2"
+	    shift
+	    ;;
+	# see cleanup()
+	--no-cleanup)
+	    CLEANUP=0
+	    ;;
         --*) error "Unknown flag: $1"
             ;;
         *) break
@@ -208,11 +227,17 @@ while [[ $1 ]]; do
     shift
 done
 
+export lang savedir quality
 savedir="${1:-./kodiator/$lang}"
+[[ $CLEANUP ]] || CLEANUP=1
+[[ $lang ]] || lang=E
+[[ $RECURSIVE ]] || RECURSIVE=1
+[[ $category ]] || category=VideoOnDemand
+[[ $quality ]] || quality=480
+
 
 # Check the history if we processed this already
 histfile="/tmp/.kodiator.history"
-[[ -e $histfile ]] && grep "^${category}$" "$histfile" && exit
 echo "$category" | tee -a "$histfile"
 
 # Download and parse the json file
