@@ -22,7 +22,6 @@ Index tv.jw.org and save the video links in m3u playlists
 Usage: kodiator [options] [DIRECTORY]
   --lang LANGUAGE       Language to download. Selecting no language
                         will show a list of available language codes
-  --no-recursive        Just download this file/category
   --category CATEGORY   Name of the file/category to index
   --quality QUALITY	Choose between 240, 360, 480 and 720
   DIRECTORY             Directory to save the playlists in
@@ -36,8 +35,9 @@ EOF
 cleanup()
 {
     # The history file needs to be keeped all the time kodiator is running
-    # The CLEANUP variable is so that the subprocesses don't remove it.
-    ((CLEANUP)) && [[ -e $histfile ]] && rm "$histfile"
+    # The CHILD variable is so that the subprocesses don't remove it.
+    ((CHILD)) && return
+    [[ -e $histfile ]] && rm "$histfile"
 }
 
 # Add newline around squiggly and square brackets and replace commas with newline
@@ -105,9 +105,9 @@ parse_lines()
 	    name:*)
 		name="${input#*:}"
 		# Start a new instance - download and parse category
-		if ((RECURSIVE)) && ! grep -q "$key" "$histfile"; then
+		if ! grep -q "$key" "$histfile"; then
 		    [[ $key != "$category" ]] && print_to_file "# $name" "$key.m3u"
-		    ("$0" --no-cleanup --category "$key")
+		    ("$0" --child --category "$key")
 		fi
 		;;
 
@@ -212,8 +212,6 @@ while [[ $1 ]]; do
     case $1 in
         --help) show_help
             ;;
-        --no-recursive) RECURSIVE=0
-            ;;
         --lang)
             if [[ $2 ]]; then
 		lang="$2"
@@ -229,9 +227,11 @@ while [[ $1 ]]; do
 	    quality="$2"
 	    shift
 	    ;;
-	# see cleanup()
-	--no-cleanup)
-	    CLEANUP=0
+	# This separates sub-instances from the main instance
+	# Only the main instance may remove the history file
+	# or rename it's own playlist...
+	--child)
+	    CHILD=1
 	    ;;
         --*) error "Unknown flag: $1"
             ;;
@@ -244,7 +244,7 @@ done
 # Assign variables
 export lang savedir quality
 savedir="${1:-./JWBroadcasting-$lang}"
-[[ $CLEANUP ]] || CLEANUP=1
+[[ $CHILD ]] || CHILD=0
 [[ $lang ]] || lang=E
 [[ $RECURSIVE ]] || RECURSIVE=1
 [[ $category ]] || category=VideoOnDemand
@@ -273,8 +273,7 @@ echo "$category" | tee -a "$histfile"
 # Download and parse the JSON file
 download_file "$baseurl" | unsquash_file | parse_lines || error
 
-# Rename the "first" file so it ends up at the top
-# (use CLEANUP to see if we are parent or child process - because we're lazy)
-if ((CLEANUP)); then
+# Rename the "first" playlist so it ends up at the top
+if ! ((CHILD)); then
     mv "$storepath/$category.m3u" "$storepath/00 $category.m3u"
 fi
