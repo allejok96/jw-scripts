@@ -11,8 +11,8 @@ I was unaware of that add-on when I made this script.
 And yes, I know parsing JSON could be done a thousand times simpler in any programming/scripting language like Python, but unfortunately I only know bash.
 
 ## Usage:
-kodiator [options] [DIRECTORY]
-  --lang LANGUAGE       Language to download. Selecting no language will show a list of available language codes
-  --no-recursive        Just download this file/category
-  --category CATEGORY   Name of the file/category to index
-  DIRECTORY             Directory to save the playlists in
+    kodiator [options] [DIRECTORY]
+      --lang LANGUAGE       Language to download. Selecting no language will show a list of available language codes
+      --no-recursive        Just download this file/category
+      --category CATEGORY   Name of the file/category to index
+      DIRECTORY             Directory to save the playlists in
