@@ -81,7 +81,7 @@ parse_lines()
     # Save the global savedir varable so we can pass it to all
     # child processes
     global_savedir="$savedir"
-    (($CHILD)) && local savedir="$savedir/$subsavedir"
+    ((CHILD)) && local savedir="$savedir/$subsavedir"
 
     # Create directory
     if [[ ! -e $savedir ]]; then
@@ -221,13 +221,10 @@ while [[ $1 ]]; do
     case $1 in
         --help) show_help
             ;;
-        --lang)
-            if [[ $2 ]]; then
-		lang="$2"
-		shift
-	    else
-		LANGLIST=1
-	    fi
+	--lang)
+	    CHECKLANG=1
+	    lang="$2"
+	    shift
             ;;
 	--category)
 	    category="$2"
@@ -255,23 +252,27 @@ done
 export lang savedir quality
 [[ $savedir ]] || savedir="${1:-.}"
 [[ $CHILD ]] || CHILD=0
-[[ $lang ]] || lang=E
 [[ $RECURSIVE ]] || RECURSIVE=1
 [[ $category ]] || category=VideoOnDemand
 [[ $quality ]] || quality=480
 histfile="/tmp/.broadcast-index.history"
-baseurl="http://mediator.jw.org/v1/categories/$lang/${category}?detailed=1"
 langurl="http://mediator.jw.org/v1/languages/E/web"
-subsavedir="jwb-$lang"
 
 # Check if language is correct
-download_file "$langurl" | grep -q "\"code\":\"$lang\"" || LANGLIST=1
-
-# Show the language list, maybe
-if ((LANGLIST)); then
-    lang_list
-    exit
+if ((CHECKLANG)); then
+    # If language isn't found in list, show help
+    if [[ -z $lang ]] || ! download_file "$langurl" | grep -q grep -q "\"code\":\"$lang\""; then
+	lang_list
+	exit
+    fi
+    # Unset CHECKLANG so we don't make any more checks
+    CHECKLANG=0
 fi
+
+# Language related stuff after language validation
+[[ $lang ]] || lang=E
+subsavedir="jwb-$lang"
+baseurl="http://mediator.jw.org/v1/categories/$lang/${category}?detailed=1"
 
 # Clean up before exit
 trap 'cleanup' SIGINT SIGTERM SIGHUP EXIT
