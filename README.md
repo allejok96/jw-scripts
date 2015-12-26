@@ -3,7 +3,7 @@
 ### These scripts creates playlists from the videos on JW Broadcasting and the bible sound recordings on jw.org.
 
 #### jwb-index
-This script creates a hierarchy of m3u playlists containing the videos and categories on [JW Broadcasting]((http://tv.jw.org/)). This should work for most of the languages, but I have only tested English and Swedish.
+This script creates a hierarchy of m3u playlists containing the videos and categories on [JW Broadcasting](http://tv.jw.org/). This should work for most of the languages, but I have only tested English and Swedish.
 
 #### nwt-index
 This script does almost the same thing as jwb-index, but instead it indexes the MP3 recordings of the New Worlds Translation from [jw.org](http://www.jw.org).
