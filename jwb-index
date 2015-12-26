@@ -31,7 +31,7 @@ EOF
 # Remove the history file
 cleanup()
 {
-    # The history file needs to be keeped all the time kodiator is running
+    # The history file needs to be keeped all the time this script is running
     # The CHILD variable is so that the subprocesses don't remove it.
     ((CHILD)) && return
     [[ -e $histfile ]] && rm "$histfile"
@@ -61,9 +61,9 @@ unsquash_file()
 	}
 	# If the line is fine, print it
 	p
-' | sed '
-	# Remove all commas and empty lines
-	/^,\?$/d
+' | sed -n '
+	# Only print relevant lines, and remove citation marks
+	s/^"\(key\|name\|title\|progressiveDownloadURL\)":"\?\([^"]*\)"\?$/\1:\2/p
 '
 }
 
@@ -89,16 +89,11 @@ parse_lines()
     fi
 
     # Start on an empty playlist
-    if [[ ! -e $savedir/$category.m3u ]]; then
-	    echo "#EXTM3U" > "$savedir/$category.m3u" || error "Failed to write to playlist"
-    fi
+    echo "#EXTM3U" > "$savedir/$category.m3u" || error "Failed to write to playlist"
 
     # Read stdin
-    while read -r; do
-	# Remove quotes from REPLY
-	input="${REPLY//\"/}"
+    while read -r input; do
 	case "$input" in
-
 	    key:*)
 		key="${input#*:}"
 		;;
@@ -112,9 +107,10 @@ parse_lines()
 		    # same dir as us. No need to add prefix. But if we are
 		    # the main process, we need to...
 		    if ((CHILD)); then
-			print_to_file "$name" "$key.m3u"
+			# Folders is uppercase
+			print_to_file "${name^^*}" "$key.m3u"
 		    else
-			print_to_file "$name" "$subsavedir/$key.m3u"
+			print_to_file "${name^^*}" "$subsavedir/$key.m3u"
 		    fi
 
 		    # Start a new instance - download and parse category
@@ -165,7 +161,7 @@ parse_lines()
 print_to_file()
 {
     # Write to file
-    printf '%s\n' "#EXTINF:0,$1" "$2" >> "$savedir/$category.m3u"
+    printf '%s\n' "#EXTINF:0,$1" "$2" >> "$savedir/$category.m3u" || error "Failed to write to playlist"
     # Remove the title and URL so they don't get repeated at EOF
     unset title url
 }
