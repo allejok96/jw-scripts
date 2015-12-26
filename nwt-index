@@ -14,7 +14,7 @@ error()
 show_help()
 {
     cat<<EOF
-Index the bible recordings from jw.org and make m3u playlists
+Index the bible recordings at jw.org and make m3u playlists
 
 Usage: nwt-index [options] [DIRECTORY]
   --lang CODE   Select language code. Selecting none will

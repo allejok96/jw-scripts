@@ -17,13 +17,13 @@ error()
 show_help()
 {
     cat<<EOF
-Index tv.jw.org and save the video links in m3u playlists
+Index the videos at tv.jw.org and make m3u playlists
 
 Usage: jwb-index [options] [DIRECTORY]
-  --lang LANGUAGE       Language to download. Selecting no language
-                        will show a list of available language codes
-  --quality QUALITY	Choose between 240, 360, 480 and 720
-  DIRECTORY             Directory to save the playlists in
+  --lang CODE   Select language code. Selecting none will
+		show a list of available codes.
+  --res QUALITY Choose between 240, 360, 480 and 720
+  DIRECTORY     Directory to save the playlists in
 EOF
     exit
 }
@@ -230,7 +230,7 @@ while [[ $1 ]]; do
 	    category="$2"
 	    shift
 	    ;;
-	--quality)
+	--res)
 	    quality="$2"
 	    shift
 	    ;;

@@ -53,15 +53,16 @@ It's also worth mentioning that these scripts practically does the same thing as
 I'll take a look at it sometime in the future. The silver bible isn't released in Swedish yet :)
 
 ### Parameters:
-    Usage: nwt-index [options] [DIRECTORY]
-      --lang LANGUAGE   Language to download. Selecting no language
-                        will show a list of available language codes
-      --book BOOK       Number of the bible book to index
-      DIRECTORY         Directory to save the playlists in
-
     Usage: jwb-index [options] [DIRECTORY]
-      --lang LANGUAGE      Language to download. Selecting no language
-                           will show a list of available language codes
-      --category CATEGORY  Name of the file/category to index
-      --quality QUALITY    Choose between 240, 360, 480 and 720
-      DIRECTORY            Directory to save the playlists in
+      --lang CODE   Select language code. Selecting none will
+     	            show a list of available codes.
+      --res QUALITY Choose between 240, 360, 480 and 720
+      DIRECTORY     Directory to save the playlists in
+
+    Usage: nwt-index [options] [DIRECTORY]
+      --lang CODE   Select language code. Selecting none will
+                    show a list of available codes.
+      --silver      Use the 2013 edition of the NWT.
+      DIRECTORY     Directory to save the playlists in.
+
+
