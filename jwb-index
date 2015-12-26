@@ -22,11 +22,8 @@ Index tv.jw.org and save the video links in m3u playlists
 Usage: jwb-index [options] [DIRECTORY]
   --lang LANGUAGE       Language to download. Selecting no language
                         will show a list of available language codes
-  --category CATEGORY   Name of the file/category to index
   --quality QUALITY	Choose between 240, 360, 480 and 720
   DIRECTORY             Directory to save the playlists in
-
-  
 EOF
     exit
 }
@@ -80,6 +77,11 @@ unsquash_file()
 #
 parse_lines()
 {
+    # If we are a child process, store playlists in subdir
+    # Save the global savedir varable so we can pass it to all
+    # child processes
+    global_savedir="$savedir"
+    (($CHILD)) && local savedir="$savedir/$subsavedir"
 
     # Create directory
     if [[ ! -e $savedir ]]; then
@@ -104,10 +106,20 @@ parse_lines()
 	    # A new category - parse it
 	    name:*)
 		name="${input#*:}"
-		# Start a new instance - download and parse category
+		# Only do this for untouched categories
 		if ! grep -q "$key" "$histfile"; then
-		    [[ $key != "$category" ]] && print_to_file "# $name" "$key.m3u"
-		    ("$0" --child --category "$key")
+		    # If we are a child process, all sub-playlists are in the
+		    # same dir as us. No need to add prefix. But if we are
+		    # the main process, we need to...
+		    if ((CHILD)); then
+			print_to_file "# $name" "$key.m3u"
+		    else
+			print_to_file "# $name" "$subsavedir/$key.m3u"
+		    fi
+
+		    # Start a new instance - download and parse category
+		    # Restore the savedir variable...
+		    (savedir="$global_savedir" "$0" --child --category "$key")
 		fi
 		;;
 
@@ -215,6 +227,7 @@ while [[ $1 ]]; do
         --lang)
             if [[ $2 ]]; then
 		lang="$2"
+		shift
 	    else
 		LANGLIST=1
 	    fi
@@ -243,7 +256,7 @@ done
 
 # Assign variables
 export lang savedir quality
-savedir="${1:-./JWBroadcasting-$lang}"
+[[ $savedir ]] || savedir="${1:-.}"
 [[ $CHILD ]] || CHILD=0
 [[ $lang ]] || lang=E
 [[ $RECURSIVE ]] || RECURSIVE=1
@@ -252,6 +265,7 @@ savedir="${1:-./JWBroadcasting-$lang}"
 histfile="/tmp/.broadcast-index.history"
 baseurl="http://mediator.jw.org/v1/categories/$lang/${category}?detailed=1"
 langurl="http://mediator.jw.org/v1/languages/E/web"
+subsavedir="jwb-$lang"
 
 # Check if language is correct
 download_file "$langurl" | grep -q "\"code\":\"$lang\"" || LANGLIST=1
@@ -273,7 +287,3 @@ echo "$category" | tee -a "$histfile" 1>&2
 # Download and parse the JSON file
 download_file "$baseurl" | unsquash_file | parse_lines || error
 
-# Rename the "first" playlist so it ends up at the top
-if ! ((CHILD)); then
-    mv "$storepath/$category.m3u" "$storepath/00 $category.m3u"
-fi

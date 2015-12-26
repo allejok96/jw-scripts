@@ -19,9 +19,8 @@ Index the bible recordings from jw.org and make m3u playlists
 Usage: nwt-index [options] [DIRECTORY]
   --lang LANGUAGE       Language to download. Selecting no language
                         will show a list of available language codes
-  --book BOOK           Number of the bible book to index
-  DIRECTORY             Directory to save the playlists in
-  
+  --book NUM		Bible book number to index.
+  DIRECTORY             Directory to save the playlists in  
 EOF
     exit
 }
@@ -69,6 +68,11 @@ unsquash_file()
 #
 parse_lines()
 {
+    # If we are a child process, store playlists in subdir
+    # (It doesn't matter that we change the savedir variable
+    # because the child processes doesn't fork)
+    [[ $book != 0 ]] && savedir="$savedir/$subsavedir"
+    
     # Create directory
     if [[ ! -e $savedir ]]; then
 	mkdir -p "$savedir" || error "$savedir: Failed to create directory"
@@ -88,20 +92,21 @@ parse_lines()
 	    pubName:*)
 		name="${input#*:}"
 		# Message, so we can see progress
-		echo "$name" 1>&2
+		echo "$name" 1>&2		    
 		# Start on an empty playlist
-		echo "#EXTM3U" > "$savedir/$book - $name.m3u"
+		echo "#EXTM3U" > "$savedir/$name.m3u"
 		;;
 	    title:*)
 		title="${input#*:}"
 		;;
 	    booknum:*)
-		num="${input#*:}"
+		newbook="${input#*:}"
 		# Only create links to books if our book is the "index"
 		# and the link don't point to the index itself.
-		if [[ $book = 0 && $num != 0 ]]; then
-		    print_to_file "# $title" "$num - $title.m3u"
-		    ("$0" --book "$num")
+		if [[ $book = 0 && ! $newbook = 0 ]]; then
+		    print_to_file "# $title" "$subsavedir/$title.m3u"
+		    # Index the new book
+		    ("$0" --book "$newbook")
 		fi
 		;;
 	    stream:*.mp3)
@@ -116,7 +121,7 @@ parse_lines()
 print_to_file()
 {
     # Write to file
-    printf '%s\n' "$@" >> "$savedir/$book - $name.m3u"
+    printf '%s\n' "$@" >> "$savedir/$name.m3u"
 }
 
 # Download the language list and make it readable
@@ -174,6 +179,7 @@ while [[ $1 ]]; do
         --lang)
 	    if [[ $2 ]]; then
 		lang=$2
+		shift
 	    else
 		LANGLIST=1
 	    fi
@@ -191,11 +197,12 @@ while [[ $1 ]]; do
 done
 
 export lang savedir
-savedir="${1:-./Bible-$lang}"
+[[ $savedir ]] || savedir="${1:-.}"
 [[ $lang ]] || lang=E
 [[ $book ]] || book=0
 langurl="http://mediator.jw.org/v1/languages/E/web"
 baseurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$book&output=json&pub=bi12&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
+subsavedir="$savedir/bi12-$lang"
 
 # Check if language is correct
 download_file "$langurl" | grep -q "\"code\":\"$lang\"" || LANGLIST=1
