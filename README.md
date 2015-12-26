@@ -16,7 +16,7 @@ Soon to come...
 
 ##### What are these scripts for?
 
-I wrote the jwb-index script so i could watch JW Broadcasting on my Raspberry Pi running Kodi.
+I wrote the jwb-index script so I could watch JW Broadcasting on my Raspberry Pi running Kodi.
 
 ##### Isn't there an easier way to watch JW Broadcasting on Kodi?
 
@@ -44,7 +44,7 @@ And yes, I know parsing JSON could be done a thousand times simpler in any progr
 
 ##### Is this a violation of the ToS?
 
-The [ToS](http://www.jw.org/en/terms-of-use/) states that "free, non-commercial applications designed to download electronic files" is allowed. So it's seems ok.
+The [ToS](http://www.jw.org/en/terms-of-use/) states that "free, non-commercial applications designed to download electronic files" is allowed. So it's seems OK.
 
 It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text instead of HTML.
 
