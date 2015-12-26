@@ -104,24 +104,25 @@ parse_lines()
 		# Only create links to books if our book is the "index"
 		# and the link don't point to the index itself.
 		if [[ $book = 0 && ! $newbook = 0 ]]; then
-		    print_to_file "# $title" "$subsavedir/$title.m3u"
+		    print_to_file "$title" "$subsavedir/$title.m3u"
 		    # Index the new book
 		    ("$0" --book "$newbook")
 		fi
 		;;
 	    stream:*.mp3)
 		url="${input#*:}"
-		print_to_file "# $title" "$url"
+		print_to_file "$title" "$url"
 		;;
 	esac
     done
 }
 
 # Print text to the playlist
+# Args: NAME PATH
 print_to_file()
 {
     # Write to file
-    printf '%s\n' "$@" >> "$savedir/$name.m3u"
+    printf '%s\n' "#EXTINF:0,$1" "$2" >> "$savedir/$name.m3u"
 }
 
 # Download the language list and make it readable

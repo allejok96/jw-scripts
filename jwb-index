@@ -112,9 +112,9 @@ parse_lines()
 		    # same dir as us. No need to add prefix. But if we are
 		    # the main process, we need to...
 		    if ((CHILD)); then
-			print_to_file "# $name" "$key.m3u"
+			print_to_file "$name" "$key.m3u"
 		    else
-			print_to_file "# $name" "$subsavedir/$key.m3u"
+			print_to_file "$name" "$subsavedir/$key.m3u"
 		    fi
 
 		    # Start a new instance - download and parse category
@@ -127,7 +127,7 @@ parse_lines()
 	    title:*)
 		# If there is a title an URL, print them
 		if [[ $title && $url ]]; then
-		    print_to_file "# $title" "$url"
+		    print_to_file "$title" "$url"
 		    # Unset title and URL so they don't get repeated
 		    unset title url
 		fi
@@ -156,15 +156,16 @@ parse_lines()
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
     if [[ $title && $url ]]; then
-	print_to_file "# $title" "$url"
+	print_to_file "$title" "$url"
     fi
 }
 
 # Print text to the playlist
+# Args: NAME PATH
 print_to_file()
 {
     # Write to file
-    printf '%s\n' "$@" >> "$savedir/$category.m3u"
+    printf '%s\n' "#EXTINF:0,$1" "$2" >> "$savedir/$category.m3u"
     # Remove the title and URL so they don't get repeated at EOF
     unset title url
 }
