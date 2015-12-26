@@ -48,10 +48,6 @@ The [ToS](http://www.jw.org/en/terms-of-use/) states that "free, non-commercial 
 
 It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text instead of HTML.
 
-##### Wait. This is the *OLD* recordings... WHERE IS MY SILVER BIBLE?
-
-I'll take a look at it sometime in the future. The silver bible isn't released in Swedish yet :)
-
 ### Parameters:
     Usage: jwb-index [options] [DIRECTORY]
       --lang CODE   Select language code. Selecting none will
