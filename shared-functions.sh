@@ -70,7 +70,7 @@ download_file()
 {
     [[ $# != 1 ]] && error
 
-    if ((CURL)); then
+    if ((hascurl)); then
 	curl --silent "$1" || error "Failed to download file"
     else
 	wget --quiet -O - "$1" || error "Failed to download file"
@@ -80,13 +80,15 @@ download_file()
 # Check that we have all we need
 requirement_check()
 {
+    ((reqcheckdone)) && return
+    
     type sed &>/dev/null || error "This script requires GNU sed"
     
     if type curl &>/dev/null; then
-	CURL=1
+	export hascurl=1
     else
 	type wget &>/dev/null || error "This script requires curl or wget"
-	CURL=0
+	export hascurl=0
     fi
     
     sed --version | egrep -q "GNU sed" || cat <<EOF
@@ -97,6 +99,8 @@ so I canot guarrantee that it will work for you.
 Just saying :)
 
 EOF
+
+    export reqcheckdone=1
 }
 
 # Read the arguments and save variables or do things
@@ -116,14 +120,14 @@ read_arguments()
 	for flag in "${flags[@]}"; do
 
 	    # Normal flag
-	    if [[ $flag =~ --[a-zA-Z0-9]+:.* && $1 = "${flag%%:*}" ]]; then
+	    if [[ $flag =~ --[a-zA-Z0-9-]+:.* && $1 = "${flag%%:*}" ]]; then
 		# Run action
 		eval "${flag#*:}"
 		shift
 		continue 2
 
 	    # Flag with argument, separated by =
-	    elif [[ $flag =~ --[a-zA-Z0-9]+=.* && $1 = "${flag%%=*}"=* ]]; then
+	    elif [[ $flag =~ --[a-zA-Z0-9-]+=.* && $1 = "${flag%%=*}"=* ]]; then
 		# Check that we have the argument
 		[[ ${1#*=} ]] || error "${flag%%=*} requires an argument"
 		# Save in variable
@@ -132,7 +136,7 @@ read_arguments()
 		continue 2
 
 	    # Flag with argument, separated by space (and argument is not a flag)
-	    elif [[ $flag =~ --[a-zA-Z0-9]+=.* && $1 = "${flag%%=*}" && $2 != --* ]]; then
+	    elif [[ $flag =~ --[a-zA-Z0-9-]+=.* && $1 = "${flag%%=*}" && $2 != --* ]]; then
 		# Check that we have the argument
 		[[ $2 ]] || error "${flag%%=*} requires an argument"
 		# Save in variable
