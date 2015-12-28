@@ -154,7 +154,7 @@ read_arguments --help:show_help\
 	       --list-langs:lang=none \
 	       --lang=lang \
 	       --category=category \
-	       --res=quality \
+	       --quality=quality \
 	       --child:child=1\
 	       --no-subs:subtitles=0 \
 	       --latest:category=LatestVideos\;recursive=0 \
