@@ -10,11 +10,17 @@ show_help()
 Index the videos at tv.jw.org and make m3u playlists
 
 Usage: jwb-index [options] [DIRECTORY]
-  --lang CODE   Select language code
-  --list-langs  Show a list of available language codes
-  --res QUALITY Choose between 240, 360, 480 and 720
-  --no-subs	Prefer unsubtitled videos
-  DIRECTORY     Directory to save the playlists in
+  --lang CODE           Change language
+  --list-langs          Show a list of available language codes
+  --quality NUM         Select maximum quality: 240, 360, 480 or 720
+  --no-subs	        Prefer unsubtitled videos
+  --latest              Index "Latest Videos" instead of "Video on Demand"
+			(implies --no-recursive)
+  --download            Download videos instead of making playlists
+  DIRECTORY             Directory to save the playlists or videos in
+Advanced options:
+  --category KEY        JSON file to download, default: VideoOnDemand
+  --no-recursive        Don't automatically download other categories
 EOF
     exit
 }
@@ -36,8 +42,8 @@ parse_lines()
 	mkdir -p "$savedir" || error "$savedir: Failed to create directory"
     fi
 
-    # Start on an empty playlist
-    echo "#EXTM3U" > "$file" || error "Failed to write to playlist"
+    # Start on an empty playlist (not if we download)
+    ((download)) || echo "#EXTM3U" > "$file" || error "Failed to write to playlist"
 
     # Read stdin
     while read -r input; do
@@ -58,7 +64,9 @@ parse_lines()
 		
 		# Start a new instance - download and parse category
 		# (if we have a subdir, append it to destination)
-		("$0" --child --category "$key" "${savedir}${subsavedir:+/$subsavedir}") || error # exit if child process gets error
+		if ((recursive)); then
+		    ("$0" --child --category "$key" "${savedir}${subsavedir:+/$subsavedir}") || error # exit if child process gets error
+		fi
 		;;
 
 	    # A new clip - save the old one
@@ -75,7 +83,7 @@ parse_lines()
 		;;
 
 	    # An URL - is it better than previous?
-	    progressiveDownloadURL:*)
+	    progressiveDownloadURL:*.mp4)
 		if [[ $url ]]; then
 		    
 		    # Prefer subtitles or not
@@ -88,8 +96,8 @@ parse_lines()
 		    fi
 		    
 		    # Compare quality (old < new <= maximum)
-		    n="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/'<<< "${input#*:}")" # new quality
-		    o="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/' <<< "$url")" # old quality
+		    n="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "${input#*:}")" # new quality
+		    o="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" # old quality
 		    [[ $n -lt $o || $n -gt $quality ]] && continue
 		    
 		fi
@@ -149,16 +157,20 @@ read_arguments --help:show_help\
 	       --res=quality \
 	       --child:child=1\
 	       --no-subs:subtitles=0 \
-	       --latest:category=LatestVideos \
+	       --latest:category=LatestVideos\;recursive=0 \
+	       --download:download=1 \
+	       --no-recursive:recursive=0 \
 	       -- \
 	       "$@" || exit 1
 
-export lang category subtitles quality
+export lang category subtitles quality download recursive
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
+[[ $recursive ]] || recursive=1
 [[ $subtitles ]] || subtitles=1
 [[ $child ]] || child=0
+[[ $download ]] || download=0
 [[ $category ]] || category=VideoOnDemand
 [[ $quality ]] || quality=480
 [[ $lang ]] || lang=E
@@ -179,6 +191,18 @@ else
     subsavedir="jwb-$lang"
     # The parent process removes the history file when it exits
     trap '[[ -e $histfile ]] && rm "$histfile"; exit' SIGINT SIGTERM SIGHUP EXIT
+fi
+
+# Download instead of making playlists
+if ((download)); then
+    unset subsavedir
+    # Rewrite the print_to_file function to download instead
+    function print_to_file {
+	if [[ $2 =~ ^https?:// && ! -e $savedir/$(basename "$2") ]]; then
+	    echo "Downloading: $1"
+	    download_file "$2" > "$savedir/$(basename "$2")"
+	fi
+    }
 fi
 
 # Write to the history file
