@@ -55,12 +55,12 @@ parse_lines()
 	    # A new category - parse it
 	    name:*)
 		name="${input#*:}"
-		# Skip categories we've already checked
-		grep -q "$key" "$histfile" && continue
-		
 		# Print a link to the new playlist
 		# (if we have a subdir, add it)
 		print_to_file "${name^^*}" "${subsavedir:+$subsavedir/}$key.m3u" "$file"
+
+		# Don't download categories we've already checked
+		grep -q "$key" "$histfile" && continue
 		
 		# Start a new instance - download and parse category
 		# (if we have a subdir, append it to destination)
