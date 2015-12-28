@@ -1,58 +1,22 @@
 #!/bin/bash
 #
 # nwt-index
+# Index the the sound recordings at jw.org of
+# the New World Translation of the Holy Scriptures
 #
-# Requires: GNU sed, curl/wget
-#
-
-error()
-{
-    echo "${@:-Something went wrong}" 1>&2
-    exit 1
-}
 
 show_help()
 {
     cat<<EOF
-Index the bible recordings at jw.org and make m3u playlists
+Index the bible sound recordings at jw.org and make playlists
 
 Usage: nwt-index [options] [DIRECTORY]
-  --lang CODE   Select language code. Selecting none will
-		show a list of available codes.
-  --silver	Use the 2013 edition of the NWT.
-  DIRECTORY     Directory to save the playlists in.
+  --lang CODE   Select language code
+  --list-langs  Show a list of available language codes
+  --silver	Use the 2013 edition of the NWT
+  DIRECTORY     Directory to save the playlists in
 EOF
     exit
-}
-
-# Add newline around squiggly and square brackets and replace commas with newline
-# but do nothing if they are quoted
-unsquash_file()
-{
-    sed '
-	# Add a newline after all "special" characters
-	# Note how the character list starts with an ]
-	# Smart huh?
-	s/[][{},]/\n&\n/g
-
-' | sed -n '
-	: start
-	# Does this row have an uneven number of citation marks?
-	# That means that the quote continues on the next line...
-	/^\([^"\n]*"[^"\n]*"\)*[^"\n]*"[^"\n]*$/ {
-	    # Append the next line of input
-	    N
-	    # Remove the newline between the two lines of input
-	    s/\n//g   
-	    # Go back to start again
-	    b start
-	}
-	# If the line is fine, print it
-	p
-' | sed -n '
-	# Only print relevant lines, and remove citation marks
-	s/^"\(pubName\|booknum\|title\|url\)":"\?\([^"]*\)"\?$/\1:\2/p
-'
 }
 
 # Read the formated json file on stdin
@@ -68,11 +32,6 @@ unsquash_file()
 #
 parse_lines()
 {
-    # If we are a child process, store playlists in subdir
-    # (It doesn't matter that we change the savedir variable
-    # because the child processes doesn't fork)
-    [[ $book != 0 ]] && savedir="$savedir/$subsavedir"
-    
     # Create directory
     if [[ ! -e $savedir ]]; then
 	mkdir -p "$savedir" || error "$savedir: Failed to create directory"
@@ -90,41 +49,42 @@ parse_lines()
 	    pubName:*)
 		name="${input#*:}"
 		# Message, so we can see progress
-		echo "$name" 1>&2		    
+		echo "$name" 1>&2
+                # Save the "file" variable
+                file="$savedir/$name.m3u"
 		# Start on an empty playlist
-		echo "#EXTM3U" > "$savedir/$name.m3u"
+		echo "#EXTM3U" > "$file"
 		;;
+
 	    title:*)
 		title="${input#*:}"
 		;;
+
 	    booknum:*)
 		newbook="${input#*:}"
 		# Only create links to books if our book is the "index"
 		# and the link don't point to the index itself.
 		if [[ $book = 0 && ! $newbook = 0 ]]; then
-		    print_to_file "$title" "$subsavedir/$title.m3u"
+		    # (If a subdir is set, add it before filename)
+		    print_to_file "$title" "${subsavedir:+$subsavedir/}$title.m3u" "$file"
 		    # Index the new book
-		    ("$0" --book "$newbook")
+		    # (If a subdir i set, append it to destination dir)
+		    ("$0" --book "$newbook" "$savedir${subsavedir:+/$subsavedir}")
 		fi
 		;;
+
 	    url:*.mp3)
 		url="${input#*:}"
-		print_to_file "$title" "$url"
+		print_to_file "$title" "$url" "$file"
 		;;
+
 	esac
     done
 }
 
-# Print text to the playlist
-# Args: NAME PATH
-print_to_file()
-{
-    # Write to file
-    printf '%s\n' "#EXTINF:0,$1" "$2" >> "$savedir/$name.m3u"
-}
-
 # Download the language list and make it readable
-# Note: This is probably not very failsafe
+# CAVEATS
+# - "name" must be the first variable in the language list
 lang_list()
 {
     echo "Languages:"
@@ -132,89 +92,58 @@ lang_list()
     # 2. Replace commas with newlines
     # 3. Replace "CODE":{"name":"LANG" with CODE:LANG
     # 4. Sort it
-    # 6. Make a nice list with columns
+    # 5. Make a nice list with columns
     download_file "$langurl" \
         | sed 's/,/\n/g' \
         | sed -n 's/.*"\([^"]*\)":{"name":"\([^"]*\)"/\1:\2/p' \
         | sort \
         | column -t -s :
+    exit
 }
 
-# Download a file with curl or wget
-download_file()
-{
-    if ((CURL)); then
-	curl --silent "$1" || error "Failed to download file"
-    else
-	wget --quiet -O - "$1" || error "Failed to download file"
-    fi
-}
-
-# Check requirements
-type sed &>/dev/null || error "This script requires GNU sed"
-if type curl &>/dev/null; then
-    CURL=1
+# Load shared code
+[[ $SHARED ]] || SHARED="shared-functions.sh"
+if [[ -f $SHARED ]]; then
+    source $SHARED
 else
-    type wget &>/dev/null || error "This script requires curl or wget"
-    CURL=0
-fi
-sed --version | egrep -q "GNU sed" || cat <<EOF
-Warning:
-This script is build for and tested only with GNU sed.
-It looks like you are using a different version of sed,
-so I canot guarrantee that it will work for you.
-Just saying :)
-
+    cat<<EOF 1>&2
+Cannot find the shared code at $SHARED
+You can set the default path with the variable SHARED
 EOF
+    exit 1
+fi  
 
-# Arguments
-while [[ $1 ]]; do
-    case $1 in
-        --help) show_help
-            ;;
-        --lang)
-	    CHECKLANG=1
-	    lang="$2"
-	    shift
-            ;;
-	--book)
-	    book="$2"
-	    shift
-	    ;;
-	--silver)
-	    bible=nwt
-	    ;;
-        --*) error "Unknown flag: $1"
-            ;;
-        *) break
-            ;;
-    esac
-    shift
-done
+read_arguments --help:show_help \
+	       --lang=lang \
+	       --list-langs:lang=none \
+	       --book=book \
+	       --silver:bible=nwt \
+	       -- \
+	       "$@"
 
-# Set variables
-export lang savedir bible
-[[ $savedir ]] || savedir="${1:-.}"
+export lang book bible
+[[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments"
+
+# Assign variables
 [[ $book ]] || book=0
 [[ $bible ]] || bible=bi12
+[[ $lang ]] || lang=E
+[[ $savedir ]] || savedir="${arguments[0]:-.}"
 langurl="www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
+mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$book&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
 
-# Check if language is correct
-if ((CHECKLANG)); then
-    # If language isn't found in list, show help
-    if [[ -z $lang ]] || ! download_file "$langurl" | grep -q "\"$lang\":{\"name\":"; then
-	lang_list
-	exit
-    fi
-    # Unset CHECKLANG so we don't make any more checks
-    CHECKLANG=0
+# Check that lang is valid
+check_lang "$lang" "$langurl" "\"$lang\":{\"name\":" || lang_list
+
+# Only the parent process has a subdir
+if [[ $book = 0 ]]; then
+    subsavedir="$bible-$lang"
+else
+    unset subsavedir
 fi
 
-# Language related stuff after language validation
-[[ $lang ]] || lang=E
-baseurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$book&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
-subsavedir="$savedir/$bible-$lang"
-
 # Download and parse the JSON file
-download_file "$baseurl" | unsquash_file | parse_lines || error
+download_file "$mainurl" \
+    | unsquash_file pubName title booknum url \
+    | parse_lines || error
 
