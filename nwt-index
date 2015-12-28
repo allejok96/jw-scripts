@@ -11,9 +11,10 @@ show_help()
 Index the bible sound recordings at jw.org and make playlists
 
 Usage: nwt-index [options] [DIRECTORY]
-  --lang CODE   Select language code
+  --lang CODE   Change language
   --list-langs  Show a list of available language codes
   --silver	Use the 2013 edition of the NWT
+  --download    Make recordings available offline
   DIRECTORY     Directory to save the playlists in
 EOF
     exit
@@ -118,6 +119,7 @@ read_arguments --help:show_help \
 	       --list-langs:lang=none \
 	       --book=book \
 	       --silver:bible=nwt \
+	       --download:download=1 \
 	       -- \
 	       "$@"
 
@@ -128,6 +130,7 @@ export lang book bible
 [[ $book ]] || book=0
 [[ $bible ]] || bible=bi12
 [[ $lang ]] || lang=E
+[[ $download ]] || download=0
 [[ $savedir ]] || savedir="${arguments[0]:-.}"
 langurl="www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
 mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$book&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
