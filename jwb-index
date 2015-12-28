@@ -1,18 +1,8 @@
 #!/bin/bash
 #
 # jwb-index
+# Index JW Broadcasting (tv.jw.org)
 #
-# Requires: GNU sed, curl/wget
-#
-# Index tv.jw.org by processing the files from mediator.jw.org
-# and create m3u playlists, which can be played by e.g. Kodi.
-#
-
-error()
-{
-    echo "${@:-Something went wrong}" 1>&2
-    exit 1
-}
 
 show_help()
 {
@@ -20,51 +10,13 @@ show_help()
 Index the videos at tv.jw.org and make m3u playlists
 
 Usage: jwb-index [options] [DIRECTORY]
-  --lang CODE   Select language code. Selecting none will
-		show a list of available codes.
+  --lang CODE   Select language code
+  --list-langs  Show a list of available language codes
   --res QUALITY Choose between 240, 360, 480 and 720
+  --no-subs	Prefer unsubtitled videos
   DIRECTORY     Directory to save the playlists in
 EOF
     exit
-}
-
-# Remove the history file
-cleanup()
-{
-    # The history file needs to be keeped all the time this script is running
-    # The CHILD variable is so that the subprocesses don't remove it.
-    ((CHILD)) && return
-    [[ -e $histfile ]] && rm "$histfile"
-}
-
-# Add newline around squiggly and square brackets and replace commas with newline
-# but do nothing if they are quoted
-unsquash_file()
-{
-    sed '
-	# Add a newline after all "special" characters
-	# Note how the character list starts with an ]
-	# Smart huh?
-	s/[][{},]/\n&\n/g
-
-' | sed -n '
-	: start
-	# Does this row have an uneven number of citation marks?
-	# That means that the quote continues on the next line...
-	/^\([^"\n]*"[^"\n]*"\)*[^"\n]*"[^"\n]*$/ {
-	    # Append the next line of input
-	    N
-	    # Remove the newline between the two lines of input
-	    s/\n//g   
-	    # Go back to start again
-	    b start
-	}
-	# If the line is fine, print it
-	p
-' | sed -n '
-	# Only print relevant lines, and remove citation marks
-	s/^"\(key\|name\|title\|progressiveDownloadURL\)":"\?\([^"]*\)"\?$/\1:\2/p
-'
 }
 
 # Read the formated JSON file on stdin
@@ -77,11 +29,7 @@ unsquash_file()
 #
 parse_lines()
 {
-    # If we are a child process, store playlists in subdir
-    # Save the global savedir varable so we can pass it to all
-    # child processes
-    global_savedir="$savedir"
-    ((CHILD)) && local savedir="$savedir/$subsavedir"
+    file="$savedir/$category.m3u"
 
     # Create directory
     if [[ ! -e $savedir ]]; then
@@ -89,7 +37,7 @@ parse_lines()
     fi
 
     # Start on an empty playlist
-    echo "#EXTM3U" > "$savedir/$category.m3u" || error "Failed to write to playlist"
+    echo "#EXTM3U" > "$file" || error "Failed to write to playlist"
 
     # Read stdin
     while read -r input; do
@@ -101,29 +49,23 @@ parse_lines()
 	    # A new category - parse it
 	    name:*)
 		name="${input#*:}"
-		# Only do this for untouched categories
-		if ! grep -q "$key" "$histfile"; then
-		    # If we are a child process, all sub-playlists are in the
-		    # same dir as us. No need to add prefix. But if we are
-		    # the main process, we need to...
-		    if ((CHILD)); then
-			# Folders is uppercase
-			print_to_file "${name^^*}" "$key.m3u"
-		    else
-			print_to_file "${name^^*}" "$subsavedir/$key.m3u"
-		    fi
-
-		    # Start a new instance - download and parse category
-		    # Restore the savedir variable...
-		    (savedir="$global_savedir" "$0" --child --category "$key")
-		fi
+		# Skip categories we've already checked
+		grep -q "$key" "$histfile" && continue
+		
+		# Print a link to the new playlist
+		# (if we have a subdir, add it)
+		print_to_file "${name^^*}" "${subsavedir:+$subsavedir/}$key.m3u" "$file"
+		
+		# Start a new instance - download and parse category
+		# (if we have a subdir, append it to destination)
+		("$0" --child --category "$key" "${savedir}${subsavedir:+/$subsavedir}") || error # exit if child process gets error
 		;;
 
 	    # A new clip - save the old one
 	    title:*)
 		# If there is a title an URL, print them
 		if [[ $title && $url ]]; then
-		    print_to_file "$title" "$url"
+		    print_to_file "$title" "$url" "$file"
 		    # Unset title and URL so they don't get repeated
 		    unset title url
 		fi
@@ -132,38 +74,37 @@ parse_lines()
 		title="${input#*:}"
 		;;
 
-	    # The URL we want - save it
-	    progressiveDownloadURL:*${quality}P.mp4)
+	    # An URL - is it better than previous?
+	    progressiveDownloadURL:*)
+		if [[ $url ]]; then
+		    
+		    # Prefer subtitles or not
+		    if ((subtitles)); then
+			# Old one have subs and new one doesn't
+			[[ $url = *_s-Sub_* && ${input#*:} != *_s-Sub_* ]] && continue
+		    else
+			# Old one doesn't have subs and new one has
+			[[ $url != *_s-Sub_* && ${input#*:} = *_s-Sub_* ]] && continue
+		    fi
+		    
+		    # Compare quality (old < new <= maximum)
+		    n="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/'<<< "${input#*:}")" # new quality
+		    o="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/' <<< "$url")" # old quality
+		    [[ $n -lt $o || $n -gt $quality ]] && continue
+		    
+		fi
+		# Save URL
 		url="${input#*:}"
 		;;
 
-	    # Another URL - is it better?
-	    progressiveDownloadURL:*)
-		if [[ $url ]]; then
-		    n="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/'<<< "${input#*:}")" # new quality
-		    o="$(sed 's/^.*r\([0-9]\)*P.mp4$/\1/' <<< "$url")" # old quality
-		    # Save if it's better than the old one, but not bigger than maximum
-		    [[ $n -gt $o && $n -lt $quality ]] && url="${input#*:}"
-		fi
-		;;
 	esac
     done
 
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
     if [[ $title && $url ]]; then
-	print_to_file "$title" "$url"
+	print_to_file "$title" "$url" "$file"
     fi
-}
-
-# Print text to the playlist
-# Args: NAME PATH
-print_to_file()
-{
-    # Write to file
-    printf '%s\n' "#EXTINF:0,$1" "$2" >> "$savedir/$category.m3u" || error "Failed to write to playlist"
-    # Remove the title and URL so they don't get repeated at EOF
-    unset title url
 }
 
 # Download the language list and make it readable
@@ -171,117 +112,81 @@ print_to_file()
 # - "name" must be followed by "code"
 lang_list()
 {
+    echo "Languages:"
     # 1. Download the list
     # 2. Make newline at every opening bracket
     #    where a new language starts
     # 3. Replace "name":"LANG" ... "code":"CODE"
     #    with LANG CODE
     # 4. Sort it
-    # 5. Switch place on LANG and CODE
-    # 6. Make a nice list with columns
+    # 5. Make a nice list with columns
     download_file "$langurl" \
         | sed 's/{/\n/g' \
-        | sed -n 's/.*"name":"\([^"]*\)".*"code":"\([^"]*\)".*/\1:\2/p' \
+        | sed -n 's/.*"name":"\([^"]*\)".*"code":"\([^"]*\)".*/\2:\1/p' \
         | sort \
-        | sed 's/\(.*\):\(.*\)/\2:\1/' \
         | column -t -s :
+   exit
 }
 
-# Download a file with curl or wget
-download_file()
-{
-    if ((CURL)); then
-	curl --silent "$1" || error "Failed to download file"
-    else
-	wget --quiet -O - "$1" || error "Failed to download file"
-    fi
-}
-
-# Check requirements
-type sed &>/dev/null || error "This script requires GNU sed"
-
-if type curl &>/dev/null; then
-    CURL=1
+# Load shared code
+[[ $SHARED ]] || SHARED="shared-functions.sh"
+if [[ -f $SHARED ]]; then
+    source $SHARED
 else
-    type wget &>/dev/null || error "This script requires curl or wget"
-    CURL=0
-fi
-
-sed --version | egrep -q "GNU sed" || cat <<EOF
-Warning:
-This script is build for and tested only with GNU sed.
-It looks like you are using a different version of sed,
-so I canot guarrantee that it will work for you.
-Just saying :)
-
+    cat<<EOF 1>&2
+Cannot find the shared code at $SHARED
+You can set the default path with the variable SHARED
 EOF
+    exit 1
+fi  
 
-# Arguments
-while [[ $1 ]]; do
-    case $1 in
-        --help) show_help
-            ;;
-	--lang)
-	    CHECKLANG=1
-	    lang="$2"
-	    shift
-            ;;
-	--category)
-	    category="$2"
-	    shift
-	    ;;
-	--res)
-	    quality="$2"
-	    shift
-	    ;;
-	# This separates sub-instances from the main instance
-	# Only the main instance may remove the history file
-	# or rename it's own playlist...
-	--child)
-	    CHILD=1
-	    ;;
-        --*) error "Unknown flag: $1"
-            ;;
-        *) break
-            ;;
-    esac
-    shift
-done
+requirement_check
+
+read_arguments --help:show_help\
+	       --list-langs:lang=none \
+	       --lang=lang \
+	       --category=category \
+	       --res=quality \
+	       --child:child=1\
+	       --no-subs:subtitles=0 \
+	       --latest:category=LatestVideos \
+	       -- \
+	       "$@" || exit 1
+
+export lang category subtitles quality
+[[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
-export lang savedir quality
-[[ $savedir ]] || savedir="${1:-.}"
-[[ $CHILD ]] || CHILD=0
-[[ $RECURSIVE ]] || RECURSIVE=1
+[[ $subtitles ]] || subtitles=1
+[[ $child ]] || child=0
 [[ $category ]] || category=VideoOnDemand
 [[ $quality ]] || quality=480
-histfile="/tmp/.broadcast-index.history"
-langurl="http://mediator.jw.org/v1/languages/E/web"
-
-# Check if language is correct
-if ((CHECKLANG)); then
-    # If language isn't found in list, show help
-    if [[ -z $lang ]] || ! download_file "$langurl" | grep -q grep -q "\"code\":\"$lang\""; then
-	lang_list
-	exit
-    fi
-    # Unset CHECKLANG so we don't make any more checks
-    CHECKLANG=0
-fi
-
-# Language related stuff after language validation
 [[ $lang ]] || lang=E
-subsavedir="jwb-$lang"
-baseurl="http://mediator.jw.org/v1/categories/$lang/${category}?detailed=1"
+[[ $savedir ]] || savedir="${arguments[0]:-.}"
+histfile="/tmp/.jwb-index.history"
+langurl="http://mediator.jw.org/v1/languages/E/web"
+mainurl="http://mediator.jw.org/v1/categories/$lang/${category}?detailed=1"
 
-# Clean up before exit
-trap 'cleanup' SIGINT SIGTERM SIGHUP EXIT
+# Check that lang is valid
+check_lang "$lang" "$langurl" "\"code\":\"$lang\"" || lang_list
+
+# Parent/child process stuff
+if ((child)); then
+    # Childs have no subdirs
+    unset subsavedir
+else
+    # Parent saves into subdirs
+    subsavedir="jwb-$lang"
+    # The parent process removes the history file when it exits
+    trap '[[ -e $histfile ]] && rm "$histfile"; exit' SIGINT SIGTERM SIGHUP EXIT
+fi
 
 # Write to the history file
 # and show a message with our progress at the same time
-cleanup
-echo "$category" | tee -a "$histfile" 1>&2
+echo "$category" | tee -a "$histfile" 1>&2 || error
 
 # Download and parse the JSON file
-download_file "$baseurl" | unsquash_file | parse_lines || error
+download_file "$mainurl" \
+    | unsquash_file key name title progressiveDownloadURL \
+    | parse_lines || error
 
