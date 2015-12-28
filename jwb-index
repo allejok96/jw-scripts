@@ -16,7 +16,7 @@ Usage: jwb-index [options] [DIRECTORY]
   --no-subs	        Prefer unsubtitled videos
   --latest              Index "Latest Videos" instead of "Video on Demand"
 			(implies --no-recursive)
-  --download            Download videos instead of making playlists
+  --download            Make videos available offline
   DIRECTORY             Directory to save the playlists or videos in
 Advanced options:
   --category KEY        JSON file to download, default: VideoOnDemand
@@ -52,8 +52,19 @@ parse_lines()
 		key="${input#*:}"
 		;;
 
+	    primaryCategory:)
+		# Next name refers to parent category, don't parse it
+		skipnextname=1
+		;;
+	    
+	    primaryCategory:*)
+		parentkey="${input#*:}"
+		;;
+	    
 	    # A new category - parse it
 	    name:*)
+		# Reset and skip
+		((skipnextname)) && skipnextname=0 && continue
 		name="${input#*:}"
 		# Print a link to the new playlist
 		# (if we have a subdir, add it)
@@ -73,7 +84,7 @@ parse_lines()
 	    title:*)
 		# If there is a title an URL, print them
 		if [[ $title && $url ]]; then
-		    print_to_file "$title" "$url" "$file"
+		    print_to_file "$title" "$(basename $url)" "$file"
 		    # Unset title and URL so they don't get repeated
 		    unset title url
 		fi
@@ -110,9 +121,8 @@ parse_lines()
 
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
-    if [[ $title && $url ]]; then
-	print_to_file "$title" "$url" "$file"
-    fi
+    [[ $title && $url ]] && print_to_file "$title" "$url" "$file"
+
 }
 
 # Download the language list and make it readable
@@ -191,18 +201,6 @@ else
     subsavedir="jwb-$lang"
     # The parent process removes the history file when it exits
     trap '[[ -e $histfile ]] && rm "$histfile"; exit' SIGINT SIGTERM SIGHUP EXIT
-fi
-
-# Download instead of making playlists
-if ((download)); then
-    unset subsavedir
-    # Rewrite the print_to_file function to download instead
-    function print_to_file {
-	if [[ $2 =~ ^https?:// && ! -e $savedir/$(basename "$2") ]]; then
-	    echo "Downloading: $1"
-	    download_file "$2" > "$savedir/$(basename "$2")"
-	fi
-    }
 fi
 
 # Write to the history file

@@ -55,13 +55,28 @@ unsquash_file()
 }
 
 # Print text to the playlist
+# and optionally download the URL
 # Args: TITLE LINK FILENAME
 print_to_file()
 {
     [[ $# != 3 ]] && error
-    
-    # Write to file
-    printf '%s\n' "#EXTINF:0,$1" "$2" >> "$3" || error "Failed to write to playlist"
+
+    # If dowload is true and LINK is a URL
+    if ((download)) && [[ $2 =~ ^https?:// ]]; then
+	local destname="$(basename "$2")"
+	# Save file in same directory as playlist
+	local destfile="$(dirname "$3")/$destname"
+	printf '%s\n' "#EXTINF:0,$1" "$destname" >> "$3" || error "Failed to write to playlist"
+	# Don't clobber
+	if [[ ! -e $destfile ]]; then
+	    echo "Downloading $destname" 1>&2
+	    download_file "$2" > "$destfile"
+	else
+	    true # exit with 0 status
+	fi
+    else
+	printf '%s\n' "#EXTINF:0,$1" "$2" >> "$3" || error "Failed to write to playlist"
+    fi
 }
 
 # Download a file with curl or wget
