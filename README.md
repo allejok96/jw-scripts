@@ -3,7 +3,9 @@
 ### These scripts creates playlists from the videos on JW Broadcasting and the bible sound recordings on jw.org.
 
 #### jwb-index
-This script creates a hierarchy of m3u playlists containing the videos and categories on [JW Broadcasting](http://tv.jw.org/). This should work for most of the languages, but I have only tested English and Swedish.
+This script creates a hierarchy of m3u playlists containing the videos on [JW Broadcasting](http://tv.jw.org/). This should work for most of the languages, but I've only tested English and Swedish. The way the playlists link to "sub-playlists" seems to confuse players like VLC, but it works fine with Kodi - for which I wrote this script.
+
+**Update:** Now you can download the actual video files automatically with the `--download` flag. If you are planning to run this as a cron job, please also use the `--latest` flag to not overload the servers with unnecessary traffic.
 
 #### nwt-index
 This script does almost the same thing as jwb-index, but instead it indexes the MP3 recordings of the New Worlds Translation from [jw.org](http://www.jw.org).
@@ -26,19 +28,21 @@ YES. There is. Please take a look at this [unofficial JW Broadcasting add-on](ht
 
 Because I didn't know about the add-on at the time.
 
-And there was a JW.ORG add-on for Kodi but is broken and gone, so the bible-index script is the only way I'm able to play the bible recordings on my Pi.
+And there used to be a JW.ORG add-on for Kodi but is broken and gone now, so the nwt-index script is the only way I'm able to play the bible recordings on my Pi (without filling up my SD-card).
 
 I'm also planning to write a script for the videos on jw.org.
 
 ##### How do I use this?
 
-1. Run the script on your Linux rig (optionally choose a language with the --lang flag)
+1. Run the script on your Linux rig (se --help for more options)
 2. The script will create a directory with playlists
-3. Open the first playlist in the directory with a media player e.g. Kodi
+3. Open the first playlist with a media player e.g. Kodi
 
 ##### How does this work?
 
 The script downloads JSON files supplied by jw.org and mediator.jw.org. It then sorts out the titles and video links and saves them in m3u playlists.
+
+When using the --download flag it will download the video files to the chosen directory. Existing files won't be overwritten.
 
 And yes, I know parsing JSON could be done a thousand times simpler in any programming/scripting language like Python, but unfortunately I only know bash.
 
@@ -48,17 +52,6 @@ The [ToS](http://www.jw.org/en/terms-of-use/) states that "free, non-commercial 
 
 It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text instead of HTML.
 
-### Parameters:
-    Usage: jwb-index [options] [DIRECTORY]
-      --lang CODE   Select language code. Selecting none will
-     	            show a list of available codes.
-      --res QUALITY Choose between 240, 360, 480 and 720
-      DIRECTORY     Directory to save the playlists in
+##### I want this to do XYZ! But it don't!
 
-    Usage: nwt-index [options] [DIRECTORY]
-      --lang CODE   Select language code. Selecting none will
-                    show a list of available codes.
-      --silver      Use the 2013 edition of the NWT.
-      DIRECTORY     Directory to save the playlists in.
-
-
+If you have a feature request or have been bitten by a bug (let the friendly bugs be, they are hiding everywhere :) please [create an issue](https://github.com/allejok96/jw-kodiator/issues).
