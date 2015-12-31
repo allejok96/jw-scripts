@@ -37,7 +37,6 @@ Usage: jwb-index [options] [DIRECTORY]
   --latest              Index "Latest Videos" instead of "Video on Demand"
   --download            Make videos available offline
   --filesystem          Organize videos in directories
-  --plex		Plex compatibility (--download, --filesystem)
   --clean               Clean out all old files exept downloaded videos
   DIRECTORY             Directory to save the playlists or videos in
 Advanced options:
@@ -61,8 +60,8 @@ EOF
 #
 parse_lines()
 {
-    # Create empty dir and playlist
-    initialize_dir "$datadir" "$maincode"
+    # Create empty playlist for this category
+    ! ((filesystem)) && reset_playlist "$datadir/$maincode.m3u"
 
     # Read stdin
     while read -r input; do
@@ -108,9 +107,15 @@ parse_lines()
             title:*)
                 # If there is a title an URL, save them
                 if [[ $title && $url ]]; then
-                    write_media "$title" "$url" "$datadir" "$maincode"
-                    # Unset title and URL so they don't get repeated
-                    unset title url
+		    if ((latest)) && [[ $realcode ]]; then
+			# If this belongs to other category, add it to that one
+			write_media "$title" "$url" "$datadir" "$realcode"
+			unset realcode
+		    else
+			write_media "$title" "$url" "$datadir" "$maincode"
+		    fi
+		    # Unset title and URL so they don't get repeated
+		    unset title url realcode
                 fi
 
                 title="${input#*:}"
@@ -181,7 +186,7 @@ read_arguments --help:show_help\
                --quality=quality \
                --child:child=1\
                --no-subs:nosubtitles=1 \
-               --latest:maincode=LatestVideos \
+               --latest:maincode=LatestVideos\;latest=1 \
                --download:download=1 \
                --no-recursive:norecursive=1 \
                --json:json=1 \
@@ -191,7 +196,7 @@ read_arguments --help:show_help\
                -- \
                "$@" || exit 1
 
-export lang maincode nosubtitles quality download norecursive maxrate filesystem child
+export lang maincode nosubtitles quality download norecursive maxrate filesystem latest
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
@@ -212,14 +217,16 @@ if ! ((child)); then
     requirement_check
     # Check that lang is valid
     check_lang "$lang" "$langurl" "\"code\":\"$lang\"" || lang_list
-    # Check datadir and make absolute
-    if [[ -d $datadir ]]; then
-	datadir="$(realpath "$datadir")"
-    else
-	error "$datadir: Destination directory does not exist"
-    fi
+    # Check datadir
+    [[ -d $datadir ]] || error "$datadir: Destination directory does not exist"
+    # Make path absolute
+    datadir="$(realpath "$datadir")"
     # Add a subdir
     datadir="$datadir/jwb-$lang"
+    # Create subdir
+    if [[ ! -d $datadir ]]; then
+        mkdir -p "$datadir" || error "$datadir: Failed to create directory"
+    fi
     # Cleaning
     ((clean)) && clean_dir "$datadir"
     # Remove the history file when we exit
@@ -238,7 +245,7 @@ fi
 
 # Download and parse the JSON file
 download_file "$mainurl" \
-    | unsquash_file key name title progressiveDownloadURL parentCategory \
+    | unsquash_file key name title progressiveDownloadURL parentCategory primaryCategory \
     | parse_lines
 
 

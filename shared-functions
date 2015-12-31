@@ -37,7 +37,14 @@ clean_dir()
 create_link()
 {
     [[ $1 && $2 ]] || error "Error in create_link()"
+    local destdir
+    destdir="$(dirname "$2")" || error "Error in create_link()"
 
+    # Create dir if not there
+    if [[ ! -d $destdir ]]; then
+	mkdir -p "$destdir" || error "$destdir: Failed to create directory"
+    fi
+        
     # Does link exist?
     if [[ -L "$2" ]]; then
 	# Is link destination same as we want?
@@ -97,27 +104,6 @@ unsquash_file()
             p
         }
 ' || error "Failed to format JSON"
-}
-
-# Create empty dir and playlist
-# Args: DATADIR CODE
-initialize_dir()
-{
-    local datadir="$1"
-    local code="$2"
-
-    [[ $datadir && $code ]] || error "Error in initialize_dir()"
-
-    ((filesystem)) && datadir="$datadir/$code"
-    
-    # Create directory
-    if [[ ! -d $datadir ]]; then
-        mkdir -p "$datadir" || error "$datadir: Failed to create directory"
-    fi
-
-    ! ((filesystem)) && reset_playlist "$datadir/$code.m3u"
-    
-    return 0
 }
 
 # Create a link to the CODE outside DATADIR for easy access
@@ -206,7 +192,7 @@ write_media()
 
 reset_playlist()
 {
-    printf '%s\n' "#EXTM3U" > "$1"
+    printf '%s\n' "#EXTM3U" > "$1" || error "$1: Failed to write to playlist"
 }
 
 # Args: [-r] NAME LINK FILE
@@ -215,10 +201,12 @@ write_to_playlist()
     local title="$1"
     local link="$2"
     local file="$3"
+    local dir
     [[ $title && $link && $file ]] || error "Error in write_to_playlist()"
-
-    # Reset the file
-    if [[ ! -e $file ]]; then
+    dir="$(dirname "$file")" || error "Error in write_to_playlist()"
+        
+    # Reset the file if empty
+    if [[ ! -f $file ]]; then
 	reset_playlist "$file"
     fi
 
@@ -230,6 +218,9 @@ write_to_playlist()
 	[[ $subdir ]] || error "Error in write_to_playlist()"
 	link="$subdir/$link"
     fi
+
+    # If link already is written to file, skip it
+    grep -q "^$link$" "$file" && return 0
     
     printf '%s\n' "#EXTINF:0,$title" "$link" >> "$file" || error "$file: Failed to write to playlist"
 }
@@ -240,8 +231,6 @@ download_file()
 {
     [[ $1 ]] || error "Error in download_file()"
 
-    echo "$1" 1>&2
-    
     if ((hascurl)); then
         curl ${maxrate:+--limit-rate "$maxrate"} --silent "$1" || error "Failed to download file"
     else
