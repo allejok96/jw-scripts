@@ -11,16 +11,23 @@ show_help()
 Index the bible sound recordings at jw.org and make playlists
 
 Usage: nwt-index [options] [DIRECTORY]
-  --lang CODE   Change language
-  --list-langs  Show a list of available language codes
-  --silver	Use the 2013 edition of the NWT
-  --download    Make recordings available offline
-  DIRECTORY     Directory to save the playlists in
+  --lang CODE           Change language
+  --list-langs          Show a list of available language codes
+  --silver              Use the 2013 edition of the NWT
+  --download            Make recordings available offline
+  --filesystem          Organize recordings in directories
+  --clean               Clean out all old files exept downloaded recordings
+  DIRECTORY             Directory to save the playlists or recordings in
+Advanced options:
+  --limit-rate RATE     Maximum download rate for recordings
+			For example 1m means 1 megabyte per second
+  --book NUM            Number of bible book to download
+  --json                Don't parse the JSON file, just show it (debug)
 EOF
     exit
 }
 
-# Read the formated json file on stdin
+# Read the formated JSON file on stdin
 # write mp3 files to playlists
 # and download and parse new books
 #
@@ -33,53 +40,49 @@ EOF
 #
 parse_lines()
 {
-    # Create directory
-    if [[ ! -e $savedir ]]; then
-	mkdir -p "$savedir" || error "$savedir: Failed to create directory"
-    fi
-    
+    # Create empty dir and playlist
+    initialize_dir "$datadir" "$maincode"
+
     # Read stdin
     # Use -r because we want to keep the backslashes a bit longer
     while read -r input; do
-	# Unescape
-	input="$(printf '%b' "$input")"
-	# Remove backslashes
-	input="${input//\\/}"
+        # Unescape
+        input="$(printf '%b' "$input")"
+        # Remove backslashes
+        input="${input//\\/}"
 
-	case "$input" in
-	    pubName:*)
-		name="${input#*:}"
-		# Message, so we can see progress
-		echo "$name" 1>&2
-                # Save the "file" variable
-                file="$savedir/$name.m3u"
-		# Start on an empty playlist
-		echo "#EXTM3U" > "$file"
-		;;
+        case "$input" in
 
-	    title:*)
-		title="${input#*:}"
-		;;
+            pubName:*)
+                name="${input#*:}"
+                # Message, so we can see progress
+                echo "$name" 1>&2
 
-	    booknum:*)
-		newbook="${input#*:}"
-		# Only create links to books if our book is the "index"
-		# and the link don't point to the index itself.
-		if [[ $book = 0 && ! $newbook = 0 ]]; then
-		    # (If a subdir is set, add it before filename)
-		    print_to_file "$title" "${subsavedir:+$subsavedir/}$title.m3u" "$file"
-		    # Index the new book
-		    # (If a subdir i set, append it to destination dir)
-		    ("$0" --book "$newbook" "$savedir${subsavedir:+/$subsavedir}")
-		fi
-		;;
+		# First process
+                # Create a link for easy access to first playlist/dir
+                ! ((child)) && create_index_file_link "$maincode" "$name" "$datadir"
+                ;;
 
-	    url:*.mp3)
-		url="${input#*:}"
-		print_to_file "$title" "$url" "$file"
-		;;
+            title:*)
+                title="${input#*:}"
+                ;;
 
-	esac
+            booknum:*)
+                code="${input#*:}"
+
+                # Skip subdirs if we are child or code refers to self
+                ((child)) || [[ $code = "$maincode" ]] && continue
+
+                write_subdir "$title" "$code" "$datadir" "$maincode"
+                ("$0" --book "$code" --child "$datadir")
+                ;;
+
+            url:*.mp3)
+                url="${input#*:}"
+                write_media "$title" "$url" "$datadir" "$maincode"
+                ;;
+
+        esac
     done
 }
 
@@ -112,41 +115,56 @@ Cannot find the shared code at $SHARED
 You can set the default path with the variable SHARED
 EOF
     exit 1
-fi  
+fi
+
+! ((child)) && requirement_check
 
 read_arguments --help:show_help \
-	       --lang=lang \
-	       --list-langs:lang=none \
-	       --book=book \
-	       --silver:bible=nwt \
-	       --download:download=1 \
-	       -- \
-	       "$@"
+               --lang=lang \
+               --list-langs:lang=none \
+               --book=maincode \
+               --silver:bible=nwt \
+               --download:download=1 \
+               --json:json=1 \
+               --filesystem:filesystem=1 \
+	       --limit-rate=maxrate \
+	       --child:child=1 \
+	       --clean:clean=1 \
+               -- \
+               "$@" || exit 1
 
-export lang book bible
-[[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments"
+export lang maincode bible maxrate download filesystem child
+[[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
-[[ $book ]] || book=0
 [[ $bible ]] || bible=bi12
 [[ $lang ]] || lang=E
-[[ $download ]] || download=0
-[[ $savedir ]] || savedir="${arguments[0]:-.}"
-langurl="www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
-mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$book&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
+[[ $datadir ]] || datadir="${arguments[0]:-.}"
+[[ $maxrate = 0 ]] && unset maxrate
+[[ $maincode ]] || maincode=0
+langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
+mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$maincode&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
 
-# Check that lang is valid
-check_lang "$lang" "$langurl" "\"$lang\":{\"name\":" || lang_list
+# Things that only the parent may do
+# or that's only needed once
+if ! ((child)); then
+    # Check that lang is valid
+    check_lang "$lang" "$langurl" "\"$lang\":{\"name\":" || lang_list
+    # Only the parent process has a subdir
+    datadir="$datadir/$bible-$lang"
+    # Cleaning
+    ((clean)) && clean_dir "$datadir"
+fi
 
-# Only the parent process has a subdir
-if [[ $book = 0 ]]; then
-    subsavedir="$bible-$lang"
-else
-    unset subsavedir
+# Debug JSON
+if ((json)); then
+    download_file "$mainurl" | unsquash_file | less
+    exit
 fi
 
 # Download and parse the JSON file
 download_file "$mainurl" \
     | unsquash_file pubName title booknum url \
-    | parse_lines || error
+    | parse_lines
+
 
