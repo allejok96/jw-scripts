@@ -18,12 +18,18 @@ error()
 # Remove everything but the videos
 clean_dir()
 {
+    local datadir="$1"
+    local datadirname
+    datadirname="$(basename "$datadir")" || error "Error in clean_dir()"
+    
     # Remove links
     find "$datadir" -type l -delete
     # Remove playlists
     find "$datadir" -name "*.m3u" -delete
     # Remove empty directories
     find "$datadir" -type d -exec rmdir --ignore-fail-on-non-empty {} +
+    # Remove symlinks outside $datadir that point to $datadir
+    find "$datadir/.." -type l -lname "$datadir/*" -or -lname "$datadirname/*" -delete
 }
 
 # Make a link (but smarter)
@@ -161,11 +167,12 @@ write_media()
 {
     local title="$1"
     local link="$2"
-    local file="$(basename "$link")"
+    local file
+    file="$(basename "$link")" || error "Error in write_media()"
     local datadir="$3"
     local code="$4"
 
-    [[ $title && $link && $file && $datadir && $code ]] || error
+    [[ $title && $link && $file && $datadir && $code ]] || error "Error in write_media()"
 
     # Download video
     if ((download)); then
