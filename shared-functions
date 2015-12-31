@@ -1,7 +1,13 @@
-#!/bin/bash
+# -*- shell-script -*-
 #
 # functions for jw-scripts
 #
+# Variables that changes the behaviour:
+# filesystem   If true save to dir, else write playlist
+# download     If true download the media files
+# child        If true we are subprocess (affects some things)
+# hascurl      If true use curl, else use wget
+# 
 
 error()
 {
@@ -52,7 +58,7 @@ unsquash_file()
     if [[ $@ ]]; then
         # Append \| to all parameters
         # and remove the last one
-        keywordstring="$(printf '%s\|' "$@" | sed 's/\\|$//')"
+        keywordstring="$(printf '%s\|' "$@" | sed 's/\\|$//')" || error "Error in unsquash_file()"
     else
         # Match everything that's not a citation mark
         keywordstring='[^"]*'

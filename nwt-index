@@ -5,6 +5,26 @@
 # the New World Translation of the Holy Scriptures
 #
 
+load_shared_code()
+{
+    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
+	if [[ -f $code ]]; then
+	    if source "$code"; then
+		break
+	    else
+		echo "Failed to load shared functions" 1&>2
+		exit 1
+	    fi
+	fi
+    done
+
+    if [[ $? != 0 ]]; then
+	echo "Cannot find shared functions file" 1>&2
+	echo "You can set the default path with the variable SHARED" 1>&2
+	exit 1
+    fi
+}
+
 show_help()
 {
     cat<<EOF
@@ -105,19 +125,7 @@ lang_list()
     exit
 }
 
-# Load shared code
-[[ $SHARED ]] || SHARED="shared-functions.sh"
-if [[ -f $SHARED ]]; then
-    source $SHARED
-else
-    cat<<EOF 1>&2
-Cannot find the shared code at $SHARED
-You can set the default path with the variable SHARED
-EOF
-    exit 1
-fi
-
-! ((child)) && requirement_check
+load_shared_code
 
 read_arguments --help:show_help \
                --lang=lang \
@@ -148,6 +156,8 @@ mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$maincode&output=json&p
 # Things that only the parent may do
 # or that's only needed once
 if ! ((child)); then
+    # Do we have all we need?
+    requirement_check
     # Check that lang is valid
     check_lang "$lang" "$langurl" "\"$lang\":{\"name\":" || lang_list
     # Only the parent process has a subdir

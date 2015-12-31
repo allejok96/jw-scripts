@@ -4,14 +4,25 @@
 # Index JW Broadcasting (tv.jw.org)
 #
 
-if [[ $1 = -x ]]; then
-    export debug=1
-    shift
-fi
+load_shared_code()
+{
+    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
+	if [[ -f $code ]]; then
+	    if source "$code"; then
+		break
+	    else
+		echo "Failed to load shared functions" 1&>2
+		exit 1
+	    fi
+	fi
+    done
 
-if ((debug)); then
-    set -x
-fi
+    if [[ $? != 0 ]]; then
+	echo "Cannot find shared functions file" 1>&2
+	echo "You can set the default path with the variable SHARED" 1>&2
+	exit 1
+    fi
+}
 
 show_help()
 {
@@ -161,19 +172,7 @@ lang_list()
     exit
 }
 
-# Load shared code
-[[ $SHARED ]] || SHARED="shared-functions.sh"
-if [[ -f $SHARED ]]; then
-    source $SHARED
-else
-    cat<<EOF 1>&2
-Cannot find the shared code at $SHARED
-You can set the default path with the variable SHARED
-EOF
-    exit 1
-fi
-
-! ((child)) && requirement_check
+load_shared_code
 
 read_arguments --help:show_help\
                --list-langs:lang=none \
@@ -209,6 +208,8 @@ mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
 # Things that only the parent may do
 # or that's only needed once
 if ! ((child)); then
+    # Do we have all we need?
+    requirement_check
     # Check that lang is valid
     check_lang "$lang" "$langurl" "\"code\":\"$lang\"" || lang_list
     # Add a subdir
