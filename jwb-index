@@ -4,6 +4,15 @@
 # Index JW Broadcasting (tv.jw.org)
 #
 
+if [[ $1 = -x ]]; then
+    export debug=1
+    shift
+fi
+
+if ((debug)); then
+    set -x
+fi
+
 show_help()
 {
     cat<<EOF
@@ -13,14 +22,20 @@ Usage: jwb-index [options] [DIRECTORY]
   --lang CODE           Change language
   --list-langs          Show a list of available language codes
   --quality NUM         Select maximum quality: 240, 360, 480 or 720
-  --no-subs	        Prefer unsubtitled videos
+  --no-subs             Prefer unsubtitled videos
   --latest              Index "Latest Videos" instead of "Video on Demand"
-			(implies --no-recursive)
   --download            Make videos available offline
+  --filesystem          Organize videos in directories
+  --plex		Plex compatibility (--download, --filesystem)
+  --clean               Clean out all old files exept downloaded videos
   DIRECTORY             Directory to save the playlists or videos in
 Advanced options:
-  --category KEY        JSON file to download, default: VideoOnDemand
-  --no-recursive        Don't automatically download other categories
+  --limit-rate RATE     Maximum download rate for videos. Default is
+                        500k (500 kilobytes per second). Zero disables
+                        the limit. But, somebody THINK OF THE SERVERS! :)
+  --category CODENAME   JSON file to download. Default: VideoOnDemand
+  --no-recursive        Don't automatically download more categories
+  --json                Don't parse the JSON file, just show it (debug)
 EOF
     exit
 }
@@ -35,94 +50,93 @@ EOF
 #
 parse_lines()
 {
-    file="$savedir/$category.m3u"
-
-    # Create directory
-    if [[ ! -e $savedir ]]; then
-	mkdir -p "$savedir" || error "$savedir: Failed to create directory"
-    fi
-
-    # Start on an empty playlist (not if we download)
-    ((download)) || echo "#EXTM3U" > "$file" || error "Failed to write to playlist"
+    # Create empty dir and playlist
+    initialize_dir "$datadir" "$maincode"
 
     # Read stdin
     while read -r input; do
-	case "$input" in
-	    key:*)
-		key="${input#*:}"
-		;;
+        case "$input" in
 
-	    primaryCategory:)
-		# Next name refers to parent category, don't parse it
-		skipnextname=1
-		;;
-	    
-	    primaryCategory:*)
-		parentkey="${input#*:}"
-		;;
-	    
-	    # A new category - parse it
-	    name:*)
-		# Reset and skip
-		((skipnextname)) && skipnextname=0 && continue
-		name="${input#*:}"
-		# Print a link to the new playlist
-		# (if we have a subdir, add it)
-		print_to_file "${name^^*}" "${subsavedir:+$subsavedir/}$key.m3u" "$file"
+            key:*)
+                code="${input#*:}"
+                ;;
 
-		# Don't download categories we've already checked
-		grep -q "$key" "$histfile" && continue
-		
-		# Start a new instance - download and parse category
-		# (if we have a subdir, append it to destination)
-		if ((recursive)); then
-		    ("$0" --child --category "$key" "${savedir}${subsavedir:+/$subsavedir}") || error # exit if child process gets error
-		fi
-		;;
+            parentCategory:)
+                # Next name refers to parent category, don't parse it
+                skipnextname=1
+                ;;
 
-	    # A new clip - save the old one
-	    title:*)
-		# If there is a title an URL, print them
-		if [[ $title && $url ]]; then
-		    print_to_file "$title" "$(basename $url)" "$file"
-		    # Unset title and URL so they don't get repeated
-		    unset title url
-		fi
+            primaryCategory:*)
+                realcode="${input#*:}"
+                ;;
 
-		# Save the new title
-		title="${input#*:}"
-		;;
+            name:*)
+                name="${input#*:}"
 
-	    # An URL - is it better than previous?
-	    progressiveDownloadURL:*.mp4)
-		if [[ $url ]]; then
-		    
-		    # Prefer subtitles or not
-		    if ((subtitles)); then
-			# Old one have subs and new one doesn't
-			[[ $url = *_s-Sub_* && ${input#*:} != *_s-Sub_* ]] && continue
-		    else
-			# Old one doesn't have subs and new one has
-			[[ $url != *_s-Sub_* && ${input#*:} = *_s-Sub_* ]] && continue
-		    fi
-		    
-		    # Compare quality (old < new <= maximum)
-		    n="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "${input#*:}")" # new quality
-		    o="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" # old quality
-		    [[ $n -lt $o || $n -gt $quality ]] && continue
-		    
-		fi
-		# Save URL
-		url="${input#*:}"
-		;;
+                ((skipnextname)) && skipnextname=0 && continue
 
-	esac
+                # First process, first category (self)
+                # Create a link for easy access to first playlist/dir
+                if [[ $code = "$maincode" ]]; then
+		    ! ((child)) && create_index_file_link "$maincode" "$name" "$datadir"
+                    # If code = self, don't parse any more
+                    continue
+                fi
+
+                write_subdir "${name^^*}" "$code" "$datadir" "$maincode"
+
+                # Don't download categories we've already checked
+                grep -q "$code" "$histfile" && continue
+
+                # Start a new instance - download and parse category
+                if ! ((norecursive)); then
+                    ("$0" --child --category "$code" "$datadir") || error "Child process failed" # exit if child process gets error
+                fi
+                ;;
+
+            title:*)
+                # If there is a title an URL, save them
+                if [[ $title && $url ]]; then
+                    write_media "$title" "$url" "$datadir" "$maincode"
+                    # Unset title and URL so they don't get repeated
+                    unset title url
+                fi
+
+                title="${input#*:}"
+                ;;
+
+            progressiveDownloadURL:*.mp4)
+                newurl="${input#*:}"
+                # Already have url? Compare them!
+                if [[ $url ]]; then
+
+                    # Prefer subtitles or not
+                    if ((nosubtitles)); then
+                        # Old one doesn't have subs and new one has
+                        [[ $url != *_s-Sub_* && $newurl = *_s-Sub_* ]] && continue
+                    else
+                        # Old one have subs and new one doesn't
+                        [[ $url = *_s-Sub_* && $newurl != *_s-Sub_* ]] && continue
+                    fi
+
+                    # Compare quality (old < new <= maximum)
+                    newq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "$newurl")" || error "Quality comparsion failed"
+                    oldq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" || error "Quality comparsion failed"
+                    [[ $newq -lt $oldq || $newq -gt $quality ]] && continue
+
+                fi
+                # Save URL
+                url="$newurl"
+                ;;
+
+        esac
     done
 
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
-    [[ $title && $url ]] && print_to_file "$title" "$url" "$file"
+    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode"
 
+    return 0
 }
 
 # Download the language list and make it readable
@@ -143,7 +157,8 @@ lang_list()
         | sed -n 's/.*"name":"\([^"]*\)".*"code":"\([^"]*\)".*/\2:\1/p' \
         | sort \
         | column -t -s :
-   exit
+
+    exit
 }
 
 # Load shared code
@@ -156,59 +171,67 @@ Cannot find the shared code at $SHARED
 You can set the default path with the variable SHARED
 EOF
     exit 1
-fi  
+fi
 
-requirement_check
+! ((child)) && requirement_check
 
 read_arguments --help:show_help\
-	       --list-langs:lang=none \
-	       --lang=lang \
-	       --category=category \
-	       --quality=quality \
-	       --child:child=1\
-	       --no-subs:subtitles=0 \
-	       --latest:category=LatestVideos\;recursive=0 \
-	       --download:download=1 \
-	       --no-recursive:recursive=0 \
-	       -- \
-	       "$@" || exit 1
+               --list-langs:lang=none \
+               --lang=lang \
+               --category=maincode \
+               --quality=quality \
+               --child:child=1\
+               --no-subs:nosubtitles=1 \
+               --latest:maincode=LatestVideos \
+               --download:download=1 \
+               --no-recursive:norecursive=1 \
+               --json:json=1 \
+               --filesystem:filesystem=1 \
+	       --limit-rate=maxrate \
+	       --clean:clean=1 \
+               -- \
+               "$@" || exit 1
 
-export lang category subtitles quality download recursive
+export lang maincode nosubtitles quality download norecursive maxrate filesystem child
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
-[[ $recursive ]] || recursive=1
-[[ $subtitles ]] || subtitles=1
-[[ $child ]] || child=0
-[[ $download ]] || download=0
-[[ $category ]] || category=VideoOnDemand
+[[ $maxrate ]] || maxrate=500k
+[[ $maincode ]] || maincode=VideoOnDemand
 [[ $quality ]] || quality=480
 [[ $lang ]] || lang=E
-[[ $savedir ]] || savedir="${arguments[0]:-.}"
+[[ $datadir ]] || datadir="${arguments[0]:-.}"
+[[ $maxrate = 0 ]] && unset maxrate
 histfile="/tmp/.jwb-index.history"
 langurl="http://mediator.jw.org/v1/languages/E/web"
-mainurl="http://mediator.jw.org/v1/categories/$lang/${category}?detailed=1"
+mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
 
-# Check that lang is valid
-check_lang "$lang" "$langurl" "\"code\":\"$lang\"" || lang_list
-
-# Parent/child process stuff
-if ((child)); then
-    # Childs have no subdirs
-    unset subsavedir
-else
-    # Parent saves into subdirs
-    subsavedir="jwb-$lang"
-    # The parent process removes the history file when it exits
+# Things that only the parent may do
+# or that's only needed once
+if ! ((child)); then
+    # Check that lang is valid
+    check_lang "$lang" "$langurl" "\"code\":\"$lang\"" || lang_list
+    # Add a subdir
+    datadir="$datadir/jwb-$lang"
+    # Cleaning
+    ((clean)) && clean_dir "$datadir"
+    # Remove the history file when we exit
     trap '[[ -e $histfile ]] && rm "$histfile"; exit' SIGINT SIGTERM SIGHUP EXIT
 fi
 
 # Write to the history file
 # and show a message with our progress at the same time
-echo "$category" | tee -a "$histfile" 1>&2 || error
+echo "$maincode" | tee -a "$histfile" 1>&2 || error "Failed to write to history file"
+
+# Debug JSON
+if ((json)); then
+    download_file "$mainurl" | unsquash_file | less
+    exit
+fi
 
 # Download and parse the JSON file
 download_file "$mainurl" \
-    | unsquash_file key name title progressiveDownloadURL \
-    | parse_lines || error
+    | unsquash_file key name title progressiveDownloadURL parentCategory \
+    | parse_lines
+
 
