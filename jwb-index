@@ -212,6 +212,12 @@ if ! ((child)); then
     requirement_check
     # Check that lang is valid
     check_lang "$lang" "$langurl" "\"code\":\"$lang\"" || lang_list
+    # Check datadir and make absolute
+    if [[ -d $datadir ]]; then
+	datadir="$(realpath "$datadir")"
+    else
+	error "$datadir: Destination directory does not exist"
+    fi
     # Add a subdir
     datadir="$datadir/jwb-$lang"
     # Cleaning

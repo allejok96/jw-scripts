@@ -160,6 +160,12 @@ if ! ((child)); then
     requirement_check
     # Check that lang is valid
     check_lang "$lang" "$langurl" "\"$lang\":{\"name\":" || lang_list
+    # Check datadir and make absolute
+    if [[ -d $datadir ]]; then
+	datadir="$(realpath "$datadir")"
+    else
+	error "$datadir: Destination directory does not exist"
+    fi
     # Only the parent process has a subdir
     datadir="$datadir/$bible-$lang"
     # Cleaning
