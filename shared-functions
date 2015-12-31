@@ -173,22 +173,24 @@ write_media()
             echo "Downloading: $file" 1>&2
             download_file "$link" > "$datadir/$file"
         fi
-        # Change link to point to the local video
-        link="$file"
     fi
-
-    if ((filesystem)) && ((download)); then
-	# Get the file name extension
-	suffix="$(sed -n 's/.\+\.//p' <<< "$file")"
-        # Link to a existing media
-        create_link "$datadir/$file" "$datadir/$code/$title.$suffix"
-    elif ((filesystem)); then
-        # Create a playlist with a video URL and link to it
-	reset_playlist  "$datadir/$file.m3u"
-	write_to_playlist "$title" "$link" "$datadir/$file.m3u"
-        create_link "$datadir/$file.m3u" "$datadir/$code/$title.m3u"
+    
+    if ((filesystem)); then
+	if [[ -e $datadir/$file ]]; then
+	    # Get the file name extension
+	    suffix="$(sed -n 's/.\+\.//p' <<< "$file")"
+            # Link to a existing media
+            create_link "$datadir/$file" "$datadir/$code/$title.$suffix"
+	else
+	    # Create a playlist with a URL and link to it
+	    reset_playlist  "$datadir/$file.m3u"
+	    write_to_playlist "$title" "$link" "$datadir/$file.m3u"
+            create_link "$datadir/$file.m3u" "$datadir/$code/$title.m3u"
+	fi
     else
-        # Add the video URL to a playlist
+	# Change link to point to the local video
+	[[ -e $datadir/$file ]] && link="$file"
+	# Add the video URL to a playlist
         write_to_playlist "$title" "$link" "$datadir/$code.m3u"
     fi
 
