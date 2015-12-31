@@ -197,7 +197,7 @@ export lang maincode nosubtitles quality download norecursive maxrate filesystem
 # Assign variables
 [[ $maxrate ]] || maxrate=500k
 [[ $maincode ]] || maincode=VideoOnDemand
-[[ $quality ]] || quality=480
+[[ $quality ]] || quality=720
 [[ $lang ]] || lang=E
 [[ $datadir ]] || datadir="${arguments[0]:-.}"
 [[ $maxrate = 0 ]] && unset maxrate
