@@ -41,8 +41,7 @@ Usage: jwb-index [options] [DIRECTORY]
   DIRECTORY             Directory to save the playlists or videos in
 Advanced options:
   --limit-rate RATE     Maximum download rate for videos. Default is
-                        500k (500 kilobytes per second). Zero disables
-                        the limit. But, somebody THINK OF THE SERVERS! :)
+                        500k (500 kilobytes per second). 0 disables limit
   --category CODENAME   JSON file to download. Default: VideoOnDemand
   --no-recursive        Don't automatically download more categories
   --json                Don't parse the JSON file, just show it (debug)

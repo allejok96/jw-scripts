@@ -203,7 +203,6 @@ write_to_playlist()
     local file="$3"
     local dir
     [[ $title && $link && $file ]] || error "Error in write_to_playlist()"
-    dir="$(dirname "$file")" || error "Error in write_to_playlist()"
         
     # Reset the file if empty
     if [[ ! -f $file ]]; then
