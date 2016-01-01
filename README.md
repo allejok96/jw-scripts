@@ -1,6 +1,6 @@
 # JW bash scripts
 
-### These scripts creates playlists from the videos on JW Broadcasting and the bible sound recordings on jw.org.
+### Get acess to JW Broadcasting and the bible sound recordings at jw.org in Kodi, Plex, or your media center of choice.
 
 ## jwb-index
 This script creates playlists so you can stream from [JW Broadcasting](http://tv.jw.org/) on Kodi, or downloads the videos so you can add them to your Plex library. This should work for most of the languages, but I've only tested English and Swedish.
@@ -45,13 +45,17 @@ nwt-index ~/Bible
 
 #### How do I use this with Plex?
 
-1. Run the script with the `--download` and `--filesystem` flags, as Plex don't allow streaming files directly from the internet (if I'm wrong, please [correct](https://github.com/allejok96/jw-scripts/issues) me).
+1. Run the script with the `--download` and `--filesystem` flags.
 2. This will create a link to a directory called "Video on Demand".
 3. Add the link as a library in Plex, choose the type "Home Videos".
 
 #### Isn't there an easier way to watch JW Broadcasting on Kodi?
 
 YES. There is. Please take a look at this [unofficial JW Broadcasting add-on](http://ca0abinary.github.io/plugin.video.jwtv-unofficial/).
+
+#### *Must* I download the videos if I have Plex?
+
+Yes. It seems like Plex won't stream files directly from the internet, nor read playlists .If I'm wrong, please [correct](https://github.com/allejok96/jw-scripts/issues) me.
 
 #### Why is the video download so slow?
 
@@ -69,8 +73,8 @@ And yes, I know parsing JSON could be done a thousand times simpler in any progr
 
 The [ToS](http://www.jw.org/en/terms-of-use/) states that *"free, non-commercial applications designed to download electronic files"* is allowed. So it's seems OK.
 
-It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text instead of HTML. Oh and yes, nowdays it downloads the videos too!
+It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text instead of HTML. (Oh and yes, nowdays it downloads the videos too!)
 
 #### I want this to do XYZ! But it don't!
 
-If you have a feature request or have been bitten by a bug (let the friendly bugs be, they are hiding everywhere :) please [create an issue](https://github.com/allejok96/jw-scripts/issues).
+If you have a feature request or have been bitten by a bug (let the friendly bugs be, they are hiding everywhere :-) please [create an issue](https://github.com/allejok96/jw-scripts/issues).
