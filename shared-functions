@@ -19,8 +19,12 @@ error()
 clean_dir()
 {
     local datadir="$1"
-    local datadirname
-    datadirname="$(basename "$datadir")" || error "Error in clean_dir()"
+    local datadirname="$(basename "$datadir")"
+
+    [[ $datadir && $datadirname ]] || error "Error in clean_dir()"
+
+    # If dir doesn't exist, it is clean, right?
+    [[ ! -d "$datadir" ]] && return 0
     
     # Remove links
     find "$datadir" -type l -delete
@@ -36,9 +40,9 @@ clean_dir()
 # Args: DEST LINKNAME
 create_link()
 {
-    [[ $1 && $2 ]] || error "Error in create_link()"
-    local destdir
-    destdir="$(dirname "$2")" || error "Error in create_link()"
+    local destdir="$(dirname "$2")"
+
+    [[ $1 && $2 && $destdir ]] || error "Error in create_link()"
 
     # Create dir if not there
     if [[ ! -d $destdir ]]; then
@@ -68,6 +72,8 @@ create_link()
 # Args: [KEYWORD ...]
 unsquash_file()
 {
+    local keywordstring
+
     if [[ $@ ]]; then
         # Append \| to all parameters
         # and remove the last one
@@ -113,12 +119,22 @@ create_index_file_link()
     local code="$1"
     local name="$2"
     local datadir="$3"
+
+    [[ $code && $name && $datadir ]] || error "Error in create_index_file_link()"
     
-    if ((filesystem)); then
-        create_link "$datadir/$code" "$datadir/../$name"
-    else
-        create_link "$datadir/$code.m3u" "$datadir/../$name.m3u"
-    fi
+    case "$mode" in
+	filesystem)
+            create_link "$datadir/$code" "$datadir/../$name"
+	    ;;
+	m3u)
+            create_link "$datadir/$code.m3u" "$datadir/../$name.m3u"
+	    ;;
+	m3ucompat)
+	    # link to index file not needed in comat mode
+	    # since all files are saved directly in dest dir
+	    return 0 
+	    ;;
+    esac
 }
 
 # Save link to other playlist/dir
@@ -130,78 +146,108 @@ write_subdir()
     local link="$2"
     local datadir="$3"
     local code="$4"
-        
+
     [[ $title && $link && $datadir && $code ]] || error "Error in write_subdir()"
 
-    if ((filesystem)); then
-	# Create a directory to link to first
-	if [[ ! -d $datadir/$link ]]; then
-	    mkdir -p "$datadir/$link" || error "$datadir/$link: Failed to create directory"
-	fi
-        create_link "$datadir/$link/" "$datadir/$code/$title"
-    else
-	write_to_playlist "$title" "$link.m3u" "$datadir/$code.m3u"
-    fi
-
+    case "$mode" in
+	filesystem)
+	    # Create the directory to link to, before linking to it
+	    if [[ ! -d $datadir/$link ]]; then
+		mkdir -p "$datadir/$link" || error "$datadir/$link: Failed to create directory"
+	    fi
+            create_link "$datadir/$link/" "$datadir/$code/$title"
+	    ;;
+	m3u)
+	    write_to_playlist "$title" "$link.m3u" "$datadir/$code.m3u"
+	    ;;
+	m3ucompat)
+	    # no linking to playlists inside playlists in compat mode
+	    return 0
+	    ;;
+    esac
+    
     return 0
 }
 
 # Save videos in playlist/dir
 # and optionally download them
-# Args: TITLE LINK DATADIR CODE
+# Args: TITLE LINK DATADIR CODE NAME
 write_media()
 {
     local title="$1"
     local link="$2"
-    local file
-    file="$(basename "$link")" || error "Error in write_media()"
+    local file="$(basename "$link")"
     local datadir="$3"
     local code="$4"
+    local name="$5"
 
-    [[ $title && $link && $file && $datadir && $code ]] || error "Error in write_media()"
+    [[ $title && $link && $file && $datadir && $code && $name ]] || error "Error in write_media()"
 
-    # Download video
+    # Download media
     if ((download)); then
         if [[ ! -e $datadir/$file ]]; then
+	    [[ -d $datadir ]] || mkdir -p "$datadir" || error "$datadir:  Failed to create directory"
             echo "Downloading: $file" 1>&2
             download_file "$link" > "$datadir/$file"
         fi
     fi
     
-    if ((filesystem)); then
-	if [[ -e $datadir/$file ]]; then
-	    # Get the file name extension
-	    suffix="$(sed -n 's/.\+\.//p' <<< "$file")"
-            # Link to a existing media
-            create_link "$datadir/$file" "$datadir/$code/$title.$suffix"
-	else
-	    # Create a playlist with a URL and link to it
-	    reset_playlist  "$datadir/$file.m3u"
-	    write_to_playlist "$title" "$link" "$datadir/$file.m3u"
-            create_link "$datadir/$file.m3u" "$datadir/$code/$title.m3u"
-	fi
-    else
-	# Change link to point to the local video
-	[[ -e $datadir/$file ]] && link="$file"
-	# Add the video URL to a playlist
-        write_to_playlist "$title" "$link" "$datadir/$code.m3u"
-    fi
-
+    case "$mode" in
+	filesystem)
+	    if [[ -e $datadir/$file ]]; then
+		# Get the file name extension
+		suffix="$(sed -n 's/.\+\.//p' <<< "$file")"
+		# Link to a existing media
+		create_link "$datadir/$file" "$datadir/$code/$title.$suffix"
+	    else
+		# Create a playlist with a URL and link to it
+		reset_playlist  "$datadir/$file.m3u"
+		write_to_playlist "$title" "$link" "$datadir/$file.m3u"
+		create_link "$datadir/$file.m3u" "$datadir/$code/$title.m3u"
+	    fi
+	    ;;
+	m3u)
+	    # Change link to point to local media (if any)
+	    [[ -e $datadir/$file ]] && link="$file"
+	    # Add the video URL to a playlist
+            write_to_playlist "$title" "$link" "$datadir/$code.m3u"
+	    ;;
+	m3ucompat)
+	    # Change link to point to local media (if any)
+	    if [[ -e $datadir/$file ]]; then
+		local datadirname="$(basename "$datadir")"
+		[[ $datadirname ]] || error "Error in write_media()"
+		link="$datadirname/$file"
+	    fi
+	    # Step out of the "datadir" subdir we steped into earlier
+	    ((child)) && datadir="$datadir/.."
+	    # Add the video URL to a playlist
+	    write_to_playlist "$title" "$link" "$datadir/$code $name.m3u"
+	    ;;
+    esac
+    
     return 0
 }
 
+# Args: FILE
 reset_playlist()
 {
-    printf '%s\n' "#EXTM3U" > "$1" || error "$1: Failed to write to playlist"
+    local file="$1"
+    local dir=$(dirname "$1")
+
+    [[ $file && $dir ]] || error "Error in reset_playlist()"
+    
+    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir:  Failed to create directory"
+    printf '%s\n' "#EXTM3U" > "$file" || error "$file: Failed to write to playlist"
 }
 
-# Args: [-r] NAME LINK FILE
+# Args: TITLE LINK FILE
 write_to_playlist()
 {
     local title="$1"
     local link="$2"
     local file="$3"
-    local dir
+
     [[ $title && $link && $file ]] || error "Error in write_to_playlist()"
         
     # Reset the file if empty
@@ -258,7 +304,7 @@ Just saying :)
 
 EOF
 
-    return 1
+    return 0
 }
 
 # Read the arguments and save variables or do things
