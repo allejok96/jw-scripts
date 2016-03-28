@@ -28,21 +28,37 @@ load_shared_code()
 show_help()
 {
     cat<<EOF
+Usage: nwt-index [OPTIONS] [DIRECTORY]
 Index the bible sound recordings at jw.org and make playlists
 
-Usage: nwt-index [options] [DIRECTORY]
+Options:
   --lang CODE           Change language
   --list-langs          Show a list of available language codes
   --silver              Use the 2013 edition of the NWT
   --download            Make recordings available offline
-  --filesystem          Organize recordings in directories
+  --mode MODE           The format in which files are saved (see Modes)
   --clean               Clean out all old files exept downloaded recordings
   DIRECTORY             Directory to save the playlists or recordings in
+
 Advanced options:
   --limit-rate RATE     Maximum download rate for recordings
-			For example 1m means 1 megabyte per second
+			  For example 1m means 1 megabyte per second
   --book NUM            Number of bible book to download
   --json                Don't parse the JSON file, just show it (debug)
+
+Modes:
+  m3u                   Write a m3u hierarcy of m3u playlists. You can browse
+                          this by opening the first playlist. This works with
+                          Kodi, but can confuse other media players.
+  m3ucompat             Save multiple m3u playlists in the destination
+                          directory. There is no hierarcy, so you will have to
+                          open the correct playlist via a file browser, but
+                          this should work with most players.
+  filesystem            The media is saved in an actual folder hierarchy
+                          consisting of directories and symlinks. This is
+                          mostly useful in combination with --download for
+                          media players that cannot read m3u files, e.g. Plex.
+
 EOF
     exit
 }
@@ -90,16 +106,19 @@ parse_lines()
             booknum:*)
                 code="${input#*:}"
 
+		# Pad code to 2 digits
+		code="$(printf '%02d' "$code")"
+
                 # Skip subdirs if we are child or code refers to self
                 ((child)) || [[ $code = "$maincode" ]] && continue
 
                 write_subdir "$title" "$code" "$datadir" "$maincode"
-                ("$0" --book "$code" --child "$datadir")
+                ("$0" --child --book "$code" "$datadir")
                 ;;
 
             url:*.mp3)
                 url="${input#*:}"
-                write_media "$title" "$url" "$datadir" "$maincode"
+                write_media "$title" "$url" "$datadir" "$maincode" "$name"
                 ;;
 
         esac
@@ -134,17 +153,19 @@ read_arguments --help:show_help \
                --silver:bible=nwt \
                --download:download=1 \
                --json:json=1 \
-               --filesystem:filesystem=1 \
+               --filesystem:mode=filesystem \
+	       --mode=mode \
 	       --limit-rate=maxrate \
 	       --child:child=1 \
 	       --clean:clean=1 \
                -- \
                "$@" || exit 1
 
-export lang maincode bible maxrate download filesystem
+export lang maincode bible maxrate download filesystem mode
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
+[[ $mode ]] || mode=m3u
 [[ $bible ]] || bible=bi12
 [[ $lang ]] || lang=E
 [[ $datadir ]] || datadir="${arguments[0]:-.}"
@@ -152,6 +173,9 @@ export lang maincode bible maxrate download filesystem
 [[ $maincode ]] || maincode=0
 langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
 mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$maincode&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
+
+# Pad code to 2 digits
+code="$(printf '%02d' "$code")"
 
 # Things that only the parent may do
 # or that's only needed once
@@ -184,5 +208,3 @@ fi
 download_file "$mainurl" \
     | unsquash_file pubName title booknum url \
     | parse_lines
-
-
