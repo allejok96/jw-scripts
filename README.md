@@ -7,6 +7,7 @@ With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) v
 A script for JW Broadcasting [live streaming](http://tv.jw.org/#en/live) is also in the works...
 
 ## Usage
+This is just examples. See `--help` for more info.
 ```sh
 # Install the scripts system wide (optional)
 sudo ./install.sh
