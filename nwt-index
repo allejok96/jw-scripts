@@ -10,7 +10,7 @@ load_shared_code()
     for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
 	if [[ -f $code ]]; then
 	    if source "$code"; then
-		break
+		return 0
 	    else
 		echo "Failed to load shared functions" 1&>2
 		exit 1
@@ -18,18 +18,16 @@ load_shared_code()
 	fi
     done
 
-    if [[ $? != 0 ]]; then
-	echo "Cannot find shared functions file" 1>&2
-	echo "You can set the default path with the variable SHARED" 1>&2
-	exit 1
-    fi
+    echo "Cannot find shared functions file" 1>&2
+    echo "You can set the default path with the variable SHARED" 1>&2
+    exit 1
 }
 
 show_help()
 {
     cat<<EOF
 Usage: nwt-index [OPTIONS] [DIRECTORY]
-Index the bible sound recordings at jw.org and make playlists
+Index the bible sound recordings at jw.org
 
 Options:
   --lang CODE           Change language
@@ -41,8 +39,8 @@ Options:
   DIRECTORY             Directory to save the playlists or recordings in
 
 Advanced options:
-  --limit-rate RATE     Maximum download rate for recordings
-			  For example 1m means 1 megabyte per second
+  --limit-rate RATE     Maximum download rate for recordings, for example
+			  1m means 1 megabyte per second
   --book NUM            Number of bible book to download
   --json                Don't parse the JSON file, just show it (debug)
 
@@ -56,31 +54,25 @@ Modes:
                           this should work with most players.
   filesystem            The media is saved in an actual folder hierarchy
                           consisting of directories and symlinks. This is
-                          mostly useful in combination with --download for
+                          really only useful in combination with --download for
                           media players that cannot read m3u files, e.g. Plex.
 
 EOF
     exit
 }
 
-# Read the formated JSON file on stdin
-# write mp3 files to playlists
-# and download and parse new books
-#
 # GIGANT CAVEATS:
-# - "pubName" must be first, because it erases the playlist
-# - "title" must be followed by "booknum" or by "stream"
-# - "pubName" must be the same as the parent books "title"
-#     or else the link to the file and the actual file
-#     will be different.
+# - Fist there must be a "pubName". This will give us the name
+#     of the playlist to write to, and clean it.
+# - "title" must be followed by "booknum" or by "url".
+#    "booknum" is a sub-book and will be downloaded and parsed.
+#    "url" is a media link and will be saved to a playlist,
+#     and alternativly downloaded.
 #
 parse_lines()
 {
-    # Create empty playlist for this category
-    ! ((filesystem)) && reset_playlist "$datadir/$maincode.m3u"
-
     # Read stdin
-    # Use -r because we want to keep the backslashes a bit longer
+    # Use -r because we want to keep the backslashes for a while longer
     while read -r input; do
         # Unescape
         input="$(printf '%b' "$input")"
@@ -94,25 +86,31 @@ parse_lines()
                 # Message, so we can see progress
                 echo "$name" 1>&2
 
-		# First process
-                # Create a link for easy access to first playlist/dir
-                ! ((child)) && create_index_file_link "$maincode" "$name" "$datadir"
-                ;;
-
+		# Empty out playlist
+		write_empty "$datadir" "$maincode" "$name"
+		;;
+	    
             title:*)
                 title="${input#*:}"
                 ;;
 
             booknum:*)
-                code="${input#*:}"
+		# No sub-sub-dirs
+		((child)) && continue
 
 		# Pad code to 2 digits
-		code="$(printf '%02d' "$code")"
+		# $(( 10#n )) makes sure that numbers starting with
+		# 0 isn't interpreted as octal
+                code="$(printf '%02d' "$(( 10#${input#*:} ))")"
 
-                # Skip subdirs if we are child or code refers to self
-                ((child)) || [[ $code = "$maincode" ]] && continue
+		# Don't add self as a subdir
+		[[ $code = "$maincode" ]] && continue
 
-                write_subdir "$title" "$code" "$datadir" "$maincode"
+		# A quick fix:
+		# Add line number to books in filesystem mode, so they get sorted
+		[[ $mode = filesystem ]] && title="$code - $title"
+	
+                write_subdir "$title" "$code" "$datadir" "$maincode" "$name"
                 ("$0" --child --book "$code" "$datadir")
                 ;;
 
@@ -161,7 +159,7 @@ read_arguments --help:show_help \
                -- \
                "$@" || exit 1
 
-export lang maincode bible maxrate download filesystem mode
+export lang maincode bible maxrate download mode
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
@@ -174,8 +172,12 @@ export lang maincode bible maxrate download filesystem mode
 langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
 mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$maincode&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
 
+[[ $mode =~ ^(m3u|m3ucompat|filesystem)$ ]] || error "$mode: Unknown mode"
+
 # Pad code to 2 digits
-code="$(printf '%02d' "$code")"
+# $(( 10#n )) makes sure that n isn't read as an octal
+# number if it begins with 0
+maincode="$(printf '%02d' "$(( 10#$maincode ))")"
 
 # Things that only the parent may do
 # or that's only needed once
@@ -187,13 +189,9 @@ if ! ((child)); then
     # Check datadir
     [[ -d $datadir ]] || error "$datadir: Destination directory does not exist"
     # Make path absolute
-    datadir="$(realpath "$datadir")"
+    datadir="$(realpath "$datadir")" || error
     # Add a subdir
     datadir="$datadir/jwb-$lang"
-    # Create subdir
-    if [[ ! -d $datadir ]]; then
-        mkdir -p "$datadir" || error "$datadir: Failed to create directory"
-    fi
     # Cleaning
     ((clean)) && clean_dir "$datadir"
 fi

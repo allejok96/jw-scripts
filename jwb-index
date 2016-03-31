@@ -9,59 +9,81 @@ load_shared_code()
     for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
 	if [[ -f $code ]]; then
 	    if source "$code"; then
-		break
+		return 0
 	    else
-		echo "Failed to load shared functions" 1&>2
+		echo "Error when reading shared functions" 1&>2
 		exit 1
 	    fi
 	fi
     done
 
-    if [[ $? != 0 ]]; then
-	echo "Cannot find shared functions file" 1>&2
-	echo "You can set the default path with the variable SHARED" 1>&2
-	exit 1
-    fi
+    echo "Cannot find shared functions file" 1>&2
+    echo "You can set the default path with the variable SHARED" 1>&2
+    exit 1
 }
 
 show_help()
 {
     cat<<EOF
-Index the videos at tv.jw.org and make m3u playlists
+Usage: jwb-index [OPTIONS] [DIRECTORY]
+Index the videos at tv.jw.org
 
-Usage: jwb-index [options] [DIRECTORY]
   --lang CODE           Change language
   --list-langs          Show a list of available language codes
   --quality NUM         Select maximum quality: 240, 360, 480 or 720
   --no-subs             Prefer unsubtitled videos
   --latest              Index "Latest Videos" instead of "Video on Demand"
+  --mode MODE           The format in which files are saved (see Modes)
   --download            Make videos available offline
-  --filesystem          Organize videos in directories
-  --clean               Clean out all old files exept downloaded videos
+  --clean               Clean out all old files except downloaded videos
   DIRECTORY             Directory to save the playlists or videos in
+
 Advanced options:
-  --limit-rate RATE     Maximum download rate for videos. Default is
-                        500k (500 kilobytes per second). 0 disables limit
+  --limit-rate RATE     Maximum download rate for videos, default is
+                          500k (500 kilobytes per second), 0 disables limit
   --category CODENAME   JSON file to download. Default: VideoOnDemand
   --no-recursive        Don't automatically download more categories
   --json                Don't parse the JSON file, just show it (debug)
+
+Modes:
+  m3u                   Write a m3u hierarcy of m3u playlists. You can browse
+                          this by opening the first playlist. This works with
+                          Kodi, but can confuse other media players.
+  m3ucompat             Save multiple m3u playlists in the destination
+                          directory. There is no hierarcy, so you will have to
+                          open the correct playlist via a file browser, but
+                          this should work with most players.
+  filesystem            The media is saved in an actual folder hierarchy
+                          consisting of directories and symlinks. This is
+                          really only useful in combination with --download for
+                          media players that cannot read m3u files, e.g. Plex.
+
 EOF
     exit
 }
 
-# Read the formated JSON file on stdin
-# write videos to playlists
-# and download and parse new categories
-#
 # GIGANT CAVEATS:
-# - "key" must be followed by "name"
-# - "title" must come before "progressiveDownloadURL"
+# - First there must be a "key" followed by "name" where
+#    "key" has the same value as --category. This will give
+#    us the name of the playlist to save to, and clean it.
+# - "key" must be followed by "name". This is a sub-
+#    category and will be downloaded and parsed
+# - "title" must be followed by "progressiveDownloadURL".
+#    This is a media link and will be saved to a playlist
+#    and alternatively downloaded.
+# - "parentCategory" must be followed by "name" and this
+#    will be skipped, since we want to go recursive on
+#    DEPTH and not upwards.
+# - "primaryCategory" is only used with the --latest flag.
+#    It must not be followed by "key". It will cause the
+#    media to be saved in the category set by
+#    primaryCategory instead of the category set by "key".
+#    This has no affect when using --mode=m3ucompat
+#    because that requires the REAL name of the category
+#    (as opposed to the codename).
 #
 parse_lines()
 {
-    # Create empty playlist for this category
-    ! ((filesystem)) && reset_playlist "$datadir/$maincode.m3u"
-
     # Read stdin
     while read -r input; do
         case "$input" in
@@ -76,7 +98,9 @@ parse_lines()
                 ;;
 
             primaryCategory:*)
-                realcode="${input#*:}"
+		# Don't use "realcode" in m3ucompat mode since there is no equivalent
+		# "realname" that can be used as filename
+                ((latest)) && [[ $mode != m3ucompat ]] && realcode="${input#*:}"
                 ;;
 
             name:*)
@@ -84,15 +108,15 @@ parse_lines()
 
                 ((skipnextname)) && skipnextname=0 && continue
 
-                # First process, first category (self)
-                # Create a link for easy access to first playlist/dir
+                # First category (self)
                 if [[ $code = "$maincode" ]]; then
-		    ! ((child)) && create_index_file_link "$maincode" "$name" "$datadir"
-                    # If code = self, don't parse any more
+		    mainname="$name"
+		    # Empty out the playlist for this category
+		    write_empty "$datadir" "$code" "$name"
                     continue
                 fi
 
-                write_subdir "${name^^*}" "$code" "$datadir" "$maincode"
+                write_subdir "${name^^*}" "$code" "$datadir" "$maincode" "$mainname"
 
                 # Don't download categories we've already checked
                 grep -q "$code" "$histfile" && continue
@@ -106,13 +130,8 @@ parse_lines()
             title:*)
                 # If there is a title an URL, save them
                 if [[ $title && $url ]]; then
-		    if ((latest)) && [[ $realcode ]]; then
-			# If this belongs to other category, add it to that one
-			write_media "$title" "$url" "$datadir" "$realcode"
-			unset realcode
-		    else
-			write_media "$title" "$url" "$datadir" "$maincode"
-		    fi
+		    # If this belongs to other category, add it to that one
+		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname"
 		    # Unset title and URL so they don't get repeated
 		    unset title url realcode
                 fi
@@ -149,7 +168,7 @@ parse_lines()
 
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
-    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode"
+    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode" "$mainname"
 
     return 0
 }
@@ -178,27 +197,29 @@ lang_list()
 
 load_shared_code
 
-read_arguments --help:show_help\
+read_arguments --help:show_help \
                --list-langs:lang=none \
                --lang=lang \
                --category=maincode \
                --quality=quality \
-               --child:child=1\
+               --child:child=1 \
                --no-subs:nosubtitles=1 \
                --latest:maincode=LatestVideos\;latest=1 \
                --download:download=1 \
                --no-recursive:norecursive=1 \
                --json:json=1 \
-               --filesystem:filesystem=1 \
+               --filesystem:mode=filesystem \
+	       --mode=mode \
 	       --limit-rate=maxrate \
 	       --clean:clean=1 \
                -- \
                "$@" || exit 1
 
-export lang maincode nosubtitles quality download norecursive maxrate filesystem latest
+export lang maincode nosubtitles quality download norecursive maxrate mode latest
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
+[[ $mode ]] || mode=m3u
 [[ $maxrate ]] || maxrate=500k
 [[ $maincode ]] || maincode=VideoOnDemand
 [[ $quality ]] || quality=720
@@ -208,6 +229,8 @@ export lang maincode nosubtitles quality download norecursive maxrate filesystem
 histfile="/tmp/.jwb-index.history"
 langurl="http://mediator.jw.org/v1/languages/E/web"
 mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
+
+[[ $mode =~ ^(m3u|m3ucompat|filesystem)$ ]] || error "$mode: Unknown mode"
 
 # Things that only the parent may do
 # or that's only needed once
@@ -222,10 +245,6 @@ if ! ((child)); then
     datadir="$(realpath "$datadir")"
     # Add a subdir
     datadir="$datadir/jwb-$lang"
-    # Create subdir
-    if [[ ! -d $datadir ]]; then
-        mkdir -p "$datadir" || error "$datadir: Failed to create directory"
-    fi
     # Cleaning
     ((clean)) && clean_dir "$datadir"
     # Remove the history file when we exit
