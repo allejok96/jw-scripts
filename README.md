@@ -15,7 +15,7 @@ sudo ./install.sh
 # Make playlists of all bible books
 nwt-index --mode=m3ucompat
 
-# For Kodi (streaming via playlists)
+# For Kodi (playlist hierarchy)
 # Index all Swedish videos
 jwb-index --mode=m3u --lang=Z ~/Videos/JWB
 
