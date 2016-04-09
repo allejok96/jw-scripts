@@ -2,7 +2,7 @@
 
 ### JW Broadcasting and bible sound recordings anywhere
 
-With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream bible recordings from [jw.org](http://www.jw.org) to phone or in Kodi.
+With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream bible recordings from [jw.org](http://www.jw.org) to your phone or via Kodi.
 
 A script for JW Broadcasting [live streaming](http://tv.jw.org/#en/live) is also in the works...
 
@@ -12,7 +12,7 @@ This is just examples. See `--help` for more info.
 # Install the scripts system wide (optional)
 sudo ./install.sh
 
-# For phone or any media player (playlists)
+# For a phone or any media player (playlists)
 # Make playlists of all bible books
 nwt-index --mode=m3ucompat
 
@@ -43,12 +43,12 @@ jwb-index --mode=m3u --latest ~/Videos/JWB
 2. This will create a link to a directory called "Video on Demand".
 3. Add the link as a library in Plex, choose the type "Home Videos".
 
-#### How do I use this on my phone or other device?
+#### How do I use this with my phone or other device?
 
-1. Run the script with the `--mode=m3ucompat` flag.
+1. Run the script with the `--mode=m3ucompat` flag on your computer.
 2. This will create a bunch of playlists.
 3. Copy all playlists to you device.
-4. Open a playlist with media player of choice.
+4. Open a playlist with your media player of choice.
 
 #### Isn't there an easier way to watch JW Broadcasting on Kodi?
 
@@ -56,11 +56,13 @@ YES. There is. Please take a look at this [unofficial JW Broadcasting add-on](ht
 
 #### *Must* I download the videos if I have Plex?
 
-Yes. It seems like Plex won't stream files directly from the internet, nor read playlists .If I'm wrong, please [correct](https://github.com/allejok96/jw-scripts/issues) me.
+Yes. It seems like Plex won't stream files directly from the internet, nor read playlists. If I'm wrong, please [correct](https://github.com/allejok96/jw-scripts/issues) me.
 
 #### Why is the video download so slow?
 
-It seems to be realated to the `--limit-rate` flag. *But please, somebody think of the servers!* :-)
+It seems to be realated to the `--limit-rate` flag (see `--help`). 
+
+*But please, somebody think of the servers!* :-)
 
 #### How does this work?
 
@@ -74,8 +76,8 @@ And yes, I know parsing JSON could be done a thousand times simpler in any progr
 
 The [ToS](http://www.jw.org/en/terms-of-use/) states that *"free, non-commercial applications designed to download electronic files"* is allowed. So it's seems OK.
 
-It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text instead of HTML. (Oh and yes, nowdays it downloads the videos too!)
+It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text files instead of HTML. (Oh, and nowdays it can download the media files too!)
 
 #### I want this to do XYZ! But it don't!
 
-If you have a feature request or have been bitten by a bug, please [create an issue](https://github.com/allejok96/jw-scripts/issues).
+If you have a feature request or have been bitten by a bug, please [create an issue](https://github.com/allejok96/jw-scripts/issues), and I'll see what I can do.
