@@ -107,7 +107,7 @@ unsquash_file()
         # Grep only the keywords
         /^"\('"$keywordstring"'\)":/ {
             # Remove all unescaped citation marks
-            s/\(^\|[^\]\)"/\1/g
+            s/\(^\|[^\]\)"\+/\1/g
             # And print it
             p
         }
@@ -150,7 +150,9 @@ write_subdir()
 	    fi
 	    ;;
 	m3ucompat)
-	    # no linking to playlists inside playlists in compat mode
+	    return 0
+	    ;;
+	urllist)
 	    return 0
 	    ;;
     esac
@@ -160,7 +162,7 @@ write_subdir()
 
 # Save media in playlist/dir
 # and optionally download them
-# Args: TITLE LINK DATADIR CODE NAME
+# Args: TITLE LINK DATADIR CODE NAME [CHECKSUM]
 write_media()
 {
     local title="$1"
@@ -170,9 +172,12 @@ write_media()
     local code="$4"
     local name="$5"
     local destdir="$datadir"
+    local checksum="$6"
     
     [[ $title && $link && $file && $datadir && $code && $name ]] || error "Error in $FUNCNAME"
 
+    [[ $mode = urllist ]] && datadir="$(dirname "$datadir")"
+    
     # Download media
     if ((download)); then
         if [[ ! -e $datadir/$file ]]; then
@@ -183,7 +188,19 @@ write_media()
     fi
 
     # Change link to point to local media (if any)
-    [[ -e $datadir/$file ]] && link="$file"
+    if [[ -e $datadir/$file ]]; then
+	if [[ $checksum =~ [0-9a-f]{32} ]]; then
+	    # Check checksum
+	    if echo "$checksum  $datadir/$file" | md5sum -c --status; then
+		link="$file"
+	    else
+		echo "$datadir/$file: Incorrect checksum, removing file" 1>&2
+		rm -f "$datadir/$file"
+	    fi
+	else
+	    link="$file"
+	fi
+    fi
     
     case "$mode" in
 	filesystem)
@@ -217,6 +234,13 @@ write_media()
 	    datadir="$(dirname "$datadir")"
 
 	    write_to_playlist "$title" "$link" "$datadir/$code - $name.m3u"
+	    ;;
+	urllist)
+	    if [[ -e $datadir/$file ]]; then
+		echo "$datadir/$file"
+	    else
+		echo "$link"
+	    fi
 	    ;;
     esac
     
@@ -255,6 +279,9 @@ write_empty()
 	    # Remove all links
 	    [[ -e $dir/$code ]] && find "$dir/$code" -type l -delete
 	    return
+	    ;;
+	urllist)
+	    return 0
 	    ;;
     esac
 
@@ -323,7 +350,7 @@ requirement_check()
         export hascurl=0
     fi
 
-    sed --version | egrep -q "GNU sed" || cat <<EOF
+    sed --version | egrep -q "GNU sed" || cat <<EOF 1>&2
 Warning:
 This script is build for and tested only with GNU sed.
 It looks like you are using a different version of sed,
@@ -350,6 +377,13 @@ read_arguments()
 
     until [[ $# = 0 ]]; do
         for flag in "${flags[@]}"; do
+
+            # -- means no more flags, only arguments    
+            if [[ $1 = -- ]]; then
+		shift
+		arguments+=("$@")
+		return 0
+            fi
 
             # Normal flag
             if [[ $flag =~ --[a-zA-Z0-9-]+:.* && $1 = "${flag%%:*}" ]]; then
@@ -394,17 +428,38 @@ read_arguments()
 }
 
 # Check that the language code is valid
-# Args: LANGCODE URL PATTERN
-check_lang()
+# Args: LANGCODE
+jwb_check_lang()
 {
-    [[ $1 && $2 && $3 ]] || error "Error in $FUNCNAME"
-
+    [[ $1 ]] || error "Error in $FUNCNAME"
+    local langurl="http://mediator.jw.org/v1/languages/E/web"
+    
     [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
     # Don't make more checks
     export NOCHECKLANG=1
-    # Try to find the language code in the text
-    # End with that exit code
-    download_file "$2" | grep -q "$3"
 
-    return $?
+    # Try to find the language code in the text
+    if download_file "$langurl" | grep -q "\"code\":\"$1\""; then
+	return 0
+    else
+	# Download the language list and make it readable
+	# CAVEATS:
+	# - "name" must be followed by "code"
+	echo "Languages:"
+	# 1. Download the list
+	# 2. Make newline at every opening bracket
+	#    where a new language starts
+	# 3. Replace "name":"LANG" ... "code":"CODE"
+	#    with LANG CODE
+	# 4. Sort it
+	# 5. Make a nice list with columns
+	download_file "$langurl" \
+            | sed 's/{/\n/g' \
+            | sed -n 's/.*"name":"\([^"]*\)".*"code":"\([^"]*\)".*/\2:\1/p' \
+            | sort \
+            | column -t -s :
+	
+	return 1
+    fi
 }
+
