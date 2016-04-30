@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 #
 # jwb-rpi
 #
@@ -10,6 +10,10 @@
 # computer catches on fire or kittens die.
 # /Alex
 
+###########
+# Options #
+###########
+
 # Path to the jwb-index script
 # (No need to change if installed system wide)
 jwb_script=jwb-index
@@ -19,7 +23,7 @@ jwb_script=jwb-index
 #export SHARED=
 
 # Language code (see jwb-index --lang)
-lang=Z
+lang=E
 
 # Directory to save videos and related stuff in
 # DON'T SAVE OTHER THINGS HERE, as they risk being deleted automatically
@@ -50,7 +54,9 @@ update_timeout=3h
 limit_rate=1M
 limit_rate_first_time=4M
 
-# The following options has no effect until max_size is reached:
+#################################################################
+# The following options has no effect until max_size is reached #
+#################################################################
 
 # Categories of videos to keep longer (see the output of jwb-index)
 # These categories should be the ones you prefer to watch - and to give your
@@ -73,12 +79,12 @@ no_videos_msg="Please wait while videos are downloading"
 
 # Now when you have read through these options, you can comment out the line
 # below, and run the script
-#unconfigured=1
+unconfigured=1
 
 
-
-# End of options
-
+##################
+# End of options #
+##################
 
 
 # MESSAGE
@@ -91,8 +97,10 @@ error()
 # MESSAGE
 msg()
 {
-    # Put a figlet thing here if you want
-
+    #######################################
+    # Put a figlet thing here if you want #
+    #######################################
+    
     echo "$*" 1>&2
 }
 
@@ -317,8 +325,13 @@ while sleep 1s; do
 
     # Play video
     pos_start="$(date +%s)"
-    mpv --fs --start "${pos:-0}" "$video" &>/dev/null
 
+    ######################################################
+    # If you want to change the video player, look here! #
+    ######################################################
+
+    omxplayer --pos "${pos:-0}" "$video" &>/dev/null
+    
     # Add video to history
     add_to_list "$list_history" <<< "$video"
     
