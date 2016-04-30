@@ -11,7 +11,7 @@ load_shared_code()
 	    if source "$code"; then
 		return 0
 	    else
-		echo "Error when reading shared functions" 1&>2
+		echo "Error when reading shared functions" 1>&2
 		exit 1
 	    fi
 	fi
@@ -57,6 +57,10 @@ Modes:
                           consisting of directories and symlinks. This is
                           really only useful in combination with --download for
                           media players that cannot read m3u files, e.g. Plex.
+  urllist               Simply output a list of URLs or files to stdout.
+                          Note that unless --no-recursive is used, a media file
+			  can belong to multiple categories and that would
+			  cause duplicates in the output.
 
 EOF
     exit
@@ -88,13 +92,17 @@ parse_lines()
     while read -r input; do
         case "$input" in
 
+	    status:404)
+		error "Category not found"
+		;;
+	    
             key:*)
                 code="${input#*:}"
                 ;;
 
             parentCategory:)
                 # Next name refers to parent category, don't parse it
-                skipnextname=1
+                local skipnextname=1
                 ;;
 
             primaryCategory:*)
@@ -118,11 +126,11 @@ parse_lines()
 
                 write_subdir "${name^^*}" "$code" "$datadir" "$maincode" "$mainname"
 
-                # Don't download categories we've already checked
-                grep -q "$code" "$histfile" && continue
-
                 # Start a new instance - download and parse category
                 if ! ((norecursive)); then
+                    # Don't download categories we've already checked
+                    grep -q "$code" "$histfile" && continue
+
                     ("$0" --child --category "$code" "$datadir") || error "Child process failed" # exit if child process gets error
                 fi
                 ;;
@@ -131,9 +139,9 @@ parse_lines()
                 # If there is a title an URL, save them
                 if [[ $title && $url ]]; then
 		    # If this belongs to other category, add it to that one
-		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname"
-		    # Unset title and URL so they don't get repeated
-		    unset title url realcode
+		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum"
+		    # Unset variables so they don't get repeated
+		    unset title url realcode checksum
                 fi
 
                 title="${input#*:}"
@@ -161,7 +169,12 @@ parse_lines()
                 fi
                 # Save URL
                 url="$newurl"
+		local savenextsum=1
                 ;;
+
+	    checksum:*)
+		((savenextsum)) && savenextsum=0 && checksum="${input#*:}"
+		;;
 
         esac
     done
@@ -215,7 +228,7 @@ read_arguments --help:show_help \
                -- \
                "$@" || exit 1
 
-export lang maincode nosubtitles quality download norecursive maxrate mode latest
+export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
@@ -224,13 +237,11 @@ export lang maincode nosubtitles quality download norecursive maxrate mode lates
 [[ $maincode ]] || maincode=VideoOnDemand
 [[ $quality ]] || quality=720
 [[ $lang ]] || lang=E
-[[ $datadir ]] || datadir="${arguments[0]:-.}"
 [[ $maxrate = 0 ]] && unset maxrate
-histfile="/tmp/.jwb-index.history"
-langurl="http://mediator.jw.org/v1/languages/E/web"
+datadir="${arguments[0]:-.}"
 mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
 
-[[ $mode =~ ^(m3u|m3ucompat|filesystem)$ ]] || error "$mode: Unknown mode"
+[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist)$ ]] || error "$mode: Unknown mode"
 
 # Things that only the parent may do
 # or that's only needed once
@@ -238,7 +249,7 @@ if ! ((child)); then
     # Do we have all we need?
     requirement_check
     # Check that lang is valid
-    check_lang "$lang" "$langurl" "\"code\":\"$lang\"" || lang_list
+    jwb_check_lang "$lang" || exit 1
     # Check datadir
     [[ -d $datadir ]] || error "$datadir: Destination directory does not exist"
     # Make path absolute
@@ -247,13 +258,21 @@ if ! ((child)); then
     datadir="$datadir/jwb-$lang"
     # Cleaning
     ((clean)) && clean_dir "$datadir"
-    # Remove the history file when we exit
-    trap '[[ -e $histfile ]] && rm "$histfile"; exit' SIGINT SIGTERM SIGHUP EXIT
+    # History only needed when "recursing"
+    if ((norecursive)); then
+	histfile=/dev/null
+    else
+	# Create history file
+	histfile="$(mktemp)" || error "Failed to create temp file"
+	# Remove the history file when we exit
+	trap '[[ -e $histfile ]] && rm "$histfile"; exit' SIGINT SIGTERM SIGHUP EXIT
+    fi
 fi
 
 # Write to the history file
 # and show a message with our progress at the same time
-echo "$maincode" | tee -a "$histfile" 1>&2 || error "Failed to write to history file"
+[[ $histfile ]] || error "histfile: Variable empty, this should not happen"
+echo "$maincode" | tee -a "$histfile" 1>&2 || error "$histfile: Failed to write to temp file"
 
 # Debug JSON
 if ((json)); then
@@ -263,7 +282,7 @@ fi
 
 # Download and parse the JSON file
 download_file "$mainurl" \
-    | unsquash_file key name title progressiveDownloadURL parentCategory primaryCategory \
+    | unsquash_file status key name title progressiveDownloadURL parentCategory primaryCategory checksum \
     | parse_lines
 
 
