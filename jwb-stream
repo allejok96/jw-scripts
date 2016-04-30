@@ -1,0 +1,239 @@
+#!/bin/bash
+#
+# jwb-stream
+# Stream from tv.jw.org
+#
+
+load_shared_code()
+{
+    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
+	if [[ -f $code ]]; then
+	    if source "$code"; then
+		return 0
+	    else
+		echo "Failed to load shared functions" 1>&2
+		exit 1
+	    fi
+	fi
+    done
+
+    echo "Cannot find shared functions file" 1>&2
+    echo "You can set the default path with the variable SHARED" 1>&2
+    exit 1
+}
+
+show_help()
+{
+    cat<<EOF
+Usage: jwb-stream [OPTIONS] -- PROGRAM [ARGUMENTS] ...
+Play a streaming channel from tv.jw.org
+
+Options:
+  --lang CODE    Change language
+  --list-langs   Show a list of available language codes
+  --quality NUM  Select maximum quality: 240, 360, 480 or 720
+  --channel KEY  Pick a channel, see list below
+  --no-subs      Prefer unsubtitled videos
+  --json         Debug option: show the formated JSON file
+  --forever      Re-run when playlist has finished
+  PROGRAM        Program to stream the URLs with
+  ARGUMENTS      Arguments to PROGRAM. %s for starting time, see
+	         below.
+
+URLs of the videos will be appended as arguments to PROGRAM.
+The videos will play in ~1.5 hour. If --forever is used, PROGRAM
+will be re-run with new URLs forever.
+
+If the string %s is used in ARGUMENTS it will be replaced by the
+number of seconds the first video should skip to sync up with
+tv.jw.org. Then, after that video has finished, PROGRAM will be
+restarted, playing the rest of the videos as usual, that time
+with %s replaced by 0. %% will be replaced by the litteral %.
+
+Channels:
+  OurStudio (default)
+  Children
+  Teenagers
+  Family
+  ProgramsEvents
+  OurActivities
+  Ministry
+  OurOrganization
+  Bible
+  Movies
+  MusicVideos
+  StreamingIntExp
+
+Examples:
+  Stream swedish family videos with Gnome videos:
+    jwb-stream --category Family --lang Z totem
+  Stream with various players, syncronized with tv.jw.org:
+    jwb-stream -- mpv --start=%s
+    jwb-stream -- vlc --start-time=%s --play-and-exit
+    jwb-stream -- omxplayer --pos %s
+EOF
+    exit
+}
+
+# Read the formated JSON file on stdin
+# write videos to playlists
+# and download and parse new categories
+#
+# GIGANT CAVEATS:
+# - "key" must be followed by "name"
+# - "title" must come before "progressiveDownloadURL"
+#
+# args: [command [arguments ...]]
+parse_lines()
+{
+    local cmd=("$@")
+    
+    # Read stdin
+    while read -r input; do
+	case "$input" in
+
+	    status:404)
+		error "$channel: Channel not found"
+		;;
+	    
+	    # A new video
+	    title:*)
+		
+		# Next video in queue
+		# If an URL is saved, play it
+		if [[ $url ]]; then
+		    if [[ $cmd ]]; then
+			# Run player directly
+			# Redirect stdout because else that will be caught by xargs
+			# echo prevents players to read from stdin
+			echo -n | "${cmd[@]}" "$url" 1>&2
+			# Forget command, never run it again
+			unset cmd
+		    else
+			# echo out to xargs
+			echo "$url"
+		    fi
+		    # Forget, never play again
+		    unset url
+		fi
+		;;
+	    
+	    # An URL - is it better than previous?
+	    progressiveDownloadURL:*.mp4)
+		if [[ $url ]]; then
+		    
+		    # Prefer subtitles or not
+		    if ((nosubtitles)); then
+			# Old one doesn't have subs and new one has
+			[[ $url != *_s-Sub_* && ${input#*:} = *_s-Sub_* ]] && continue
+		    else
+			# Old one have subs and new one doesn't
+			[[ $url = *_s-Sub_* && ${input#*:} != *_s-Sub_* ]] && continue
+		    fi
+		    
+		    # Compare quality
+		    # Save if this is true: old < new <= max
+		    new="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "${input#*:}")" # new quality
+		    old="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" # old quality
+		    [[ $new -lt $old || $new -gt $quality ]] && continue
+		    
+		fi
+		# Save URL
+		url="${input#*:}"
+		;;
+	    
+	esac
+    done
+    
+    # If there is an URL left when we reach EOF, play it
+    if [[ $url ]]; then
+	if [[ $cmd ]]; then
+	    echo -n | "${cmd[@]}" "$url" 1>&2
+	else
+	    echo "$url"
+	fi
+    fi
+}
+
+# A more sophisticated version of ${array[@]/pattern/string}
+# Args: sed_expression name_of_array
+array_replace()
+{
+    local expression="$1" name="$2" array
+    [[ $expression && $name ]] || error "Error in $FUNCNAME"
+
+    # Everything done to "array" will acctually be done to the array named "$name"
+    declare -n array=$name
+
+    # Run sed expression on every in array
+    for key in "${!array[@]}"; do
+	array[$key]="$(sed "$expression" <<< "${array[$key]}")"
+    done
+}
+
+load_shared_code
+
+requirement_check
+
+read_arguments --help:show_help\
+	       --lang=lang\
+	       --list-langs:lang=none\
+	       --quality=quality\
+	       --channel=channel\
+	       --no-subs:nosubtitles=1\
+	       --json:json=1\
+	       --forever:loop=1\
+	       --\
+	       "$@" || exit 1
+
+export quality lang category nosubtitles pos
+
+[[ $channel ]] || channel=OurStudio
+[[ $lang ]] || lang=E
+[[ $quality ]] || quality=720
+mainurl="http://mediator.jw.org/v1/schedules/$lang/Streaming${channel}?utcOffset=$(( $(date +%-z) * 60 / 100 ))"
+
+jwb_check_lang "$lang" || exit 1
+
+# Debug JSON
+if ((json)); then
+    download_file "$mainurl" | unsquash_file | less
+    exit
+fi
+
+[[ -z $arguments ]] && error "Not enough arguments"  # $arguemnts gets set by read_arguemnts()
+
+# If arguments have a %s, get starting position
+# Since the position is at the end, get it before parsing the whole file
+if [[ ${arguments[*]} =~ [^%](%%)*%s ]]; then
+    # Get start position (occurs only once per channel)
+    pos="$(download_file "$mainurl" | unsquash_file time | sed 's/^time:\([0-9]*\)\..*$/\1/')"
+    # In first command: replace %s with $pos
+    arguments_start=("${arguments[@]}")
+    array_replace "s/\([^%]\(%%\)*\)%s/\1$pos/g" arguments_start
+    # In the rest of commands: replace %s with 0
+    array_replace "s/\([^%]\(%%\)*\)%s/\10/g" arguments
+fi
+
+# Replace %% with % in command
+arguments=("${arguments[@]//%%/%}")
+arguments_start=("${arguments_start[@]//%%/%}")
+
+# Optional loop
+while :; do
+      download_file "$mainurl" \
+	  | unsquash_file status progressiveDownloadURL title \
+	  | parse_lines "${arguments_start[@]}" \
+	  | xargs --no-run-if-empty -- "${arguments[@]}" || error
+
+      # Loop or break?
+      ((loop)) || break
+
+      # When starting next loop, don't skip anything
+      pos=0
+
+      # Give us some time to abort if we would want that
+      sleep 1s || exit 1
+done
+
+exit 0
