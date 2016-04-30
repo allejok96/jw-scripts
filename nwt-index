@@ -12,7 +12,7 @@ load_shared_code()
 	    if source "$code"; then
 		return 0
 	    else
-		echo "Failed to load shared functions" 1&>2
+		echo "Failed to load shared functions" 1>&2
 		exit 1
 	    fi
 	fi
@@ -56,6 +56,7 @@ Modes:
                           consisting of directories and symlinks. This is
                           really only useful in combination with --download for
                           media players that cannot read m3u files, e.g. Plex.
+  urllist               Simply output a list of URLs or files to stdout.
 
 EOF
     exit
@@ -123,23 +124,37 @@ parse_lines()
     done
 }
 
-# Download the language list and make it readable
-# CAVEATS
-# - "name" must be the first variable in the language list
-lang_list()
+check_lang()
 {
-    echo "Languages:"
-    # 1. Download the list
-    # 2. Replace commas with newlines
-    # 3. Replace "CODE":{"name":"LANG" with CODE:LANG
-    # 4. Sort it
-    # 5. Make a nice list with columns
-    download_file "$langurl" \
-        | sed 's/,/\n/g' \
-        | sed -n 's/.*"\([^"]*\)":{"name":"\([^"]*\)"/\1:\2/p' \
-        | sort \
-        | column -t -s :
-    exit
+    [[ $1 ]] || error "Error in $FUNCNAME"
+    
+    [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
+    # Don't make more checks
+    export NOCHECKLANG=1
+
+    local langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
+    
+    # Try to find the language code in the text
+    if download_file "$langurl" | grep -q "\"$1\":{\"name\":" ; then
+	return 0
+    else
+	# Download the language list and make it readable
+	# CAVEATS
+	# - "name" must be the first variable in the language list
+	echo "Languages:"
+	# 1. Download the list
+	# 2. Replace commas with newlines
+	# 3. Replace "CODE":{"name":"LANG" with CODE:LANG
+	# 4. Sort it
+	# 5. Make a nice list with columns
+	download_file "$langurl" \
+            | sed 's/,/\n/g' \
+            | sed -n 's/.*"\([^"]*\)":{"name":"\([^"]*\)"/\1:\2/p' \
+            | sort \
+            | column -t -s :
+	
+	return 1
+    fi
 }
 
 load_shared_code
@@ -169,10 +184,9 @@ export lang maincode bible maxrate download mode
 [[ $datadir ]] || datadir="${arguments[0]:-.}"
 [[ $maxrate = 0 ]] && unset maxrate
 [[ $maincode ]] || maincode=0
-langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
 mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$maincode&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
 
-[[ $mode =~ ^(m3u|m3ucompat|filesystem)$ ]] || error "$mode: Unknown mode"
+[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist)$ ]] || error "$mode: Unknown mode"
 
 # Pad code to 2 digits
 # $(( 10#n )) makes sure that n isn't read as an octal
@@ -185,7 +199,7 @@ if ! ((child)); then
     # Do we have all we need?
     requirement_check
     # Check that lang is valid
-    check_lang "$lang" "$langurl" "\"$lang\":{\"name\":" || lang_list
+    check_lang "$lang"
     # Check datadir
     [[ -d $datadir ]] || error "$datadir: Destination directory does not exist"
     # Make path absolute
