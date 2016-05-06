@@ -2,61 +2,31 @@
 
 ### JW Broadcasting and bible sound recordings anywhere
 
-With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream bible recordings from [jw.org](http://www.jw.org) to your phone or via Kodi.
+With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream bible recordings from [jw.org](http://www.jw.org) to your phone or via Kodi. You can turn a Raspberry Pi into a JW [streaming](http://tv.jw.org/#en/live/StreamingOurStudio) machine, either playing the online stream, or an offline version.
 
-A script for JW Broadcasting [live streaming](http://tv.jw.org/#en/live) is also in the works...
+[Here's](https://github.com/allejok96/jw-scripts/wiki/Installation) how you install them. Click the links below for more help on each script.
 
-## Usage
-This is just examples. See `--help` for more info.
-```sh
-# Install the scripts system wide (optional)
-sudo ./install.sh
+#### [jwb-index](https://github.com/allejok96/jw-scripts/wiki/jwb-index)
 
-# For a phone or any media player (playlists)
-# Make playlists of all bible books
-nwt-index --mode=m3ucompat
+Index the videos at tv.jw.org and save the links in playlists, or download the videos. Can be used to access JW Broadcasting in Kodi or add the videos to your Plex library.
 
-# For Kodi (playlist hierarchy)
-# Index all Swedish videos
-jwb-index --mode=m3u --lang=Z ~/Videos/JWB
+#### [jwb-stream](https://github.com/allejok96/jw-scripts/wiki/jwb-stream)
 
-# For Plex (download to directories)
-# Download all videos in medium quality
-jwb-index --mode=filesystem --download --quality=480 ~/Videos/JWB
+Play one of the "streaming channels" at tv.jw.org in a media player.
 
-# Make a quick update (Kodi)
-jwb-index --mode=m3u --latest ~/Videos/JWB
+#### [jwb-rpi](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi)
 
-```
+Create an "offline" streaming channel, playing videos 24-7. Download new videos from tv.jw.org regulary and delete old videos when disk is full.
+
+#### [nwt-index](https://github.com/allejok96/jw-scripts/wiki/nwt-index)
+
+Create playlists of the sound recordings of the New World Translation of the Holy Scriptures. You can put the playlists in your smartphone, Kodi library, or open them by any media player. Can also download all recordings.
+
 ## Questions
-
-#### How do I use this with Kodi?
-
-1. Run the script on your Linux rig.
-2. This will create a playlist called "Video on Demand.m3u".
-3. Add the directory as a source in Kodi.
-4. Open the playlist.
-
-#### How do I use this with Plex?
-
-1. Run the script with the `--download` and `--mode=filesystem` flags.
-2. This will create a link to a directory called "Video on Demand".
-3. Add the link as a library in Plex, choose the type "Home Videos".
-
-#### How do I use this with my phone or other device?
-
-1. Run the script with the `--mode=m3ucompat` flag on your computer.
-2. This will create a bunch of playlists.
-3. Copy all playlists to you device.
-4. Open a playlist with your media player of choice.
 
 #### Isn't there an easier way to watch JW Broadcasting on Kodi?
 
 YES. There is. Please take a look at this [unofficial JW Broadcasting add-on](http://ca0abinary.github.io/plugin.video.jwtv-unofficial/).
-
-#### *Must* I download the videos if I have Plex?
-
-Yes. It seems like Plex won't stream files directly from the internet, nor read playlists. If I'm wrong, please [correct](https://github.com/allejok96/jw-scripts/issues) me.
 
 #### Why is the video download so slow?
 
@@ -64,19 +34,11 @@ It seems to be realated to the `--limit-rate` flag (see `--help`).
 
 *But please, somebody think of the servers!* :-)
 
-#### How does this work?
-
-The script downloads JSON files supplied by jw.org and mediator.jw.org. It then sorts out the titles and video links, optionally downloads them, and saves them in m3u playlists or creates a directory structure with symlinks.
-
-When downloading media, existing files won't be overwritten. If a file gets corrupted, you must delete it manually before the script downloads a new version.
-
-And yes, I know parsing JSON could be done a thousand times simpler in any programming/scripting language like Python, but unfortunately I only know bash.
-
 #### Is this a violation of the ToS?
 
 The [ToS](http://www.jw.org/en/terms-of-use/) states that *"free, non-commercial applications designed to download electronic files"* is allowed. So it's seems OK.
 
-It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text files instead of HTML. (Oh, and nowdays it can download the media files too!)
+It's also worth mentioning that these scripts practically does the same thing as the JavaScripts that run when you visit the jw.org website. The only difference is that these bash scripts are more inefficient, and generates text files instead of HTML. (Oh, and they can download the media files too!)
 
 #### I want this to do XYZ! But it don't!
 
