@@ -13,4 +13,6 @@ fi
 install -d /usr/local/bin /usr/local/lib/jw-scripts
 install -m 755 ./jwb-index /usr/local/bin/jwb-index
 install -m 755 ./nwt-index /usr/local/bin/nwt-index
+install -m 755 ./jwb-stream /usr/local/bin/jwb-stream
+install -m 755 ./jwb-rpi /usr/local/bin/jwb-rpi
 install -m 644 ./shared-functions /usr/local/lib/jw-scripts/shared-functions
