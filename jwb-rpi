@@ -14,6 +14,8 @@
 # Options #
 ###########
 
+# If you want to change the video player, look at the end of the script!
+
 # Path to the jwb-index script
 # (No need to change if installed system wide)
 jwb_script=jwb-index
@@ -140,9 +142,9 @@ dir_monitor()
 	# Include "keep" videos (see below)
 	skipkeep=0
 	
-        if [[ $keep_categories ]]; then
+        if [[ $keep_categories && -e $list_keep ]]; then
             # Get total size of all "keep" videos
-            size_keep="$(xargs -d '\n' du -s < "$list_keep" \
+            size_keep="$(xargs -rd '\n' du -s < "$list_keep" \
                            | egrep -o '^[0-9]+' \
                            | while read; do n="$((n+REPLY))"; echo "$n"; done \
                            | tail -n 1)"
@@ -151,7 +153,9 @@ dir_monitor()
 
 	    # If "latest" videos are too big, skip "keep" videos
 	    [[ $size_latest -gt $min_size_latest ]] && skipkeep=1
-        fi
+        else
+	    skipkeep=1
+	fi
 
 	# Print reversed file list sorted by size (biggest first)
         ls -1cr "$dir_videos" | while read file; do
@@ -202,7 +206,7 @@ add_to_list()
     while read -r; do
 	for list in "$@"; do
 	    file="$(basename "$REPLY")"
-            grep -q "^$file$" "$list" || echo "$file" >> "$list"
+            [[ -e $list ]] && grep -q "^$file$" "$list" || echo "$file" >> "$list"
 	done
     done
 }
@@ -211,7 +215,10 @@ add_to_list()
 remove_from_lists()
 {
     # Remove a line from the files
-    sed -i "/^$(basename "$1")$/d" "$list_videos" "$list_history"
+    for list in "$list_videos" "$list_history"; do
+	[[ ! -e $list ]] && continue
+	sed -i "/^$(basename "$1")$/d" "$list"
+    done
 }
 
 get_video()
@@ -228,7 +235,7 @@ get_video()
             continue
         fi
         # Skip recently played
-        grep -q "^$vid$" "$list_history" && continue
+        [[ -e $list_history ]] && grep -q "^$vid$" "$list_history" && continue
         # Print it and exit
         printf '%s' "$dir_videos/$vid"
 	return 0
@@ -246,10 +253,10 @@ save_pos()
 
 ((unconfigured)) && show_help
 
-type ${jwb_script:
+type "$jwb_script" &>/dev/null || { echo "$jwb_script not in path"; exit 1; }
 
 # Save play position and kill subprocesses when exiting
-trap 'trap - SIGTERM; save_pos; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
+trap 'save_pos; trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
 
 first_time=0
 case "$1" in
@@ -302,10 +309,12 @@ unset vidmsg netmsg
 # Play videos forever
 while sleep 1s; do
 
-    # Only keep 75% of videos in the history
-    # Do this first so we never get stuck in next step
-    tail -n $(( $(wc -l < "$list_videos") * 3/4 )) "$list_history" > "$list_history.new"
-    mv "$list_history.new" "$list_history"
+    if [[ -e $list_videos && -e $list_history ]]; then
+	# Only keep 75% of videos in the history
+	# Do this first so we never get stuck in next step
+	tail -n $(( $(wc -l < "$list_videos") * 3/4 )) "$list_history" > "$list_history.new"
+	mv "$list_history.new" "$list_history"
+    fi
     
     # Get new video
     [[ $video ]] || video="$(get_video)"
@@ -328,6 +337,7 @@ while sleep 1s; do
 
     ######################################################
     # If you want to change the video player, look here! #
+    # $pos = seconds to skip                             #
     ######################################################
 
     omxplayer --pos "${pos:-0}" "$video" &>/dev/null
