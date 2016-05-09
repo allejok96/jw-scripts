@@ -2,7 +2,7 @@
 
 ### JW Broadcasting and bible sound recordings anywhere
 
-With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream bible recordings from [jw.org](http://www.jw.org) to your phone or via Kodi. You can turn a Raspberry Pi into a JW [streaming](http://tv.jw.org/#en/live/StreamingOurStudio) machine, either playing the online stream, or an offline version.
+With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of the [New World Translation](https://www.jw.org/en/publications/bible/nwt/books/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine, either playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline.
 
 [Here](https://github.com/allejok96/jw-scripts/wiki/Installation) is how to install, and the requirements.
 
@@ -32,7 +32,7 @@ YES. There is. Please take a look at this [unofficial JW Broadcasting add-on](ht
 
 #### Why is the video download so slow?
 
-It seems to be realated to the `--limit-rate` flag ([why?](https://github.com/allejok96/jw-scripts/wiki/How-it-works#is-it-legal)). 
+It seems to be realated to the `--limit-rate` flag ([why?](https://github.com/allejok96/jw-scripts/wiki/How-it-works#batch-downloading)). 
 
 *But please, somebody think of the servers!* :-)
 
