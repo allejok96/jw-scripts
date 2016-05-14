@@ -352,11 +352,15 @@ requirement_check()
         fi
     fi
 
+    for cmd in "$@"; do
+	type $cmd &>/dev/null || error "This script requires the \"$cmd\" command"
+    done
+    
     sed --version | egrep -q "GNU sed" || cat <<EOF 1>&2
 Warning:
 This script is build for and tested only with GNU sed.
 It looks like you are using a different version of sed,
-so I canot guarrantee that it will work for you.
+so I cannot guarrantee that it will work.
 Just saying :)
 
 EOF
