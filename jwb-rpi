@@ -56,6 +56,12 @@ update_timeout=3h
 limit_rate=1M
 limit_rate_first_time=4M
 
+# Extra options for omxplayer
+# Raise volume
+#omx_options+=(--vol 600)
+# Tweak image
+#omx_options+=(--win 0,0,720,576 --aspect-mode letterbox)
+
 #################################################################
 # The following options has no effect until max_size is reached #
 #################################################################
@@ -206,6 +212,8 @@ download_videos()
 	"${latest_flags[@]}" \
 	"$dir_videos" \
 	| add_to_list "$list_videos"
+
+    ((first_time)) && echo "download complete" 1>&2
 }
 
 # FILE
@@ -271,11 +279,14 @@ first_time=0
 case "$1" in
     --help)
         show_help
-    ;;
+	;;
     --firsttime)
         first_time=1
 	limit_rate=$limit_rate_first_time
-    ;;
+	;;
+    *)
+	error "$1: unknown argument"
+	;;
 esac
 
 dir="$(realpath "$dir")"
@@ -349,7 +360,7 @@ while sleep 1s; do
     # $pos = seconds to skip                             #
     ######################################################
 
-    omxplayer --pos "${pos:-0}" "$video" &>/dev/null
+    omxplayer --pos "${pos:-0}" "${omx_options[@]}" "$video" &>/dev/null
     
     # Add video to history
     add_to_list "$list_history" <<< "$video"
