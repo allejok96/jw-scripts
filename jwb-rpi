@@ -184,6 +184,7 @@ download_videos()
 	    --mode=urllist \
 	    ${first_time:+--download} \
 	    --limit-rate="$limit_rate" \
+	    --quiet \
 	    "$dir_videos"
     done | add_to_list "$list_keep" "$list_videos"
 
@@ -195,6 +196,7 @@ download_videos()
 	--download \
 	--mode=urllist \
 	--limit-rate="$limit_rate" \
+	--quiet \
 	"$dir_videos" \
 	| add_to_list "$list_videos"
 }

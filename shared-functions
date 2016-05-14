@@ -182,7 +182,7 @@ write_media()
     if ((download)); then
         if [[ ! -e $datadir/$file ]]; then
 	    [[ -d $datadir ]] || mkdir -p "$datadir" || error "$datadir:  Failed to create directory"
-            echo "Downloading: $file" 1>&2
+            ((quiet)) || echo "Downloading: $file" 1>&2
             download_file "$link" > "$datadir/$file"
         fi
     fi

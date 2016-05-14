@@ -225,10 +225,11 @@ read_arguments --help:show_help \
 	       --mode=mode \
 	       --limit-rate=maxrate \
 	       --clean:clean=1 \
+	       --quiet:quiet=1 \
                -- \
                "$@" || exit 1
 
-export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile
+export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
@@ -270,9 +271,10 @@ if ! ((child)); then
 fi
 
 # Write to the history file
-# and show a message with our progress at the same time
+# and show a message with our progress
 [[ $histfile ]] || error "histfile: Variable empty, this should not happen"
-echo "$maincode" | tee -a "$histfile" 1>&2 || error "$histfile: Failed to write to temp file"
+echo "$maincode" >> "$histfile" || error "$histfile: Failed to write to temp file"
+((quiet)) || echo "$maincode" 1>&2
 
 # Debug JSON
 if ((json)); then
