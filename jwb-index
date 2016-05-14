@@ -42,7 +42,8 @@ Index the videos at tv.jw.org
 Advanced options:
   --limit-rate RATE     Maximum download rate for videos, default is
                           500k (500 kilobytes per second), 0 disables limit
-  --category CODENAME   JSON file to download. Default: VideoOnDemand
+  --category CODENAMES  Comma separated list of categories to index. Default:
+                          VideoOnDemand
   --no-recursive        Don't automatically download more categories
   --json                Don't parse the JSON file, just show it (debug)
 
@@ -241,7 +242,12 @@ export lang maincode nosubtitles quality download norecursive maxrate mode lates
 [[ $lang ]] || lang=E
 [[ $maxrate = 0 ]] && unset maxrate
 datadir="${arguments[0]:-.}"
-mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
+
+# Debug JSON
+if ((json)); then
+    download_file "$mainurl" | unsquash_file | less
+    exit
+fi
 
 [[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist)$ ]] || error "$mode: Unknown mode"
 
@@ -249,7 +255,7 @@ mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
 # or that's only needed once
 if ! ((child)); then
     # Do we have all we need?
-    requirement_check
+    requirement_check realpath mktemp
     # Check that lang is valid
     jwb_check_lang "$lang" || exit 1
     # Check datadir
@@ -271,21 +277,25 @@ if ! ((child)); then
     fi
 fi
 
-# Write to the history file
-# and show a message with our progress
-[[ $histfile ]] || error "histfile: Variable empty, this should not happen"
-echo "$maincode" >> "$histfile" || error "$histfile: Failed to write to temp file"
-((quiet)) || echo "$maincode" 1>&2
+# Split codes where commas are
+OLDIFS="$IFS"
+IFS=,
+maincodes=($maincode)
+IFS="$OLDIFS"
 
-# Debug JSON
-if ((json)); then
-    download_file "$mainurl" | unsquash_file | less
-    exit
-fi
+for maincode in "${maincodes[@]}"; do
+    
+    mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
+    
+    # Write to the history file
+    # and show a message with our progress
+    [[ $histfile ]] || error "histfile: Variable empty, this should not happen"
+    echo "$maincode" >> "$histfile" || error "$histfile: Failed to write to temp file"
+    ((quiet)) || echo "$maincode" 1>&2
 
-# Download and parse the JSON file
-download_file "$mainurl" \
-    | unsquash_file status key name title progressiveDownloadURL parentCategory primaryCategory checksum \
-    | parse_lines
+    # Download and parse the JSON file
+    download_file "$mainurl" \
+	| unsquash_file status key name title progressiveDownloadURL parentCategory primaryCategory checksum \
+	| parse_lines
 
-
+done
