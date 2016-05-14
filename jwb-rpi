@@ -103,7 +103,7 @@ msg()
     # Put a figlet thing here if you want #
     #######################################
     
-    echo "$*" 1>&2
+    echo "$*"
 }
 
 show_help()
@@ -260,7 +260,7 @@ save_pos()
     fi
 }
 
-((unconfigured)) && show_help
+((unconfigured)) || [[ $1 = --help ]] && show_help
 
 type "$jwb_script" &>/dev/null || { echo "$jwb_script not in path"; exit 1; }
 
@@ -295,7 +295,7 @@ min_size_latest="$(computer_readable "$min_size_latest")"
 
 # Download videos (background)
 while :; do
-    download_videos 2>&1
+    download_videos
     sleep $update_timeout || break # sleep at end, so download start immediately
 done &
 
@@ -318,6 +318,8 @@ unset vidmsg netmsg
 # Play videos forever
 while sleep 1s; do
 
+    clear
+    
     if [[ -e $list_videos && -e $list_history ]]; then
 	# Only keep 75% of videos in the history
 	# Do this first so we never get stuck in next step
@@ -331,11 +333,9 @@ while sleep 1s; do
     # No videos, network problems? Show message
     if [[ -z $video ]]; then
         if ping -c 3 tv.jw.org &>/dev/null; then
-            ((vidmsg)) || msg "$no_videos_msg"
-	    vidmsg=1 # don't show again
+            msg "$no_videos_msg"
         else
-            ((netmsg)) || msg "$no_network_msg"
-	    netmsg=1 # don't show again
+            msg "$no_network_msg"
         fi
         sleep 10s
 	continue # try again
