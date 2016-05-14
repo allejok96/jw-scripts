@@ -18,7 +18,9 @@ Play one of the "streaming channels" at tv.jw.org in a media player.
 
 #### [jwb-rpi](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi)
 
-Create an "offline" streaming channel, playing videos 24-7. Download new videos from tv.jw.org regulary and delete old videos when disk is full. [Here](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi#installation-and-preparation) is a Rapberry Pi how-to.
+Create an "offline" streaming channel, playing videos 24-7. Download new videos from tv.jw.org regulary and delete old videos when disk is full.
+
+[Raspberry Pi how-to](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi#installation-and-preparation)
 
 #### [nwt-index](https://github.com/allejok96/jw-scripts/wiki/nwt-index)
 
