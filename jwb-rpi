@@ -175,6 +175,14 @@ dir_monitor()
 
 download_videos()
 {
+    if ((first_time)); then
+	keep_flags=(--download)
+	latest_flags=()
+    else
+	keep_flags=(--quiet)
+	latest_flags=(--quiet)
+    fi
+    
    # Print videos from "keep" categories to list_keep (optionally download them)
     for c in "${keep_categories[@]}"; do
         "$jwb_script" \
@@ -182,9 +190,8 @@ download_videos()
 	    --lang "$lang" \
 	    --quality "$quality" \
 	    --mode=urllist \
-	    ${first_time:+--download} \
 	    --limit-rate="$limit_rate" \
-	    --quiet \
+	    "${keep_flags[@]}" \
 	    "$dir_videos"
     done | add_to_list "$list_keep" "$list_videos"
 
@@ -196,7 +203,7 @@ download_videos()
 	--download \
 	--mode=urllist \
 	--limit-rate="$limit_rate" \
-	--quiet \
+	"${latest_flags[@]}" \
 	"$dir_videos" \
 	| add_to_list "$list_videos"
 }
