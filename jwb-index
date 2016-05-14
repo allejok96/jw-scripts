@@ -36,6 +36,7 @@ Index the videos at tv.jw.org
   --mode MODE           The format in which files are saved (see Modes)
   --download            Make videos available offline
   --clean               Clean out all old files except downloaded videos
+  --quiet               Only show errors
   DIRECTORY             Directory to save the playlists or videos in
 
 Advanced options:
