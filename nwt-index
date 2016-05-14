@@ -157,6 +157,8 @@ check_lang()
     fi
 }
 
+[[ $1 = --help ]] && show_help
+
 load_shared_code
 
 read_arguments --help:show_help \
@@ -197,7 +199,7 @@ maincode="$(printf '%02d' "$(( 10#$maincode ))")"
 # or that's only needed once
 if ! ((child)); then
     # Do we have all we need?
-    requirement_check
+    requirement_check realpath
     # Check that lang is valid
     check_lang "$lang"
     # Check datadir

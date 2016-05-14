@@ -171,9 +171,11 @@ array_replace()
     done
 }
 
+[[ $1 = --help ]] && show_help
+
 load_shared_code
 
-requirement_check
+requirement_check xargs
 
 read_arguments --help:show_help\
 	       --lang=lang\
