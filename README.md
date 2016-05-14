@@ -20,6 +20,8 @@ Play one of the "streaming channels" at tv.jw.org in a media player.
 
 Create an "offline" streaming channel, playing videos 24-7. Download new videos from tv.jw.org regulary and delete old videos when disk is full.
 
+[Raspberry Pi how-to](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi#installation-and-preparation)
+
 #### [nwt-index](https://github.com/allejok96/jw-scripts/wiki/nwt-index)
 
 Create playlists of the sound recordings of the New World Translation of the Holy Scriptures. You can put the playlists in your smartphone, Kodi library, or open them by any media player. Can also download all recordings.
