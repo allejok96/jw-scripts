@@ -343,11 +343,13 @@ requirement_check()
 {
     type sed &>/dev/null || error "This script requires GNU sed"
 
-    if type curl &>/dev/null; then
-        export hascurl=1
-    else
-        type wget &>/dev/null || error "This script requires curl or wget"
-        export hascurl=0
+    if [[ -z $hascurl ]]; then
+        if type curl &>/dev/null; then
+            export hascurl=1
+        else
+            type wget &>/dev/null || error "This script requires curl or wget"
+            export hascurl=0
+        fi
     fi
 
     sed --version | egrep -q "GNU sed" || cat <<EOF 1>&2
