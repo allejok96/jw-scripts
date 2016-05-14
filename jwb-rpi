@@ -182,8 +182,8 @@ dir_monitor()
 download_videos()
 {
     if ((first_time)); then
-	keep_flags=(--download)
-	latest_flags=()
+	keep_flags=(--download --no-checksum)
+	latest_flags=(--no-checksum)
     else
 	keep_flags=(--quiet)
 	latest_flags=(--quiet)

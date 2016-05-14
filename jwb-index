@@ -45,6 +45,7 @@ Advanced options:
   --category CODENAMES  Comma separated list of categories to index. Default:
                           VideoOnDemand
   --no-recursive        Don't automatically download more categories
+  --no-checksum         Don't check video files
   --json                Don't parse the JSON file, just show it (debug)
 
 Modes:
@@ -175,6 +176,7 @@ parse_lines()
                 ;;
 
 	    checksum:*)
+		((nomd5)) && continue
 		((savenextsum)) && savenextsum=0 && checksum="${input#*:}"
 		;;
 
@@ -228,10 +230,11 @@ read_arguments --help:show_help \
 	       --limit-rate=maxrate \
 	       --clean:clean=1 \
 	       --quiet:quiet=1 \
+	       --no-checksum:nomd5=1 \
                -- \
                "$@" || exit 1
 
-export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet
+export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet nomd5
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
