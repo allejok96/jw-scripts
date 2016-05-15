@@ -3,48 +3,45 @@
 # jwb-rpi
 #
 # Hi there!
-# Please don't screw up these options by doing some funny stuff like putting
-# letters where there shouldn't be, or using newlines in names (and try to avoid
-# spaces too), or leaving options empty. This script isn't written in a way that
-# will check for, or correct misstakes, and I take no responsibility if your
-# computer catches on fire or kittens die.
+# Please don't screw up these options by setting them to invalid values.
+# This script isn't written in a way that will check for, or correct misstakes,
+# and I take no responsibility if your computer catches on fire or kittens die.
 # /Alex
 
 ###########
 # Options #
 ###########
 
-# If you want to change the video player, look at the end of the script!
+
+# Read trough the options, then comment this out
+unconfigured=1
+
 
 # Path to the jwb-index script
 # (No need to change if installed system wide)
 jwb_script=jwb-index
 
 # Path to shared-functions for jwb-index
-# (Only need to be set if not installed system wide, and not located in working dir)
+# (Only need to be set if not installed system wide)
 #export SHARED=
 
 # Language code (see jwb-index --lang)
 lang=E
 
 # Directory to save videos and related stuff in
-# DON'T SAVE OTHER THINGS HERE, as they risk being deleted automatically
 dir=~/JWB
 
 # Maximum quality of videos
-# The size in MB per hour is approximaly the same as the quality +/- 20MB.
+# Quality = MB/h +/- 20MB
 # The more motion in the video the bigger file.
-# Available qualities: 240, 360, 480, 720
+# Available values: 240, 360, 480, 720
 quality=480
 
 # Maximum size limit of video directory
-# When the limit is reached, old videos will start to be deleted. Note that this
-# is no hard limit, and WILL be exceeded since the size is only checked every
-# size_timeout seconds
+# Set this lower then the available disk space, since check is only
+# done every 30 seconds.
+# When limit is exceeded, old videos will be deleted.
 max_size=25G
-
-# Time between the size checks
-size_timeout=30s
 
 # Time between checking for videos online
 update_timeout=3h
@@ -56,15 +53,21 @@ update_timeout=3h
 limit_rate=1M
 limit_rate_first_time=4M
 
+# Don't check video files --firsttime
+# Use this if you have a slow computer, like the Pi v1
+#no_checksum=1
+
 # Extra options for omxplayer
 # Raise volume
 #omx_options+=(--vol 600)
-# Tweak image
-#omx_options+=(--win 0,0,720,576 --aspect-mode letterbox)
+# Tweak image position (x,y,x,y)
+#omx_options+=(--win 0,0,720,576)
+#omx_options+=(--aspect-mode letterbox)
 
-#################################################################
-# The following options has no effect until max_size is reached #
-#################################################################
+# Workaround for HTTPS cert bug in Debian
+# which causes downloads of videos to fail
+# (ca-certificates 20141019+deb8u1)
+#export hascurl=0
 
 # Categories of videos to keep longer (see the output of jwb-index)
 # These categories should be the ones you prefer to watch - and to give your
@@ -73,43 +76,20 @@ limit_rate_first_time=4M
 keep_categories=(VODStudio VODProgramsEvents VODIntExp VODOriginalSongs)
 
 # Size reserved for "latest" videos
-# These are the videos that aren't in keep_categories.
-# They are the first to be deleted when max_size is exceeded.
-# But when their size drops below min_size_latest the deletion process will
-# start to affect ALL videos. If keep_categories is empty, this has no effect
+# When old videos get deleted, videos in keep_categories will usually be
+# kept, and OTHER videos deleted. But when the OTHER videos drops below
+# this threshold, videos in keep_categories get deleted too.
 min_size_latest=5G
-
-# Message strings (translate them if you want)
-no_network_msg="Seems to be no network connection, cannot download videos"
-no_videos_msg="Please wait while videos are downloading"
-
-
-
-# Now when you have read through these options, you can comment out the line
-# below, and run the script
-unconfigured=1
-
 
 ##################
 # End of options #
 ##################
 
 
-# MESSAGE
 error()
 {
     echo "$*" 1>&2
     exit 1
-}
-
-# MESSAGE
-msg()
-{
-    #######################################
-    # Put a figlet thing here if you want #
-    #######################################
-    
-    echo "$*"
 }
 
 show_help()
@@ -119,7 +99,7 @@ Usage: jwb-rpi [--firsttime]
 Download videos from tv.jw.org and play randomly forever
 
   --firsttime   Download all videos from the selected categories
-                not just the latest ones
+                not just the latest ones, then exit
 
 You will have to edit this script and tweak the configuration
 to your liking, then comment out "unconfigured=1" before you
@@ -182,8 +162,11 @@ dir_monitor()
 download_videos()
 {
     if ((first_time)); then
-	keep_flags=(--download --no-checksum)
-	latest_flags=(--no-checksum)
+	keep_flags+=(--download)
+	if ((no_checksum)); then
+	    latest_flags+=(--no-checksum)
+	    keep_flags+=(--no-checksum)
+	fi
     else
 	keep_flags=(--quiet)
 	latest_flags=(--quiet)
@@ -268,69 +251,8 @@ save_pos()
     fi
 }
 
-((unconfigured)) || [[ $1 = --help ]] && show_help
-
-type "$jwb_script" &>/dev/null || { echo "$jwb_script not in path"; exit 1; }
-
-# Save play position and kill subprocesses when exiting
-trap 'save_pos; trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
-
-first_time=0
-case "$1" in
-    --help)
-        show_help
-	;;
-    --firsttime)
-        first_time=1
-	limit_rate=$limit_rate_first_time
-	;;
-    *)
-	error "$1: unknown argument"
-	;;
-esac
-
-dir="$(realpath "$dir")"
-dir_videos="$dir/videos"
-list_now_playing="$dir/now_playing"
-# These lists should only contain basenames of files, separated by newline
-list_history="$dir/history.list"
-list_keep="$dir/keep.list"
-list_videos="$dir/videos.list"
-
-# Convert size units to bytes
-max_size="$(computer_readable "$max_size")"
-min_size_latest="$(computer_readable "$min_size_latest")"
-
-# Create dir
-[[ ! -e "$dir_videos" ]] && mkdir -p "$dir_videos"
-
-# Download videos (background)
-while :; do
-    download_videos
-    sleep $update_timeout || break # sleep at end, so download start immediately
-done &
-
-# Remove old videos when dirs get full (background)
-while sleep $size_timeout; do
-    dir_monitor
-done &
-
-# Load last playing video and position
-if [[ -s "$list_now_playing" ]]; then
-    read -d '' video pos < "$list_now_playing" # returns an error but works
-    rm -f "$list_now_playing"
-    # Back up 30 sec
-    pos=$((pos-30))
-    [[ $pos -lt 0 ]] && pos=0
-fi
-
-unset vidmsg netmsg
-
-# Play videos forever
-while sleep 1s; do
-
-    clear
-    
+play_video()
+{
     if [[ -e $list_videos && -e $list_history ]]; then
 	# Only keep 75% of videos in the history
 	# Do this first so we never get stuck in next step
@@ -341,15 +263,12 @@ while sleep 1s; do
     # Get new video
     [[ $video ]] || video="$(get_video)"
 
-    # No videos, network problems? Show message
+    # No videos? Show message
     if [[ -z $video ]]; then
-        if ping -c 3 tv.jw.org &>/dev/null; then
-            msg "$no_videos_msg"
-        else
-            msg "$no_network_msg"
-        fi
+        ((vidmsg)) || echo "no videos to play yet" 1>&2
+	vidmsg=1
         sleep 10s
-	continue # try again
+	continue
     fi
 
     # Play video
@@ -367,5 +286,89 @@ while sleep 1s; do
     
     # Forget video and position so we don't replay it next loop
     unset video pos pos_start
-    
-done
+}
+
+# Help?
+((unconfigured)) || [[ $1 = --help ]] && show_help
+
+# Is jwb-index installed?
+type "$jwb_script" &>/dev/null || { echo "$jwb_script not in path" 1>&2; exit 1; }
+
+# Save play position and kill subprocesses when exiting
+trap 'save_pos; trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
+
+# Default values
+[[ $jwb_script ]] || jwb_script=jwb-index
+[[ $lang ]] || lang=E
+[[ $dir ]] || dir=~/JWB
+[[ $quality ]] || quality=480
+[[ $max_size ]] || max_size=25G
+[[ $update_timeout ]] || update_timeout=3h
+[[ $limit_rate ]] || limit_rate=1M
+[[ $limit_rate_fist_time ]] || limit_rate_first_time=4M
+[[ $min_size_latest ]] || min_size_latest=5G
+
+first_time=0
+dir="$(realpath "$dir")"
+dir_videos="$dir/videos"
+list_now_playing="$dir/now_playing"
+
+# Note: These three lists should only contain
+# basenames of files, separated by newlines
+list_history="$dir/history.list"
+list_keep="$dir/keep.list"
+list_videos="$dir/videos.list"
+
+# Convert size units to bytes
+max_size="$(computer_readable "$max_size")"
+min_size_latest="$(computer_readable "$min_size_latest")"
+
+# Arguments
+case "$1" in
+    --firsttime)
+        first_time=1
+	limit_rate=$limit_rate_first_time
+	;;
+    *)
+	error "$1: unknown argument"
+	;;
+esac
+
+# Create dir
+[[ ! -e "$dir_videos" ]] && mkdir -p "$dir_videos"
+
+# Download videos (background)
+while :; do
+    # Don't download anything until time is set right
+    # (Raspberry Pi fix)
+    [[ $(date +%Y) = 1970 ]] && sleep 1m && continue
+    download_videos
+    ((first_time)) && break
+    sleep $update_timeout || break
+done & dlpid=$!
+
+# Remove old videos when dirs get full (background)
+while sleep 30s; do
+    dir_monitor
+done & monitorpid=$!
+
+# Get last playing video and its position
+if [[ -s "$list_now_playing" ]]; then
+    read -d '' video pos < "$list_now_playing" # returns an error but works
+    rm -f "$list_now_playing"
+    # Back up 30 sec
+    pos=$((pos-30))
+    [[ $pos -lt 0 ]] && pos=0
+fi
+
+# Play videos forever (background)
+while sleep 1s; do
+    play_video
+done & playerpid=$!
+
+# Wait here until something finished
+if ((first_time)); then
+    wait $dlpid
+else
+    wait $playerpid
+fi
