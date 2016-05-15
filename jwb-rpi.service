@@ -1,0 +1,12 @@
+[Unit]
+After=network.target
+Description=JW Broadcasting player
+
+[Service]
+ExecStart=/usr/local/bin/jwb-rpi
+# Your username here
+User=pi
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
