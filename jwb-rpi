@@ -323,16 +323,13 @@ list_videos="$dir/videos.list"
 max_size="$(computer_readable "$max_size")"
 min_size_latest="$(computer_readable "$min_size_latest")"
 
-# Arguments
-case "$1" in
-    --firsttime)
-        first_time=1
-	limit_rate=$limit_rate_first_time
-	;;
-    *)
-	error "$1: unknown argument"
-	;;
-esac
+# Arguments?
+if [[ $1 = --firsttime ]]; then
+    first_time=1
+    limit_rate=$limit_rate_first_time
+elif [[ $1 ]]; then
+    error "$1: unknown argument"
+fi
 
 # Create dir
 [[ ! -e "$dir_videos" ]] && mkdir -p "$dir_videos"
