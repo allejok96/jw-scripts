@@ -1,90 +1,8 @@
 #!/bin/bash
 #
 # jwb-rpi
+# Download and play videos from tv.jw.org
 #
-# Hi there!
-# Please don't screw up these options by setting them to invalid values.
-# This script isn't written in a way that will check for, or correct misstakes,
-# and I take no responsibility if your computer catches on fire or kittens die.
-# /Alex
-
-###########
-# Options #
-###########
-
-
-# Read trough the options, then comment this out
-unconfigured=1
-
-
-# Path to the jwb-index script
-# (No need to change if installed system wide)
-jwb_script=jwb-index
-
-# Path to shared-functions for jwb-index
-# (Only need to be set if not installed system wide)
-#export SHARED=
-
-# Language code (see jwb-index --lang)
-lang=E
-
-# Directory to save videos and related stuff in
-dir=~/JWB
-
-# Maximum quality of videos
-# Quality = MB/h +/- 20MB
-# The more motion in the video the bigger file.
-# Available values: 240, 360, 480, 720
-quality=480
-
-# Maximum size limit of video directory
-# Set this lower then the available disk space, since check is only
-# done every 30 seconds.
-# When limit is exceeded, old videos will be deleted.
-max_size=25G
-
-# Time between checking for videos online
-update_timeout=3h
-
-# Regular download speed; and when using --firsttime
-# 0 disables limit
-# k = kilobyte/s
-# M = megabyte/s
-limit_rate=1M
-limit_rate_first_time=4M
-
-# Don't check video files --firsttime
-# Use this if you have a slow computer, like the Pi v1
-#no_checksum=1
-
-# Extra options for omxplayer
-# Raise volume
-#omx_options+=(--vol 600)
-# Tweak image position (x,y,x,y)
-#omx_options+=(--win 0,0,720,576)
-#omx_options+=(--aspect-mode letterbox)
-
-# Workaround for HTTPS cert bug in Debian
-# which causes downloads of videos to fail
-# (ca-certificates 20141019+deb8u1)
-#export hascurl=0
-
-# Categories of videos to keep longer (see the output of jwb-index)
-# These categories should be the ones you prefer to watch - and to give your
-# PRECIOUS disk space!
-# You can leave this empty if you don't care
-keep_categories=(VODStudio VODProgramsEvents VODIntExp VODOriginalSongs)
-
-# Size reserved for "latest" videos
-# When old videos get deleted, videos in keep_categories will usually be
-# kept, and OTHER videos deleted. But when the OTHER videos drops below
-# this threshold, videos in keep_categories get deleted too.
-min_size_latest=5G
-
-##################
-# End of options #
-##################
-
 
 error()
 {
@@ -95,15 +13,14 @@ error()
 show_help()
 {
     cat<<EOF
-Usage: jwb-rpi [--firsttime]
+Usage: jwb-rpi [--firsttime] [CONFIG FILE]
 Download videos from tv.jw.org and play randomly forever
 
   --firsttime   Download all videos from the selected categories
                 not just the latest ones, then exit
 
-You will have to edit this script and tweak the configuration
-to your liking, then comment out "unconfigured=1" before you
-can run it.
+  CONFIG FILE   Path to the configuration file, default: /etc/jwb-rpi.conf
+
 EOF
     exit
 }
@@ -122,7 +39,7 @@ dir_monitor()
     while sleep 1s; do
 
         # Break if size is below limit
-        size_total="$(du -s "$dir_videos" | egrep -o '^[0-9]+')"
+        size_total="$(du --bytes --summarize "$dir_videos" | egrep -o '^[0-9]+')"
         [[ $size_total -lt $max_size ]] && break
 
 	# Include "keep" videos (see below)
@@ -130,22 +47,23 @@ dir_monitor()
 	
         if [[ $keep_categories && -e $list_keep ]]; then
             # Get total size of all "keep" videos
-            size_keep="$(xargs -rd '\n' du -s < "$list_keep" \
-                           | egrep -o '^[0-9]+' \
-                           | while read; do n="$((n+REPLY))"; echo "$n"; done \
-                           | tail -n 1)"
+            size_keep="$(tr '\n' '\0' < "$list_keep" \
+			   | du --bytes --total --files0-from - 2>/dev/null \
+                           | tail -n1 \
+                           | egrep -o '^[0-9]+')"
             
             size_latest="$(( size_total - size_keep ))"
 
 	    # If "latest" videos are too big, skip "keep" videos
 	    [[ $size_latest -gt $min_size_latest ]] && skipkeep=1
-        else
-	    skipkeep=1
 	fi
 
-	# Print reversed file list sorted by size (biggest first)
-        ls -1cr "$dir_videos" | while read file; do
+	# Print file list sorted by size (biggest first)
+	# -c = sort by ctime
+        ls --escape --reverse -1 -c "$dir_videos" | while read file; do
 
+	    file="$dir_videos/$file"
+	    
 	    # Skip non-files (but there shouldn't be any)
             [[ ! -f $file ]] && continue
 	    
@@ -154,6 +72,9 @@ dir_monitor()
 
             # Remove file from disk and list
             rm -fv "$file" && remove_from_lists "$file"
+
+	    # Re-check disk usage
+	    break
         done
 
     done
@@ -205,7 +126,7 @@ add_to_list()
     # Add a line to file if it's not already there
     while read -r; do
 	for list in "$@"; do
-	    file="$(basename "$REPLY")"
+	    file="$(realpath --strip --canonicalize-missing "$REPLY")"
             [[ -e $list ]] && grep -q "^$file$" "$list" || echo "$file" >> "$list"
 	done
     done
@@ -217,7 +138,7 @@ remove_from_lists()
     # Remove a line from the files
     for list in "$list_videos" "$list_history"; do
 	[[ ! -e $list ]] && continue
-	sed -i "/^$(basename "$1")$/d" "$list"
+	sed -i "/^${1//\//\\/}$/d" "$list" # replace all / with \/ in $1
     done
 }
 
@@ -226,18 +147,18 @@ get_video()
     [[ -s $list_videos ]] || return 1
 
     # Get random videos
-    shuf "$list_videos" | while read vid; do
+    shuf "$list_videos" | while read -r video; do
         # Skip empty
-        [[ -z $vid ]] && continue
+        [[ -z $video ]] && continue
         # Skip non-existing
-        if [[ ! -e "$dir_videos/$vid" ]]; then
-            remove_from_lists "$vid"
+        if [[ ! -f "$video" ]]; then
+            remove_from_lists "$video"
             continue
         fi
         # Skip recently played
-        [[ -e $list_history ]] && grep -q "^$vid$" "$list_history" && continue
+        [[ -e $list_history ]] && grep -q "^$video$" "$list_history" && continue
         # Print it and exit
-        printf '%s' "$dir_videos/$vid"
+        printf '%s' "$video"
 	return 0
     done
 
@@ -253,6 +174,10 @@ save_pos()
 
 play_video()
 {
+    # Save video position when exiting
+    # (needed here as this runs in a subshell)
+    trap 'save_pos; exit' EXIT
+    
     if [[ -e $list_videos && -e $list_history ]]; then
 	# Only keep 75% of videos in the history
 	# Do this first so we never get stuck in next step
@@ -268,18 +193,12 @@ play_video()
         ((vidmsg)) || echo "no videos to play yet" 1>&2
 	vidmsg=1
         sleep 10s
-	continue
+	return 0
     fi
 
     # Play video
     pos_start="$(date +%s)"
-
-    ######################################################
-    # If you want to change the video player, look here! #
-    # $pos = seconds to skip                             #
-    ######################################################
-
-    omxplayer --pos "${pos:-0}" "${omx_options[@]}" "$video" &>/dev/null
+    video_player "$video" "${pos:-0}" &>/dev/null
     
     # Add video to history
     add_to_list "$list_history" <<< "$video"
@@ -288,14 +207,46 @@ play_video()
     unset video pos pos_start
 }
 
-# Help?
-((unconfigured)) || [[ $1 = --help ]] && show_help
+# FILE SECONDS
+video_player()
+{
+    omxplayer "${player_options[@]}" --pos "$2" "$1"
+}
 
-# Is jwb-index installed?
-type "$jwb_script" &>/dev/null || { echo "$jwb_script not in path" 1>&2; exit 1; }
+# Arguments
+for arg in "$@"; do
+    case "$arg" in
+	--help)		show_help				;;
+	--firsttime)	first_time=1
+			limit_rate=$limit_rate_first_time	;;
+	--*)		error "$arg: unknown argument"		;;
+	*)		conf="$arg"				;;
+    esac
+done
 
-# Save play position and kill subprocesses when exiting
-trap 'save_pos; trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
+# Required commands
+for cmd in $jwb_script sed realpath xargs; do
+    type "$cmd" &>/dev/null || { echo "$cmd not in path" 1>&2; exit 1; }
+done
+
+# Read configuration
+if [[ $conf ]]; then
+    [[ ! -f "$conf" ]] && error "$conf: file not found"
+else
+    conf=/etc/jwb-rpi.conf
+fi
+
+if [[ -e "$conf" ]]; then
+    source "$conf" || error "$conf: failed to load configuration"
+else
+    echo "$conf not found, using default configuration" 1>&2
+fi
+
+((unconfigured)) && error "Please read through and edit $conf as you like, and the comment out the line:
+unconfigured=1"
+
+# Kill subprocesses when exiting
+trap 'trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
 
 # Default values
 [[ $jwb_script ]] || jwb_script=jwb-index
@@ -305,16 +256,12 @@ trap 'save_pos; trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
 [[ $max_size ]] || max_size=25G
 [[ $update_timeout ]] || update_timeout=3h
 [[ $limit_rate ]] || limit_rate=1M
-[[ $limit_rate_fist_time ]] || limit_rate_first_time=4M
+[[ $limit_rate_first_time ]] || limit_rate_first_time=4M
 [[ $min_size_latest ]] || min_size_latest=5G
 
-first_time=0
-dir="$(realpath "$dir")"
+dir="$(realpath --canonicalize-missing "$dir")"
 dir_videos="$dir/videos"
 list_now_playing="$dir/now_playing"
-
-# Note: These three lists should only contain
-# basenames of files, separated by newlines
 list_history="$dir/history.list"
 list_keep="$dir/keep.list"
 list_videos="$dir/videos.list"
@@ -322,14 +269,6 @@ list_videos="$dir/videos.list"
 # Convert size units to bytes
 max_size="$(computer_readable "$max_size")"
 min_size_latest="$(computer_readable "$min_size_latest")"
-
-# Arguments?
-if [[ $1 = --firsttime ]]; then
-    first_time=1
-    limit_rate=$limit_rate_first_time
-elif [[ $1 ]]; then
-    error "$1: unknown argument"
-fi
 
 # Create dir
 [[ ! -e "$dir_videos" ]] && mkdir -p "$dir_videos"
@@ -351,7 +290,7 @@ done & monitorpid=$!
 
 # Get last playing video and its position
 if [[ -s "$list_now_playing" ]]; then
-    read -d '' video pos < "$list_now_playing" # returns an error but works
+    read -rd '' video pos < "$list_now_playing" # returns an error but works
     rm -f "$list_now_playing"
     # Back up 30 sec
     pos=$((pos-30))
