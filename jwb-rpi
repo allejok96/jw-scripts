@@ -85,14 +85,14 @@ download_videos()
     if ((first_time)); then
 	keep_flags+=(--download)
 	if ((no_checksum)); then
-	    latest_flags+=(--no-checksum)
 	    keep_flags+=(--no-checksum)
+	    latest_flags+=(--no-checksum)
 	fi
     else
-	keep_flags=(--quiet)
-	latest_flags=(--quiet)
+	keep_flags+=(--no-checksum --quiet)
+	latest_flags+=(--quiet)
     fi
-    
+
    # Print videos from "keep" categories to list_keep (optionally download them)
     for c in "${keep_categories[@]}"; do
         "$jwb_script" \
