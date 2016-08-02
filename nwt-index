@@ -1,8 +1,7 @@
 #!/bin/bash
 #
 # nwt-index
-# Index the the sound recordings at jw.org of
-# the New World Translation of the Holy Scriptures
+# Index sound recordings of publications at jw.org
 #
 
 load_shared_code()
@@ -27,11 +26,12 @@ show_help()
 {
     cat<<EOF
 Usage: nwt-index [OPTIONS] [DIRECTORY]
-Index the bible sound recordings at jw.org
+Index sound recordings at jw.org
 
 Options:
   --lang CODE           Change language
   --list-langs          Show a list of available language codes
+  --pub CODE            Use the publication CODE, instead of the Bible
   --silver              Use the 2013 edition of the NWT
   --download            Make recordings available offline
   --mode MODE           The format in which files are saved (see Modes)
@@ -82,20 +82,27 @@ parse_lines()
 
         case "$input" in
 
+	    # Name of playlist, reset the file
             pubName:*)
                 name="${input#*:}"
                 # Message, so we can see progress
                 echo "$name" 1>&2
 
 		# Empty out playlist
-		write_empty "$datadir" "$maincode" "$name"
+		write_empty "$datadir" "${maincode:-$pub$issue}" "$name"
 		;;
-	    
+
+	    # Title of link
             title:*)
                 title="${input#*:}"
                 ;;
 
+	    # A bible book, parse it
             booknum:*)
+
+		# This section only applies to bibles
+		[[ ! $pub =~ bi12|nwt ]] && continue
+		
 		# No sub-sub-dirs
 		((child)) && continue
 
@@ -115,9 +122,10 @@ parse_lines()
                 ("$0" --child --book "$code" "$datadir")
                 ;;
 
+	    # URL to the media
             url:*.mp3)
                 url="${input#*:}"
-                write_media "$title" "$url" "$datadir" "$maincode" "$name"
+                write_media "$title" "$url" "$datadir" "${maincode:-$pub$issue}" "$name"
                 ;;
 
         esac
@@ -132,7 +140,7 @@ check_lang()
     # Don't make more checks
     export NOCHECKLANG=1
 
-    local langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$bible&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E&booknum=0"
+    local langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$pub&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
     
     # Try to find the language code in the text
     if download_file "$langurl" | grep -q "\"$1\":{\"name\":" ; then
@@ -165,7 +173,7 @@ read_arguments --help:show_help \
                --lang=lang \
                --list-langs:lang=none \
                --book=maincode \
-               --silver:bible=nwt \
+               --silver:pub=nwt \
                --download:download=1 \
                --json:json=1 \
                --filesystem:mode=filesystem \
@@ -173,27 +181,40 @@ read_arguments --help:show_help \
 	       --limit-rate=maxrate \
 	       --child:child=1 \
 	       --clean:clean=1 \
+	       --pub=pub \
                -- \
                "$@" || exit 1
 
-export lang maincode bible maxrate download mode
+export lang maincode pub maxrate download mode
 [[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
+[[ $pub ]] || pub=bi12
 [[ $mode ]] || mode=m3u
-[[ $bible ]] || bible=bi12
 [[ $lang ]] || lang=E
 [[ $datadir ]] || datadir="${arguments[0]:-.}"
-[[ $maxrate = 0 ]] && unset maxrate
 [[ $maincode ]] || maincode=0
-mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?booknum=$maincode&output=json&pub=$bible&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang"
+[[ $maxrate = 0 ]] && unset maxrate
+
+# The number code only applies to bibles
+[[ ! $pub =~ nwt|bi12 ]] && unset maincode
+
+# Split up watchtower/awake names in pub/issue
+if [[ $pub =~ ^(w|wp|g)[0-9]{6,8} ]]; then
+    issue="${pub:1}"
+    pub="${pub:0:1}"
+elif [[ $pub =~ ^(w|wp|g)[0-9] ]]; then
+    error "Please use the format w20130215 or g201604"
+fi
+
+mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$pub&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
 
 [[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist)$ ]] || error "$mode: Unknown mode"
 
 # Pad code to 2 digits
 # $(( 10#n )) makes sure that n isn't read as an octal
 # number if it begins with 0
-maincode="$(printf '%02d' "$(( 10#$maincode ))")"
+[[ $maincode ]] && maincode="$(printf '%02d' "$(( 10#$maincode ))")"
 
 # Things that only the parent may do
 # or that's only needed once
@@ -201,13 +222,13 @@ if ! ((child)); then
     # Do we have all we need?
     requirement_check realpath
     # Check that lang is valid
-    check_lang "$lang"
+    check_lang "$lang" || exit 1
     # Check datadir
     [[ -d $datadir ]] || error "$datadir: Destination directory does not exist"
     # Make path absolute
     datadir="$(realpath "$datadir")" || error
     # Add a subdir
-    datadir="$datadir/jwb-$lang"
+    datadir="$datadir/$pub$issue-$lang"
     # Cleaning
     ((clean)) && clean_dir "$datadir"
 fi
