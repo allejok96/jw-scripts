@@ -230,9 +230,10 @@ write_media()
 	    fi
 	    ;;
 	m3ucompat)
-	    # Save all playlists outside of datadir
+	    # Save all playlists outside of datadir, but media inside datadir
+	    [[ -e $datadir/$file ]] && link="$(basename "$datadir")/$file"
 	    datadir="$(dirname "$datadir")"
-
+	    
 	    write_to_playlist "$title" "$link" "$datadir/$code - $name.m3u"
 	    ;;
 	urllist)
