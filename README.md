@@ -1,10 +1,12 @@
 # JW bash scripts
 
-### JW Broadcasting and bible sound recordings anywhere
+###### Update 2016-08-02: `nwt-index` now downloads recordings of *any* publication from JW.ORG.
 
-With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of the [New World Translation](https://www.jw.org/en/publications/bible/nwt/books/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine, either playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline.
+### JW Broadcasting and sound recordings anywhere
 
-[Here](https://github.com/allejok96/jw-scripts/wiki/Installation) is how to install, and the requirements.
+With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of [publications at JW.ORG](https://www.jw.org/en/publications/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine, either playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline.
+
+[Here](https://github.com/allejok96/jw-scripts/wiki/Installation) are instructions how to install, and the requirements needed.
 
 Click the links below for more help on each script.
 
@@ -24,7 +26,7 @@ Create an "offline" streaming channel, playing videos 24-7. Download new videos 
 
 #### [nwt-index](https://github.com/allejok96/jw-scripts/wiki/nwt-index)
 
-Create playlists of the sound recordings of the New World Translation of the Holy Scriptures. You can put the playlists in your smartphone, Kodi library, or open them by any media player. Can also download all recordings.
+Create playlists of sound recordings from JW.ORG. You can put the playlists in your smartphone, Kodi library, or open them by any media player. Can also download the recordings of a publication.
 
 ## Questions
 
