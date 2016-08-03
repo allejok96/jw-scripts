@@ -94,16 +94,15 @@ download_videos()
     fi
 
    # Print videos from "keep" categories to list_keep (optionally download them)
-    for c in "${keep_categories[@]}"; do
-        "$jwb_script" \
-	    --category "$c" \
-	    --lang "$lang" \
-	    --quality "$quality" \
-	    --mode=urllist \
-	    --limit-rate="$limit_rate" \
-	    "${keep_flags[@]}" \
-	    "$dir_videos"
-    done | add_to_list "$list_keep" "$list_videos"
+    "$jwb_script" \
+	--category "$keep_categories" \
+	--lang "$lang" \
+	--quality "$quality" \
+	--mode=urllist \
+	--limit-rate="$limit_rate" \
+	"${keep_flags[@]}" \
+	"$dir_videos" \
+	| add_to_list "$list_keep" "$list_videos"
 
     # Download latest videos
     "$jwb_script" \
