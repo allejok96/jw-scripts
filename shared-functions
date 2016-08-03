@@ -12,7 +12,7 @@
 
 error()
 {
-    echo "${@:-Something went wrong}" 1>&2
+    echo "${*:-Something went wrong}" 1>&2
     exit 1
 }
 
@@ -141,12 +141,12 @@ write_subdir()
 		create_link "$datadir/$link" "$datadir/$code/$title"
 	    fi
 	    ;;
-	m3u)
+	m3u|html)
 	    # First process saves playlist outside of datadir
 	    if ! ((child)); then
-		write_to_playlist "$title" "$link.m3u" "$(dirname "$datadir")/$name.m3u"
+		write_to_$mode "$title" "$link.$mode" "$(dirname "$datadir")/$name.$mode"
 	    else
-		write_to_playlist "$title" "$link.m3u" "$datadir/$code.m3u"
+		write_to_$mode "$title" "$link.$mode" "$datadir/$code.$mode"
 	    fi
 	    ;;
 	m3ucompat)
@@ -216,25 +216,26 @@ write_media()
 		create_link "$datadir/$file" "$destdir/$code/$title.$suffix"
 	    else
 		# Create a playlist with a URL and link to it
-		reset_playlist  "$datadir/$file.m3u"
-		write_to_playlist "$title" "$link" "$datadir/$file.m3u"
+		reset_m3u "$datadir/$file.m3u"
+		write_to_m3u "$title" "$link" "$datadir/$file.m3u"
 		create_link "$datadir/$file.m3u" "$destdir/$code/$title.m3u"
 	    fi
 	    ;;
-	m3u)
+	m3u|html)
 	    # First process saves playlist outside of datadir
 	    if ! ((child)); then
-		write_to_playlist "$title" "$link" "$(dirname "$datadir")/$name.m3u"
+		# Note: no need to make link relative to datadir, this is done in write_to_$mode
+		write_to_$mode "$title" "$link" "$(dirname "$datadir")/$name.$mode"
 	    else
-		write_to_playlist "$title" "$link" "$datadir/$code.m3u"
+		write_to_$mode "$title" "$link" "$datadir/$code.$mode"
 	    fi
 	    ;;
 	m3ucompat)
-	    # Save all playlists outside of datadir, but media inside datadir
-	    [[ -e $datadir/$file ]] && link="$(basename "$datadir")/$file"
-	    datadir="$(dirname "$datadir")"
-	    
-	    write_to_playlist "$title" "$link" "$datadir/$code - $name.m3u"
+	    # Note: no need to make link relative to datadir, this is done in write_to_m3u
+	    # Note: $code is in filename, not only to sort bible books in order, but also
+	    #       to avoid conflicts, as multiple categories can have the same name in
+	    #       JW Broadcasting, e.g. Featured Videos
+	    write_to_m3u "$title" "$link" "$(dirname "$datadir")/$code - $name.m3u"
 	    ;;
 	urllist)
 	    if [[ -e $datadir/$file ]]; then
@@ -259,38 +260,31 @@ write_empty()
     [[ $dir && $code && $name ]] || error "Error in $FUNCNAME"
 
     case "$mode" in
-	m3u)
+	m3u|html)
 	    # First process saves outside of datadir
 	    if ! ((child)); then
 		dir="$(dirname "$dir")"
-		file="$name.m3u"
+		file="$name.$mode"
 	    else
-		file="$code.m3u"
+		file="$code.$mode"
 	    fi
+	    reset_$mode "$dir/$file"
 	    ;;
 	m3ucompat)
-	    dir="$(dirname "$dir")"
-	    file="$code - $name.m3u"
+	    reset_m3u "$(dirname "$dir")/$code - $name.m3u"
 	    ;;
 	filesystem)
-	    # Remove m3u files that is linked to
-	    # Don't do this because they may be used in someother dir
-	    #find -L -lname "*.m3u" -delete
-
 	    # Remove all links
 	    [[ -e $dir/$code ]] && find "$dir/$code" -type l -delete
-	    return
 	    ;;
 	urllist)
 	    return 0
 	    ;;
     esac
-
-    reset_playlist "$dir/$file"
 }
 
 # Args: FILE
-reset_playlist()
+reset_m3u()
 {
     local file="$1"
     local dir="$(dirname "$1")"
@@ -302,7 +296,7 @@ reset_playlist()
 }
 
 # Args: TITLE LINK FILE
-write_to_playlist()
+write_to_m3u()
 {
     local title="$1"
     local link="$2"
@@ -311,7 +305,7 @@ write_to_playlist()
     [[ $title && $link && $file ]] || error "Error in $FUNCNAME"
         
     # Reset the file if empty
-    [[ ! -f $file ]] && reset_playlist "$file"
+    [[ ! -f $file ]] && reset_m3u "$file"
 
     # Make links to local files relative to the playlist dir
     if [[ ! $link =~ ^https?:// ]]; then
@@ -324,6 +318,44 @@ write_to_playlist()
     grep -q "^$link$" "$file" && return 0
     
     printf '%s\n' "#EXTINF:0,$title" "$link" >> "$file" || error "$file: Failed to write to playlist"
+}
+
+# Args: TITLE LINK FILE
+write_to_html()
+{
+    local title="$1"
+    local link="$2"
+    local file="$3"
+
+    [[ $title && $link && $file ]] || error "Error in $FUNCNAME"
+        
+    # Reset the file if empty
+    [[ ! -f $file ]] && reset_html "$file"
+
+    # Make links to local files relative to the playlist dir
+    if [[ ! $link =~ ^https?:// ]]; then
+	# --canonicalize-missing = don't care if file exists or not
+	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
+	[[ $link ]] || error "Error in $FUNCNAME"
+    fi
+    
+    # If link already is written to file, skip it
+    grep -q "^$link$" "$file" && return 0
+
+    sed -i '$ d' "$file"
+    printf '%s\n' "<a href=\"$link\">$title</a><br><br>" "</body></html>" >> "$file" || error "$file: Failed to write to html file"
+}
+
+# Args: FILE
+reset_html()
+{
+    local file="$1"
+    local dir="$(dirname "$1")"
+
+    [[ $file && $dir ]] || error "Error in $FUNCNAME"
+    
+    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir:  Failed to create directory"
+    printf '%s\n' "<html><head><meta charset=\"utf-8\"/></head><body>" "</body></html>" > "$file" || error "$file: Failed to write to html file"
 }
 
 # Download a file with curl or wget
