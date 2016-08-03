@@ -115,7 +115,15 @@ parse_lines()
                 ;;
 
             name:*)
-                name="${input#*:}"
+                # If there is a title an URL, save them
+                if [[ $title && $url ]]; then
+		    # If this belongs to other category, add it to that one
+		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum"
+		    # Unset variables so they don't get repeated
+		    unset title url realcode checksum
+                fi
+
+		name="${input#*:}"
 
                 ((skipnextname)) && skipnextname=0 && continue
 
@@ -248,11 +256,12 @@ datadir="${arguments[0]:-.}"
 
 # Debug JSON
 if ((json)); then
+    mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode%%,*}?detailed=1"
     download_file "$mainurl" | unsquash_file | less
     exit
 fi
 
-[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist)$ ]] || error "$mode: Unknown mode"
+[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: Unknown mode"
 
 # Things that only the parent may do
 # or that's only needed once
@@ -298,7 +307,8 @@ for maincode in "${maincodes[@]}"; do
 
     # Download and parse the JSON file
     download_file "$mainurl" \
-	| unsquash_file status key name title progressiveDownloadURL parentCategory primaryCategory checksum \
+	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum \
 	| parse_lines
 
 done
+
