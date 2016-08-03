@@ -209,7 +209,7 @@ fi
 
 mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$pub&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
 
-[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist)$ ]] || error "$mode: Unknown mode"
+[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: Unknown mode"
 
 # Pad code to 2 digits
 # $(( 10#n )) makes sure that n isn't read as an octal
