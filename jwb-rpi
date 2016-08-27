@@ -90,7 +90,7 @@ download_videos()
 	fi
     else
 	keep_flags+=(--no-checksum --quiet)
-	latest_flags+=(--quiet)
+	latest_flags+=()
     fi
 
    # Print videos from "keep" categories to list_keep (optionally download them)
@@ -167,6 +167,7 @@ get_video()
 save_pos()
 {
     if [[ $video && $pos_start ]]; then
+	echo "saving video position for $video" 1>&2
 	printf "%s\n" "$video" "$(( $(date +%s) - pos_start ))" > "$list_now_playing"
     fi
 }
@@ -194,7 +195,7 @@ play_video()
         sleep 10s
 	return 0
     fi
-
+    
     # Play video
     pos_start="$(date +%s)"
     video_player "$video" "${pos:-0}" &>/dev/null
@@ -203,7 +204,7 @@ play_video()
     add_to_list "$list_history" <<< "$video"
     
     # Forget video and position so we don't replay it next loop
-    unset video pos pos_start
+    unset video pos pos_start vidmsg
 }
 
 # FILE SECONDS
@@ -274,9 +275,8 @@ min_size_latest="$(computer_readable "$min_size_latest")"
 
 # Download videos (background)
 while :; do
-    # Don't download anything until time is set right
-    # (Raspberry Pi fix)
-    [[ $(date +%Y) = 1970 ]] && sleep 1m && continue
+    # Don't download anything until time is set right (Raspberry Pi fix)
+    while [[ $(date +%Y) = 1970 ]]; do sleep 1m; done
     download_videos
     ((first_time)) && break
     sleep $update_timeout || break
