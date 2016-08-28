@@ -183,7 +183,7 @@ write_media()
         if [[ ! -e $datadir/$file ]]; then
 	    [[ -d $datadir ]] || mkdir -p "$datadir" || error "$datadir:  Failed to create directory"
             ((quiet)) || echo "Downloading: $file" 1>&2
-            download_file "$link" > "$datadir/$file"
+            download_file "$link" "$datadir/$file"
         fi
     fi
 
@@ -359,17 +359,32 @@ reset_html()
 }
 
 # Download a file with curl or wget
+# Note: subshell, because it has a trap!
 # Args: URL [RATE]
 download_file()
-{
-    [[ $1 ]] || error "Error in download_file()"
+(
+    local link="$1"
+    local file="$2"
+    [[ $link ]] || error "Error in $FUNCNAME"
 
-    if ((hascurl)); then
-        curl ${maxrate:+--limit-rate "$maxrate"} --silent "$1" || error "Failed to download file"
+    if [[ $file ]]; then
+	# Check that file acctually is writable, so we don't try to delete it later
+	printf '' >&2 || error "$2: Failed to write to file"
+	# Redirect output to file
+	exec 3>"$2"
+	# Remove file if something goes wrong
+	trap 'rm -fv "$2"' EXIT
     else
-        wget ${maxrate:+--limit-rate "$maxrate"} --quiet -O - "$1" || error "Failed to download file"
+	# Output just goes to stdout
+	exec 3>&1
     fi
-}
+    
+    if ((hascurl)); then
+        curl ${maxrate:+--limit-rate "$maxrate"} --silent "$1" 1>&3 || error "Failed to download file"
+    else
+        wget ${maxrate:+--limit-rate "$maxrate"} --quiet -O - "$1" 1>&3 || error "Failed to download file"
+    fi
+)
 
 # Check that we have all we need
 requirement_check()
