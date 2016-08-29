@@ -4,9 +4,17 @@
 # Download and play videos from tv.jw.org
 #
 
+msg()
+{
+    s=$?
+    echo "$*" 1>&2
+    return $s
+}
+
 error()
 {
-    echo "$*" 1>&2
+    caller 1
+    echo "${*:-something went wrong}" 1>&2
     exit 1
 }
 
@@ -29,7 +37,7 @@ EOF
 computer_readable()
 {
     # Convert units to numbers
-    [[ $1 =~ ^[0-9]+(\.[0-9]+)?(b|k|M|G|T)$ ]] || error "$1: invalid size"
+    [[ $1 =~ ^[0-9]+(\.[0-9]+)?(b|k|M|G|T)$ ]] || error "$1: invalid size or unit"
     echo "$(( $(sed 's/b//; s/k/*1024/; s/M/*1024**2/; s/G/*1024**3/; s/T/*1024**4/;' <<< "$1") ))"
 }
 
@@ -39,7 +47,7 @@ dir_monitor()
     while sleep 1s; do
 
         # Break if size is below limit
-        size_total="$(du --bytes --summarize "$dir_videos" | egrep -o '^[0-9]+')"
+        size_total="$(du --bytes --summarize "$dir_videos" | egrep -o '^[0-9]+')" || error
         [[ $size_total -lt $max_size ]] && break
 
 	# Include "keep" videos (see below)
@@ -58,6 +66,8 @@ dir_monitor()
 	    [[ $size_latest -gt $min_size_latest ]] && skipkeep=1
 	fi
 
+	msg "video folder too big ($size_total bytes)"
+	
 	# Print file list sorted by size (biggest first)
 	# -c = sort by ctime
         ls --escape --reverse -1 -c "$dir_videos" | while read file; do
@@ -71,7 +81,8 @@ dir_monitor()
             ((skipkeep)) && grep -q "^$file$" "$list_keep" && continue
 
             # Remove file from disk and list
-            rm -fv "$file" && remove_from_lists "$file"
+	    msg "removing $file"
+            rm -f "$file" && remove_from_lists "$file"
 
 	    # Re-check disk usage
 	    break
@@ -93,7 +104,9 @@ download_videos()
 	latest_flags+=()
     fi
 
-   # Print videos from "keep" categories to list_keep (optionally download them)
+    msg "checking all selected videos online"
+    
+    # Print videos from "keep" categories to list_keep (optionally download them)
     "$jwb_script" \
 	--category "$keep_categories" \
 	--lang "$lang" \
@@ -102,8 +115,11 @@ download_videos()
 	--limit-rate="$limit_rate" \
 	"${keep_flags[@]}" \
 	"$dir_videos" \
+	2> >(sed 's/^/jwb-index: /' 1>&2) \
 	| add_to_list "$list_keep" "$list_videos"
 
+    msg "checking latest videos online"
+    
     # Download latest videos
     "$jwb_script" \
 	--lang "$lang" \
@@ -114,9 +130,10 @@ download_videos()
 	--limit-rate="$limit_rate" \
 	"${latest_flags[@]}" \
 	"$dir_videos" \
+	2> >(sed 's/^/jwb-index: /' 1>&2) \
 	| add_to_list "$list_videos"
 
-    ((first_time)) && echo "download complete" 1>&2
+    ((first_time)) && msg "download complete" 1>&2
 }
 
 # FILE
@@ -167,7 +184,7 @@ get_video()
 save_pos()
 {
     if [[ $video && $pos_start ]]; then
-	echo "saving video position for $video" 1>&2
+	msg "saving video position for $video"
 	printf "%s\n" "$video" "$(( $(date +%s) - pos_start ))" > "$list_now_playing"
     fi
 }
@@ -190,15 +207,26 @@ play_video()
 
     # No videos? Show message
     if [[ -z $video ]]; then
-        ((vidmsg)) || echo "no videos to play yet" 1>&2
+        ((vidmsg)) || msg "no videos to play yet"
 	vidmsg=1
         sleep 10s
 	return 0
     fi
     
     # Play video
+    msg "playing $file"
     pos_start="$(date +%s)"
-    video_player "$video" "${pos:-0}" &>/dev/null
+    video_player "$video" "${pos:-0}" &>/dev/null & vidpid=$?
+
+    # If we can get the lenght of the video, kill it when it has gone more than 1 min
+    if ((mediainfo)); then
+	if duration="$(mediainfo --output="general;%duration%" "$file")"; then
+	    sleep $((duration/1000+60-pos_start)) & killpid=$?
+	fi
+    fi
+
+    wait -n $vidpid $killpid
+    kill $vidpid $killpid &>/dev/null
     
     # Add video to history
     add_to_list "$list_history" <<< "$video"
@@ -224,11 +252,6 @@ for arg in "$@"; do
     esac
 done
 
-# Required commands
-for cmd in $jwb_script sed realpath xargs; do
-    type "$cmd" &>/dev/null || { echo "$cmd not in path" 1>&2; exit 1; }
-done
-
 # Read configuration
 if [[ $conf ]]; then
     [[ ! -f "$conf" ]] && error "$conf: file not found"
@@ -239,14 +262,15 @@ fi
 if [[ -e "$conf" ]]; then
     source "$conf" || error "$conf: failed to load configuration"
 else
-    echo "$conf not found, using default configuration" 1>&2
+    msg "$conf not found, using default configuration"
 fi
 
 ((unconfigured)) && error "Please read through and edit $conf as you like, and the comment out the line:
 unconfigured=1"
 
 # Kill subprocesses when exiting
-trap 'trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
+trap 'error aborted' SIGHUP SIGTERM SIGINT
+trap 'trap - SIGTERM; kill 0' EXIT
 
 # Default values
 [[ $jwb_script ]] || jwb_script=jwb-index
@@ -258,6 +282,14 @@ trap 'trap - SIGTERM; kill 0; exit' SIGHUP SIGTERM SIGINT EXIT
 [[ $limit_rate ]] || limit_rate=1M
 [[ $limit_rate_first_time ]] || limit_rate_first_time=4M
 [[ $min_size_latest ]] || min_size_latest=5G
+
+# Required commands
+for cmd in $jwb_script sed realpath xargs; do
+    type "$cmd" &>/dev/null || error "$cmd not in path"
+done
+
+# Extra commands
+type "$mediainfo" &>/dev/null && mediainfo=1
 
 dir="$(realpath --canonicalize-missing "$dir")"
 dir_videos="$dir/videos"
@@ -276,6 +308,7 @@ min_size_latest="$(computer_readable "$min_size_latest")"
 # Download videos (background)
 while :; do
     # Don't download anything until time is set right (Raspberry Pi fix)
+    [[ $(date +%Y) = 1970 ]] && msg "waiting for time to be set before downloading"
     while [[ $(date +%Y) = 1970 ]]; do sleep 1m; done
     download_videos
     ((first_time)) && break
@@ -307,3 +340,5 @@ if ((first_time)); then
 else
     wait $playerpid
 fi
+
+msg "reached the end, goodbye"
