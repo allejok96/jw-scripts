@@ -12,8 +12,16 @@
 
 error()
 {
-    echo "${*:-Something went wrong}" 1>&2
+    caller 1
+    echo "${*:-something went wrong}" 1>&2
     exit 1
+}
+
+msg()
+{
+    s=$?
+    echo "$*" 1>&2
+    return $s
 }
 
 # Remove everything but the media
@@ -21,7 +29,7 @@ clean_dir()
 {
     local datadir="$1"
 
-    [[ $datadir ]] || error "Error in $FUNCNAME"
+    [[ $datadir ]] || error "error in $FUNCNAME"
 
     # If dir doesn't exist, it is clean, right?
     [[ ! -d "$datadir" ]] && return 0
@@ -44,11 +52,11 @@ create_link()
     local link="$2"
     local linkdir="$(dirname "$link")"
 
-    [[ $dest && $link && $linkdir ]] || error "Error in $FUNCNAME"
+    [[ $dest && $link && $linkdir ]] || error "error in $FUNCNAME"
 
     # Create dir if not there
     if [[ ! -d $linkdir ]]; then
-	mkdir -p "$linkdir" || error "$linkdir: Failed to create directory"
+	mkdir -p "$linkdir" || error "$linkdir: failed to create directory"
     fi
         
     # Does link exist?
@@ -58,13 +66,13 @@ create_link()
 	    return 0
 	else
 	    # If not, remove it
-	    rm "$link" || error "$link: Failed to remove link"
+	    rm "$link" || error "$link: failed to remove link"
 	fi
     fi
 
     # Make the actual link
     # -r makes it relative to link location
-    ln -sr "$dest" "$link" || error "$link: Failed to create link"
+    ln -sr "$dest" "$link" || error "$link: failed to create link"
 }
 
 # Add newline around squiggly and square brackets and commas
@@ -79,7 +87,7 @@ unsquash_file()
     if [[ $@ ]]; then
         # Append \| to all parameters
         # and remove the last one
-        keywordstring="$(printf '%s\|' "$@" | sed 's/\\|$//')" || error "Error in $FUNCNAME"
+        keywordstring="$(printf '%s\|' "$@" | sed 's/\\|$//')" || error "error in $FUNCNAME"
     else
         # Match everything that's not a citation mark
         keywordstring='[^"]*'
@@ -111,7 +119,7 @@ unsquash_file()
             # And print it
             p
         }
-' || error "Failed to format JSON"
+' || error "failed to format JSON"
 }
 
 # Save link to other playlist/dir
@@ -125,13 +133,13 @@ write_subdir()
     local code="$4"
     local name="$5"
     
-    [[ $title && $link && $datadir && $code && $name ]] || error "Error in $FUNCNAME"
+    [[ $title && $link && $datadir && $code && $name ]] || error "error in $FUNCNAME"
 
     case "$mode" in
 	filesystem)
 	    # Create the directory to link to, before linking to it
 	    if [[ ! -d $datadir/$link ]]; then
-		mkdir -p "$datadir/$link" || error "$datadir/$link: Failed to create directory"
+		mkdir -p "$datadir/$link" || error "$datadir/$link: failed to create directory"
 	    fi
 
 	    # First process saves outside datadir
@@ -174,15 +182,15 @@ write_media()
     local destdir="$datadir"
     local checksum="$6"
     
-    [[ $title && $link && $file && $datadir && $code && $name ]] || error "Error in $FUNCNAME"
+    [[ $title && $link && $file && $datadir && $code && $name ]] || error "error in $FUNCNAME"
 
     [[ $mode = urllist ]] && datadir="$(dirname "$datadir")"
     
     # Download media
     if ((download)); then
         if [[ ! -e $datadir/$file ]]; then
-	    [[ -d $datadir ]] || mkdir -p "$datadir" || error "$datadir:  Failed to create directory"
-            ((quiet)) || echo "Downloading: $file" 1>&2
+	    [[ -d $datadir ]] || mkdir -p "$datadir" || error "$datadir: failed to create directory"
+            ((quiet)) || msg "downloading: $file"
             download_file "$link" "$datadir/$file"
         fi
     fi
@@ -194,7 +202,7 @@ write_media()
 	    if echo "$checksum  $datadir/$file" | md5sum -c --status; then
 		link="$file"
 	    else
-		echo "$datadir/$file: Incorrect checksum, removing file" 1>&2
+		msg "$datadir/$file: incorrect checksum, removing file"
 		rm -f "$datadir/$file"
 	    fi
 	else
@@ -257,7 +265,7 @@ write_empty()
     local name="$3"
     local file
 
-    [[ $dir && $code && $name ]] || error "Error in $FUNCNAME"
+    [[ $dir && $code && $name ]] || error "error in $FUNCNAME"
 
     case "$mode" in
 	m3u|html)
@@ -289,10 +297,10 @@ reset_m3u()
     local file="$1"
     local dir="$(dirname "$1")"
 
-    [[ $file && $dir ]] || error "Error in $FUNCNAME"
+    [[ $file && $dir ]] || error "error in $FUNCNAME"
     
-    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir:  Failed to create directory"
-    printf '%s\n' "#EXTM3U" > "$file" || error "$file: Failed to write to playlist"
+    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir: failed to create directory"
+    printf '%s\n' "#EXTM3U" > "$file" || error "$file: failed to write to playlist"
 }
 
 # Args: TITLE LINK FILE
@@ -302,7 +310,7 @@ write_to_m3u()
     local link="$2"
     local file="$3"
 
-    [[ $title && $link && $file ]] || error "Error in $FUNCNAME"
+    [[ $title && $link && $file ]] || error "error in $FUNCNAME"
         
     # Reset the file if empty
     [[ ! -f $file ]] && reset_m3u "$file"
@@ -311,13 +319,13 @@ write_to_m3u()
     if [[ ! $link =~ ^https?:// ]]; then
 	# --canonicalize-missing = don't care if file exists or not
 	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
-	[[ $link ]] || error "Error in $FUNCNAME"
+	[[ $link ]] || error "error in $FUNCNAME"
     fi
     
     # If link already is written to file, skip it
     grep -q "^$link$" "$file" && return 0
     
-    printf '%s\n' "#EXTINF:0,$title" "$link" >> "$file" || error "$file: Failed to write to playlist"
+    printf '%s\n' "#EXTINF:0,$title" "$link" >> "$file" || error "$file: failed to write to playlist"
 }
 
 # Args: TITLE LINK FILE
@@ -327,7 +335,7 @@ write_to_html()
     local link="$2"
     local file="$3"
 
-    [[ $title && $link && $file ]] || error "Error in $FUNCNAME"
+    [[ $title && $link && $file ]] || error "error in $FUNCNAME"
         
     # Reset the file if empty
     [[ ! -f $file ]] && reset_html "$file"
@@ -336,14 +344,14 @@ write_to_html()
     if [[ ! $link =~ ^https?:// ]]; then
 	# --canonicalize-missing = don't care if file exists or not
 	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
-	[[ $link ]] || error "Error in $FUNCNAME"
+	[[ $link ]] || error "error in $FUNCNAME"
     fi
     
     # If link already is written to file, skip it
     grep -q "^$link$" "$file" && return 0
 
     sed -i '$ d' "$file"
-    printf '%s\n' "<a href=\"$link\">$title</a><br><br>" "</body></html>" >> "$file" || error "$file: Failed to write to html file"
+    printf '%s\n' "<a href=\"$link\">$title</a><br><br>" "</body></html>" >> "$file" || error "$file: failed to write to html file"
 }
 
 # Args: FILE
@@ -352,10 +360,10 @@ reset_html()
     local file="$1"
     local dir="$(dirname "$1")"
 
-    [[ $file && $dir ]] || error "Error in $FUNCNAME"
+    [[ $file && $dir ]] || error "error in $FUNCNAME"
     
-    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir:  Failed to create directory"
-    printf '%s\n' "<html><head><meta charset=\"utf-8\"/></head><body>" "</body></html>" > "$file" || error "$file: Failed to write to html file"
+    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir: failed to create directory"
+    printf '%s\n' "<html><head><meta charset=\"utf-8\"/></head><body>" "</body></html>" > "$file" || error "$file: failed to write to html file"
 }
 
 # Download a file with curl or wget
@@ -365,11 +373,11 @@ download_file()
 (
     local link="$1"
     local file="$2"
-    [[ $link ]] || error "Error in $FUNCNAME"
+    [[ $link ]] || error "error in $FUNCNAME"
 
     if [[ $file ]]; then
 	# Check that file acctually is writable, so we don't try to delete it later
-	printf '' >&2 || error "$2: Failed to write to file"
+	printf '' >&2 || error "$2: failed to write to file"
 	# Redirect output to file
 	exec 3>"$2"
 	# Remove file if something goes wrong
@@ -380,28 +388,31 @@ download_file()
     fi
     
     if ((hascurl)); then
-        curl ${maxrate:+--limit-rate "$maxrate"} --silent "$1" 1>&3 || error "Failed to download file"
+        curl ${maxrate:+--limit-rate "$maxrate"} --silent "$1" 1>&3 || error "failed to download file"
     else
-        wget ${maxrate:+--limit-rate "$maxrate"} --quiet -O - "$1" 1>&3 || error "Failed to download file"
+        wget ${maxrate:+--limit-rate "$maxrate"} --quiet -O - "$1" 1>&3 || error "failed to download file"
     fi
+
+    # Download OK, don't delete anything
+    trap - EXIT
 )
 
 # Check that we have all we need
 requirement_check()
 {
-    type sed &>/dev/null || error "This script requires GNU sed"
+    type sed &>/dev/null || error "this script requires GNU sed"
 
     if [[ -z $hascurl ]]; then
         if type curl &>/dev/null; then
             export hascurl=1
         else
-            type wget &>/dev/null || error "This script requires curl or wget"
+            type wget &>/dev/null || error "this script requires curl or wget"
             export hascurl=0
         fi
     fi
 
     for cmd in "$@"; do
-	type $cmd &>/dev/null || error "This script requires the \"$cmd\" command"
+	type $cmd &>/dev/null || error "this script requires the \"$cmd\" command"
     done
     
     sed --version | egrep -q "GNU sed" || cat <<EOF 1>&2
@@ -423,7 +434,7 @@ read_arguments()
     until [[ $1 = -- ]]; do
         flags+=("$1")
         shift
-        [[ $# = 0 ]] && error "Error in $FUNCNAME"
+        [[ $# = 0 ]] && error "error in $FUNCNAME"
     done
 
     # Remove the --
@@ -485,7 +496,7 @@ read_arguments()
 # Args: LANGCODE
 jwb_check_lang()
 {
-    [[ $1 ]] || error "Error in $FUNCNAME"
+    [[ $1 ]] || error "error in $FUNCNAME"
     local langurl="http://mediator.jw.org/v1/languages/E/web"
     
     [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0

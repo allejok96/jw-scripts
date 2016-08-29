@@ -11,7 +11,7 @@ load_shared_code()
 	    if source "$code"; then
 		return 0
 	    else
-		echo "Error when reading shared functions" 1>&2
+		echo "error when reading shared functions" 1>&2
 		exit 1
 	    fi
 	fi
@@ -96,7 +96,7 @@ parse_lines()
         case "$input" in
 
 	    status:404)
-		error "Category not found"
+		error "category not found"
 		;;
 	    
             key:*)
@@ -142,7 +142,7 @@ parse_lines()
                     # Don't download categories we've already checked
                     grep -q "$code" "$histfile" && continue
 
-                    ("$0" --child --category "$code" "$datadir") || error "Child process failed" # exit if child process gets error
+                    ("$0" --child --category "$code" "$datadir") || error "child process failed" # exit if child process gets error
                 fi
                 ;;
 
@@ -173,8 +173,8 @@ parse_lines()
                     fi
 
                     # Compare quality (old < new <= maximum)
-                    newq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "$newurl")" || error "Quality comparsion failed"
-                    oldq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" || error "Quality comparsion failed"
+                    newq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "$newurl")" || error "quality comparsion failed"
+                    oldq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" || error "quality comparsion failed"
                     [[ $newq -lt $oldq || $newq -gt $quality ]] && continue
 
                 fi
@@ -220,6 +220,8 @@ lang_list()
     exit
 }
 
+trap 'echo aborted 1>&2' SIGTERM SIGINT SIGHUP
+
 load_shared_code
 
 read_arguments --help:show_help \
@@ -243,7 +245,7 @@ read_arguments --help:show_help \
                "$@" || exit 1
 
 export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet nomd5
-[[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
+[[ ${#arguments[@]} -gt 1 ]] && error "too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
 [[ $mode ]] || mode=m3u
@@ -261,7 +263,7 @@ if ((json)); then
     exit
 fi
 
-[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: Unknown mode"
+[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: unknown mode"
 
 # Things that only the parent may do
 # or that's only needed once
@@ -271,7 +273,7 @@ if ! ((child)); then
     # Check that lang is valid
     jwb_check_lang "$lang" || exit 1
     # Check datadir
-    [[ -d $datadir ]] || error "$datadir: Destination directory does not exist"
+    [[ -d $datadir ]] || error "$datadir: destination directory does not exist"
     # Make path absolute
     datadir="$(realpath "$datadir")"
     # Add a subdir
@@ -283,9 +285,9 @@ if ! ((child)); then
 	histfile=/dev/null
     else
 	# Create history file
-	histfile="$(mktemp)" || error "Failed to create temp file"
+	histfile="$(mktemp)" || error "failed to create temp file"
 	# Remove the history file when we exit
-	trap '[[ -e $histfile ]] && rm "$histfile"; exit' SIGINT SIGTERM SIGHUP EXIT
+	trap '[[ -e $histfile ]] && rm "$histfile"' EXIT
     fi
 fi
 
@@ -301,8 +303,8 @@ for maincode in "${maincodes[@]}"; do
     
     # Write to the history file
     # and show a message with our progress
-    [[ $histfile ]] || error "histfile: Variable empty, this should not happen"
-    echo "$maincode" >> "$histfile" || error "$histfile: Failed to write to temp file"
+    [[ $histfile ]] || error "histfile: variable empty, this should not happen"
+    echo "$maincode" >> "$histfile" || error "$histfile: failed to write to temp file"
     ((quiet)) || echo "$maincode" 1>&2
 
     # Download and parse the JSON file
