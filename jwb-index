@@ -220,7 +220,7 @@ lang_list()
     exit
 }
 
-trap 'echo aborted 1>&2' SIGTERM SIGINT SIGHUP
+trap 'echo aborted 1>&2; exit 1' SIGTERM SIGINT SIGHUP
 
 load_shared_code
 
