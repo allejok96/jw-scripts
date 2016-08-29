@@ -214,13 +214,13 @@ play_video()
     fi
     
     # Play video
-    msg "playing $file"
+    msg "playing $video"
     pos_start="$(date +%s)"
     video_player "$video" "${pos:-0}" &>/dev/null & vidpid=$?
 
     # If we can get the lenght of the video, kill it when it has gone more than 1 min
     if ((mediainfo)); then
-	if duration="$(mediainfo --output="general;%duration%" "$file")"; then
+	if duration="$(mediainfo --output="general;%duration%" "$video")"; then
 	    sleep $((duration/1000+60-pos_start)) & killpid=$?
 	fi
     fi
