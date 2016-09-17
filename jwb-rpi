@@ -13,8 +13,7 @@ msg()
 
 error()
 {
-    caller 1
-    echo "${*:-something went wrong}" 1>&2
+    echo "$BASH_SOURCE, line ${BASH_LINENO[1]}: ${*:-something went wrong}" 1>&2
     exit 1
 }
 
@@ -269,7 +268,7 @@ fi
 unconfigured=1"
 
 # Kill subprocesses when exiting
-trap 'error aborted' SIGHUP SIGTERM SIGINT
+trap 'echo aborted 1>&2; exit 1' SIGHUP SIGTERM SIGINT
 trap 'trap - SIGTERM; kill 0' EXIT
 
 # Default values

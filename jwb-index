@@ -202,7 +202,7 @@ parse_lines()
     return 0
 }
 
-trap 'echo aborted 1>&2; exit 1' SIGTERM SIGINT SIGHUP
+trap 'echo "aborted (PID $$)" 1>&2; exit 1' SIGTERM SIGINT SIGHUP
 
 load_shared_code
 

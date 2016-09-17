@@ -12,8 +12,7 @@
 
 error()
 {
-    caller 1
-    echo "${*:-something went wrong}" 1>&2
+    echo "$BASH_SOURCE, line ${BASH_LINENO[1]}: ${*:-something went wrong}" 1>&2
     exit 1
 }
 
