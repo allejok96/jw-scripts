@@ -118,7 +118,7 @@ parse_lines()
                 # If there is a title an URL, save them
                 if [[ $title && $url ]]; then
 		    # If this belongs to other category, add it to that one
-		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum"
+		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname"
 		    # Unset variables so they don't get repeated
 		    unset title url realcode checksum
                 fi
@@ -150,7 +150,7 @@ parse_lines()
                 # If there is a title an URL, save them
                 if [[ $title && $url ]]; then
 		    # If this belongs to other category, add it to that one
-		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum"
+		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize"
 		    # Unset variables so they don't get repeated
 		    unset title url realcode checksum
                 fi
@@ -180,7 +180,7 @@ parse_lines()
                 fi
                 # Save URL
                 url="$newurl"
-		local savenextsum=1
+		local savenextsum=1 savenextsize=1
                 ;;
 
 	    checksum:*)
@@ -188,36 +188,18 @@ parse_lines()
 		((savenextsum)) && savenextsum=0 && checksum="${input#*:}"
 		;;
 
+	    filesize:*)
+		((savenextsize)) && savenextsize=0 && filesize="${input#*:}"
+		;;
+
         esac
     done
 
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
-    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode" "$mainname"
+    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode" "$mainname" "$checksum" "$filesize"
 
     return 0
-}
-
-# Download the language list and make it readable
-# CAVEATS:
-# - "name" must be followed by "code"
-lang_list()
-{
-    echo "Languages:"
-    # 1. Download the list
-    # 2. Make newline at every opening bracket
-    #    where a new language starts
-    # 3. Replace "name":"LANG" ... "code":"CODE"
-    #    with LANG CODE
-    # 4. Sort it
-    # 5. Make a nice list with columns
-    download_file "$langurl" \
-        | sed 's/{/\n/g' \
-        | sed -n 's/.*"name":"\([^"]*\)".*"code":"\([^"]*\)".*/\2:\1/p' \
-        | sort \
-        | column -t -s :
-
-    exit
 }
 
 trap 'echo aborted 1>&2; exit 1' SIGTERM SIGINT SIGHUP
@@ -309,7 +291,7 @@ for maincode in "${maincodes[@]}"; do
 
     # Download and parse the JSON file
     download_file "$mainurl" \
-	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum \
+	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize \
 	| parse_lines
 
 done

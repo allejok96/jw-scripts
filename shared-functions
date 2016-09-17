@@ -181,34 +181,46 @@ write_media()
     local name="$5"
     local destdir="$datadir"
     local checksum="$6"
+    local size="$7"
     
     [[ $title && $link && $file && $datadir && $code && $name ]] || error "error in $FUNCNAME"
 
     [[ $mode = urllist ]] && datadir="$(dirname "$datadir")"
     
+    # Check size
+    if [[ $size =~ [0-9]+ && -e $datadir/$file ]]; then
+	if [[ ! $(du --bytes "$datadir/$file" | cut -f1) -eq $size ]]; then
+	    msg "$datadir/$file: incorrect file size, removing file"
+	    rm -f "$datadir/$file"
+	fi
+    fi	
+
+    # Check checksum
+    if [[ $checksum =~ [0-9a-f]{32} && -e $datadir/$file ]]; then
+	if ! echo "$checksum  $datadir/$file" | md5sum -c --status; then
+	    msg "$datadir/$file: incorrect checksum, removing file"
+	    rm -f "$datadir/$file"
+	fi
+    fi
+
     # Download media
     if ((download)); then
         if [[ ! -e $datadir/$file ]]; then
 	    [[ -d $datadir ]] || mkdir -p "$datadir" || error "$datadir: failed to create directory"
             ((quiet)) || msg "downloading: $file"
             download_file "$link" "$datadir/$file"
+	    # Re-check checksum
+	    if [[ -e $datadir/$file && $checksum =~ [0-9a-f]{32} ]]; then
+		if ! echo "$checksum  $datadir/$file" | md5sum -c --status; then
+		    msg "$datadir/$file: incorrect checksum, removing file"
+		    rm -f "$datadir/$file"
+		fi
+	    fi
         fi
     fi
 
     # Change link to point to local media (if any)
-    if [[ -e $datadir/$file ]]; then
-	if [[ $checksum =~ [0-9a-f]{32} ]]; then
-	    # Check checksum
-	    if echo "$checksum  $datadir/$file" | md5sum -c --status; then
-		link="$file"
-	    else
-		msg "$datadir/$file: incorrect checksum, removing file"
-		rm -f "$datadir/$file"
-	    fi
-	else
-	    link="$file"
-	fi
-    fi
+    [[ -e $datadir/$file ]] && link="$file"
     
     case "$mode" in
 	filesystem)
