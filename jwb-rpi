@@ -183,7 +183,6 @@ get_video()
 save_pos()
 {
     if [[ $video && $pos_start ]]; then
-	msg "saving video position for $video"
 	printf "%s\n" "$video" "$(( $(date +%s) - pos_start ))" > "$list_now_playing"
     fi
 }
@@ -224,8 +223,13 @@ play_video()
 	fi
     fi
 
+    # Save video position every minute
+    while sleep 1m; do
+	save_pos
+    done & pospid=$!
+    
     wait -n $vidpid $killpid
-    kill $vidpid $killpid &>/dev/null
+    kill $vidpid $killpid $pospid &>/dev/null
     
     # Add video to history
     add_to_list "$list_history" <<< "$video"
