@@ -215,12 +215,12 @@ play_video()
     # Play video
     msg "playing $video"
     pos_start="$(date +%s)"
-    video_player "$video" "${pos:-0}" &>/dev/null & vidpid=$?
+    video_player "$video" "${pos:-0}" &>/dev/null & local vidpid=$!
 
     # If we can get the lenght of the video, kill it when it has gone more than 1 min
     if ((mediainfo)); then
-	if duration="$(mediainfo --output="general;%duration%" "$video")"; then
-	    sleep $((duration/1000+60-pos_start)) & killpid=$?
+	if duration="$(mediainfo --output="General;%Duration%" "$video")"; then
+	    sleep $((duration/1000+60-pos)) & local killpid=$!
 	fi
     fi
 
@@ -288,7 +288,11 @@ for cmd in $jwb_script sed realpath xargs; do
 done
 
 # Extra commands
-type "$mediainfo" &>/dev/null && mediainfo=1
+if type mediainfo &>/dev/null; then
+    mediainfo=1
+else
+    msg "optionally install mediainfo to prevent the script from locking up if media player hangs"
+fi
 
 dir="$(realpath --canonicalize-missing "$dir")"
 dir_videos="$dir/videos"
@@ -332,6 +336,8 @@ fi
 while sleep 1s; do
     play_video
 done & playerpid=$!
+
+msg "disk usage monitor: PID $monitorpid; downloader: PID $dlpid; video player: PID $playerpid"
 
 # Wait here until something finished
 if ((first_time)); then
