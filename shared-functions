@@ -12,7 +12,7 @@
 
 error()
 {
-    echo "$BASH_SOURCE, line ${BASH_LINENO[1]}: ${*:-something went wrong}" 1>&2
+    echo "${BASH_SOURCE[1]}, line ${BASH_LINENO[0]}: ${*:-something went wrong}" 1>&2
     exit 1
 }
 
@@ -28,7 +28,7 @@ clean_dir()
 {
     local datadir="$1"
 
-    [[ $datadir ]] || error "error in $FUNCNAME"
+    [[ $datadir ]] || error
 
     # If dir doesn't exist, it is clean, right?
     [[ ! -d "$datadir" ]] && return 0
@@ -51,7 +51,7 @@ create_link()
     local link="$2"
     local linkdir="$(dirname "$link")"
 
-    [[ $dest && $link && $linkdir ]] || error "error in $FUNCNAME"
+    [[ $dest && $link && $linkdir ]] || error
 
     # Create dir if not there
     if [[ ! -d $linkdir ]]; then
@@ -86,7 +86,7 @@ unsquash_file()
     if [[ $@ ]]; then
         # Append \| to all parameters
         # and remove the last one
-        keywordstring="$(printf '%s\|' "$@" | sed 's/\\|$//')" || error "error in $FUNCNAME"
+        keywordstring="$(printf '%s\|' "$@" | sed 's/\\|$//')" || error
     else
         # Match everything that's not a citation mark
         keywordstring='[^"]*'
@@ -132,7 +132,7 @@ write_subdir()
     local code="$4"
     local name="$5"
     
-    [[ $title && $link && $datadir && $code && $name ]] || error "error in $FUNCNAME"
+    [[ $title && $link && $datadir && $code && $name ]] || error
 
     case "$mode" in
 	filesystem)
@@ -182,7 +182,7 @@ write_media()
     local checksum="$6"
     local size="$7"
     
-    [[ $title && $link && $file && $datadir && $code && $name ]] || error "error in $FUNCNAME"
+    [[ $title && $link && $file && $datadir && $code && $name ]] || error
 
     [[ $mode = urllist ]] && datadir="$(dirname "$datadir")"
     
@@ -276,7 +276,7 @@ write_empty()
     local name="$3"
     local file
 
-    [[ $dir && $code && $name ]] || error "error in $FUNCNAME"
+    [[ $dir && $code && $name ]] || error
 
     case "$mode" in
 	m3u|html)
@@ -308,7 +308,7 @@ reset_m3u()
     local file="$1"
     local dir="$(dirname "$1")"
 
-    [[ $file && $dir ]] || error "error in $FUNCNAME"
+    [[ $file && $dir ]] || error
     
     [[ -d $dir ]] || mkdir -p "$dir" || error "$dir: failed to create directory"
     printf '%s\n' "#EXTM3U" > "$file" || error "$file: failed to write to playlist"
@@ -321,7 +321,7 @@ write_to_m3u()
     local link="$2"
     local file="$3"
 
-    [[ $title && $link && $file ]] || error "error in $FUNCNAME"
+    [[ $title && $link && $file ]] || error
         
     # Reset the file if empty
     [[ ! -f $file ]] && reset_m3u "$file"
@@ -330,7 +330,7 @@ write_to_m3u()
     if [[ ! $link =~ ^https?:// ]]; then
 	# --canonicalize-missing = don't care if file exists or not
 	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
-	[[ $link ]] || error "error in $FUNCNAME"
+	[[ $link ]] || error
     fi
     
     # If link already is written to file, skip it
@@ -346,7 +346,7 @@ write_to_html()
     local link="$2"
     local file="$3"
 
-    [[ $title && $link && $file ]] || error "error in $FUNCNAME"
+    [[ $title && $link && $file ]] || error
         
     # Reset the file if empty
     [[ ! -f $file ]] && reset_html "$file"
@@ -355,7 +355,7 @@ write_to_html()
     if [[ ! $link =~ ^https?:// ]]; then
 	# --canonicalize-missing = don't care if file exists or not
 	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
-	[[ $link ]] || error "error in $FUNCNAME"
+	[[ $link ]] || error
     fi
     
     # If link already is written to file, skip it
@@ -371,7 +371,7 @@ reset_html()
     local file="$1"
     local dir="$(dirname "$1")"
 
-    [[ $file && $dir ]] || error "error in $FUNCNAME"
+    [[ $file && $dir ]] || error
     
     [[ -d $dir ]] || mkdir -p "$dir" || error "$dir: failed to create directory"
     printf '%s\n' "<html><head><meta charset=\"utf-8\"/></head><body>" "</body></html>" > "$file" || error "$file: failed to write to html file"
@@ -384,7 +384,7 @@ download_file()
 (
     local link="$1"
     local file="$2"
-    [[ $link ]] || error "error in $FUNCNAME"
+    [[ $link ]] || error
 
     if [[ $file ]]; then
 	# Check that file acctually is writable, so we don't try to delete it later
@@ -411,22 +411,12 @@ download_file()
 # Check that we have all we need
 requirement_check()
 {
-    type sed &>/dev/null || error "this script requires GNU sed"
-
-    if [[ -z $hascurl ]]; then
-        if type curl &>/dev/null; then
-            export hascurl=1
-        else
-            type wget &>/dev/null || error "this script requires curl or wget"
-            export hascurl=0
-        fi
-    fi
-
     for cmd in "$@"; do
-	type $cmd &>/dev/null || error "this script requires the \"$cmd\" command"
-    done
-    
-    sed --version | egrep -q "GNU sed" || cat <<EOF 1>&2
+	case "$cmd" in
+
+	    sed)
+		type sed &>/dev/null || error "this script requires GNU sed"	    
+		sed --version | egrep -q "GNU sed" || cat <<EOF 1>&2
 Warning:
 This script is build for and tested only with GNU sed.
 It looks like you are using a different version of sed,
@@ -434,6 +424,25 @@ so I cannot guarrantee that it will work.
 Just saying :)
 
 EOF
+		;;
+
+	    curl|wget)
+		if [[ -z $hascurl ]]; then
+		    if type curl &>/dev/null; then
+			export hascurl=1
+		    else
+			type wget &>/dev/null || error "this script requires curl or wget"
+			export hascurl=0
+		    fi
+		fi
+		;;
+
+	    *)
+		type "$cmd" &>/dev/null || error "this script requires the \"$cmd\" command"
+		;;
+	    
+	esac
+    done
 
     return 0
 }
@@ -445,7 +454,7 @@ read_arguments()
     until [[ $1 = -- ]]; do
         flags+=("$1")
         shift
-        [[ $# = 0 ]] && error "error in $FUNCNAME"
+        [[ $# = 0 ]] && error
     done
 
     # Remove the --
@@ -507,7 +516,7 @@ read_arguments()
 # Args: LANGCODE
 jwb_check_lang()
 {
-    [[ $1 ]] || error "error in $FUNCNAME"
+    [[ $1 ]] || error
     local langurl="http://mediator.jw.org/v1/languages/E/web"
     
     [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
@@ -539,3 +548,18 @@ jwb_check_lang()
     fi
 }
 
+# Remove a line from files
+# Args: FILE ...
+remove_from_lists()
+{
+    local string="$1"
+    shift
+    
+    [[ $string && $@ ]] || error
+    
+    # Remove a line from the files
+    for list in "$@"; do
+	[[ ! -e $list ]] && continue
+	sed -i "/^${1//\//\\/}$/d" "$list" # replace all / with \/ in $1
+    done
+}
