@@ -49,6 +49,6 @@ Yes. The [Terms of Service](http://www.jw.org/en/terms-of-use/) allows:
 
 More info [here](https://github.com/allejok96/jw-scripts/wiki/How-it-works#is-it-legal).
 
-#### I want this to do XYZ! But it don't!
+#### Why doesn't this do XYZ?
 
 If you have a feature request or have been bitten by a bug, please [create an issue](https://github.com/allejok96/jw-scripts/issues), and I'll see what I can do.
