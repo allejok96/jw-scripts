@@ -134,7 +134,7 @@ parse_lines()
 
 check_lang()
 {
-    [[ $1 ]] || error "Error in $FUNCNAME"
+    [[ $1 ]] || error
     
     [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
     # Don't make more checks
@@ -220,7 +220,7 @@ mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$pub&fileformat
 # or that's only needed once
 if ! ((child)); then
     # Do we have all we need?
-    requirement_check realpath
+    requirement_check curl sed realpath
     # Check that lang is valid
     check_lang "$lang" || exit 1
     # Check datadir

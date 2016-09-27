@@ -160,7 +160,7 @@ parse_lines()
 array_replace()
 {
     local expression="$1" name="$2" array
-    [[ $expression && $name ]] || error "Error in $FUNCNAME"
+    [[ $expression && $name ]] || error
 
     # Everything done to "array" will acctually be done to the array named "$name"
     declare -n array=$name
@@ -175,8 +175,6 @@ array_replace()
 
 load_shared_code
 
-requirement_check xargs
-
 read_arguments --help:show_help\
 	       --lang=lang\
 	       --list-langs:lang=none\
@@ -189,6 +187,8 @@ read_arguments --help:show_help\
 	       "$@" || exit 1
 
 export quality lang category nosubtitles pos
+
+requirement_check sed curl xargs
 
 [[ $channel ]] || channel=OurStudio
 [[ $lang ]] || lang=E

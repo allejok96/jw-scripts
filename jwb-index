@@ -251,7 +251,7 @@ fi
 # or that's only needed once
 if ! ((child)); then
     # Do we have all we need?
-    requirement_check realpath mktemp
+    requirement_check sed curl realpath mktemp
     # Check that lang is valid
     jwb_check_lang "$lang" || exit 1
     # Check datadir
