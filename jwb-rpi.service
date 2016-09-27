@@ -1,5 +1,4 @@
 [Unit]
-After=network.target
 Description=JW Broadcasting player
 
 [Service]
