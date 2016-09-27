@@ -1,30 +1,40 @@
 #!/bin/bash
 #
 # jwb-rpi
-# Download and play videos from tv.jw.org
+# Play videos downloaded by jwb-rpi-downloader
 #
 
-msg()
+load_shared_code()
 {
-    s=$?
-    echo "$*" 1>&2
-    return $s
+    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
+	if [[ -f $code ]]; then
+	    if source "$code"; then
+		return 0
+	    else
+		echo "error when reading shared functions" 1>&2
+		exit 1
+	    fi
+	fi
+    done
+
+    echo "Cannot find shared functions file" 1>&2
+    echo "You can set the default path with the variable SHARED" 1>&2
+    exit 1
 }
 
-error()
+load_config()
 {
-    echo "$BASH_SOURCE, line ${BASH_LINENO[1]}: ${*:-something went wrong}" 1>&2
-    exit 1
+    [[ $conf  && ! -f "$conf" ]] && error "$conf: file not found"
+    [[ $conf ]] || conf=/etc/jwb-rpi.conf
+
+    [[ -e "$conf" ]] && source "$conf" || error "$conf: failed to load configuration file"
 }
 
 show_help()
 {
     cat<<EOF
-Usage: jwb-rpi [--firsttime] [CONFIG FILE]
-Download videos from tv.jw.org and play randomly forever
-
-  --firsttime   Download all videos from the selected categories
-                not just the latest ones, then exit
+Usage: jwb-rpi [CONFIG FILE]
+Shuffle and play JW Broadcasting videos forever
 
   CONFIG FILE   Path to the configuration file, default: /etc/jwb-rpi.conf
 
@@ -32,146 +42,22 @@ EOF
     exit
 }
 
-# INTEGER[b|k|M|G|T]
-computer_readable()
-{
-    # Convert units to numbers
-    [[ $1 =~ ^[0-9]+(\.[0-9]+)?(b|k|M|G|T)$ ]] || error "$1: invalid size or unit"
-    echo "$(( $(sed 's/b//; s/k/*1024/; s/M/*1024**2/; s/G/*1024**3/; s/T/*1024**4/;' <<< "$1") ))"
-}
-
-dir_monitor()
-{
-    # Loop until size is OK
-    while sleep 1s; do
-
-        # Break if size is below limit
-        size_total="$(du --bytes --summarize "$dir_videos" | egrep -o '^[0-9]+')" || error
-        [[ $size_total -lt $max_size ]] && break
-
-	# Include "keep" videos (see below)
-	skipkeep=0
-	
-        if [[ $keep_categories && -e $list_keep ]]; then
-            # Get total size of all "keep" videos
-            size_keep="$(tr '\n' '\0' < "$list_keep" \
-			   | du --bytes --total --files0-from - 2>/dev/null \
-                           | tail -n1 \
-                           | egrep -o '^[0-9]+')"
-            
-            size_latest="$(( size_total - size_keep ))"
-
-	    # If "latest" videos are too big, skip "keep" videos
-	    [[ $size_latest -gt $min_size_latest ]] && skipkeep=1
-	fi
-
-	msg "video folder too big ($size_total bytes)"
-	
-	# Print file list sorted by size (biggest first)
-	# -c = sort by ctime
-        ls --escape --reverse -1 -c "$dir_videos" | while read file; do
-
-	    file="$dir_videos/$file"
-	    
-	    # Skip non-files (but there shouldn't be any)
-            [[ ! -f $file ]] && continue
-	    
-            # Skip "keep" videos
-            ((skipkeep)) && grep -q "^$file$" "$list_keep" && continue
-
-            # Remove file from disk and list
-	    msg "removing $file"
-            rm -f "$file" && remove_from_lists "$file"
-
-	    # Re-check disk usage
-	    break
-        done
-
-    done
-}
-
-download_videos()
-{
-    if ((first_time)); then
-	keep_flags+=(--download)
-	if ((no_checksum)); then
-	    keep_flags+=(--no-checksum)
-	    latest_flags+=(--no-checksum)
-	fi
-    else
-	keep_flags+=(--no-checksum --quiet)
-	latest_flags+=()
-    fi
-
-    msg "checking all selected videos online"
-    
-    # Print videos from "keep" categories to list_keep (optionally download them)
-    "$jwb_script" \
-	--category "$keep_categories" \
-	--lang "$lang" \
-	--quality "$quality" \
-	--mode=urllist \
-	--limit-rate="$limit_rate" \
-	"${keep_flags[@]}" \
-	"$dir_videos" \
-	2> >(sed 's/^/jwb-index: /' 1>&2) \
-	| add_to_list "$list_keep" "$list_videos"
-
-    msg "checking latest videos online"
-    
-    # Download latest videos
-    "$jwb_script" \
-	--lang "$lang" \
-	--quality "$quality" \
-	--latest \
-	--download \
-	--mode=urllist \
-	--limit-rate="$limit_rate" \
-	"${latest_flags[@]}" \
-	"$dir_videos" \
-	2> >(sed 's/^/jwb-index: /' 1>&2) \
-	| add_to_list "$list_videos"
-
-    ((first_time)) && msg "download complete" 1>&2
-}
-
-# FILE
-add_to_list()
-{
-    # Add a line to file if it's not already there
-    while read -r; do
-	for list in "$@"; do
-	    file="$(realpath --strip --canonicalize-missing "$REPLY")"
-            [[ -e $list ]] && grep -q "^$file$" "$list" || echo "$file" >> "$list"
-	done
-    done
-}
-
-# FILE
-remove_from_lists()
-{
-    # Remove a line from the files
-    for list in "$list_videos" "$list_history"; do
-	[[ ! -e $list ]] && continue
-	sed -i "/^${1//\//\\/}$/d" "$list" # replace all / with \/ in $1
-    done
-}
-
 get_video()
 {
     [[ -s $list_videos ]] || return 1
 
     # Get random videos
-    shuf "$list_videos" | while read -r video; do
+    shuf "$list_videos" | while read -r name; do
         # Skip empty
-        [[ -z $video ]] && continue
+        [[ -z $name ]] && continue
+	video="$dir_videos/$name"
         # Skip non-existing
         if [[ ! -f "$video" ]]; then
-            remove_from_lists "$video"
+            remove_from_lists "$name" "$list_keep" "$list_videos"
             continue
         fi
         # Skip recently played
-        [[ -e $list_history ]] && grep -q "^$video$" "$list_history" && continue
+        [[ -e $list_history ]] && grep -q "^$name$" "$list_history" && continue
         # Print it and exit
         printf '%s' "$video"
 	return 0
@@ -183,16 +69,61 @@ get_video()
 save_pos()
 {
     if [[ $video && $pos_start ]]; then
-	printf "%s\n" "$video" "$(( $(date +%s) - pos_start ))" > "$list_now_playing"
+	printf "%s\n" "$(basename "$video")" "$(( $(date +%s) - pos_start ))" > "$list_now_playing"
     fi
 }
 
-play_video()
+# FILE SECONDS
+video_player()
 {
-    # Save video position when exiting
-    # (needed here as this runs in a subshell)
-    trap 'save_pos; exit' EXIT
-    
+    exec omxplayer "${player_options[@]}" --pos "$2" "$1"
+}
+
+load_shared_code
+
+read_arguments --help:show_help -- "$@"
+conf="$arguments"
+load_config
+
+requirement_check sed realpath
+
+# Extra commands
+if type mediainfo &>/dev/null; then
+    mediainfo=1
+else
+    msg "optionally install mediainfo to prevent the script from locking up if media player hangs"
+fi
+
+[[ $dir ]] || dir=~/JWB
+dir="$(realpath --canonicalize-missing "$dir")"
+dir_videos="$dir/videos"
+list_now_playing="$dir/now_playing"
+list_history="$dir/history.list"
+list_keep="$dir/keep.list"
+list_videos="$dir/videos.list"
+
+# Kill subprocesses when exiting
+trap 'echo aborted 1>&2; exit 1' SIGHUP SIGTERM SIGINT
+trap 'trap - SIGTERM; save_pos; kill 0' EXIT
+
+# Get last playing video and its position
+if [[ -s "$list_now_playing" ]]; then
+    read -rd '' video pos < "$list_now_playing" # returns an error but works
+    # Check that videos exists
+    video="$dir_videos/$video"
+    [[ ! -f $video ]] && unset video
+    # Back up 30 sec
+    if [[ $pos =~ [0-9]+ ]]; then
+	pos=$((pos-30))
+	[[ $pos -lt 0 ]] && pos=0
+    else
+	unset pos
+    fi
+fi
+
+# Play videos forever
+while sleep 1s; do
+
     if [[ -e $list_videos && -e $list_history ]]; then
 	# Only keep 75% of videos in the history
 	# Do this first so we never get stuck in next step
@@ -208,146 +139,37 @@ play_video()
         ((vidmsg)) || msg "no videos to play yet"
 	vidmsg=1
         sleep 10s
-	return 0
+	continue
     fi
     
     # Play video
     msg "playing $video"
     pos_start="$(date +%s)"
-    video_player "$video" "${pos:-0}" &>/dev/null & local vidpid=$!
-
-    # If we can get the lenght of the video, kill it when it has gone more than 1 min
-    if ((mediainfo)); then
-	if duration="$(mediainfo --output="General;%Duration%" "$video")"; then
-	    sleep $((duration/1000+60-pos)) & local killpid=$!
-	fi
-    fi
+    video_player "$video" "${pos:-0}" &>/dev/null & vidpid=$!
 
     # Save video position every minute
+    save_pos
     while sleep 1m; do
 	save_pos
     done & pospid=$!
     
+    # If we can get the lenght of the video, kill it when it has gone more than 1 min
+    if ((mediainfo)); then
+	if duration="$(mediainfo --output="General;%Duration%" "$video")"; then
+	    if [[ $duration =~ ^[0-9]+$ ]]; then
+		sleep $((duration/1000+60-pos)) & killpid=$!
+	    fi
+	fi
+    fi
+    
     wait -n $vidpid $killpid
-    kill $vidpid $killpid $pospid &>/dev/null
+    kill -SIGINT $vidpid $killpid $pospid &>/dev/null
     
     # Add video to history
-    add_to_list "$list_history" <<< "$video"
+    basename "$video" >> "$list_history"
     
     # Forget video and position so we don't replay it next loop
     unset video pos pos_start vidmsg
-}
 
-# FILE SECONDS
-video_player()
-{
-    omxplayer "${player_options[@]}" --pos "$2" "$1"
-}
-
-# Arguments
-for arg in "$@"; do
-    case "$arg" in
-	--help)		show_help				;;
-	--firsttime)	first_time=1
-			limit_rate=$limit_rate_first_time	;;
-	--*)		error "$arg: unknown argument"		;;
-	*)		conf="$arg"				;;
-    esac
 done
 
-# Read configuration
-if [[ $conf ]]; then
-    [[ ! -f "$conf" ]] && error "$conf: file not found"
-else
-    conf=/etc/jwb-rpi.conf
-fi
-
-if [[ -e "$conf" ]]; then
-    source "$conf" || error "$conf: failed to load configuration"
-else
-    msg "$conf not found, using default configuration"
-fi
-
-((unconfigured)) && error "Please read through and edit $conf as you like, and the comment out the line:
-unconfigured=1"
-
-# Kill subprocesses when exiting
-trap 'echo aborted 1>&2; exit 1' SIGHUP SIGTERM SIGINT
-trap 'trap - SIGTERM; kill 0' EXIT
-
-# Default values
-[[ $jwb_script ]] || jwb_script=jwb-index
-[[ $lang ]] || lang=E
-[[ $dir ]] || dir=~/JWB
-[[ $quality ]] || quality=480
-[[ $max_size ]] || max_size=25G
-[[ $update_timeout ]] || update_timeout=3h
-[[ $limit_rate ]] || limit_rate=1M
-[[ $limit_rate_first_time ]] || limit_rate_first_time=4M
-[[ $min_size_latest ]] || min_size_latest=5G
-
-# Required commands
-for cmd in $jwb_script sed realpath xargs; do
-    type "$cmd" &>/dev/null || error "$cmd not in path"
-done
-
-# Extra commands
-if type mediainfo &>/dev/null; then
-    mediainfo=1
-else
-    msg "optionally install mediainfo to prevent the script from locking up if media player hangs"
-fi
-
-dir="$(realpath --canonicalize-missing "$dir")"
-dir_videos="$dir/videos"
-list_now_playing="$dir/now_playing"
-list_history="$dir/history.list"
-list_keep="$dir/keep.list"
-list_videos="$dir/videos.list"
-
-# Convert size units to bytes
-max_size="$(computer_readable "$max_size")"
-min_size_latest="$(computer_readable "$min_size_latest")"
-
-# Create dir
-[[ ! -e "$dir_videos" ]] && mkdir -p "$dir_videos"
-
-# Download videos (background)
-while :; do
-    # Don't download anything until time is set right (Raspberry Pi fix)
-    [[ $(date +%Y) = 1970 ]] && msg "waiting for time to be set before downloading"
-    while [[ $(date +%Y) = 1970 ]]; do sleep 1m; done
-    download_videos
-    ((first_time)) && break
-    sleep $update_timeout || break
-done & dlpid=$!
-
-# Remove old videos when dirs get full (background)
-while sleep 30s; do
-    dir_monitor
-done & monitorpid=$!
-
-# Get last playing video and its position
-if [[ -s "$list_now_playing" ]]; then
-    read -rd '' video pos < "$list_now_playing" # returns an error but works
-    rm -f "$list_now_playing"
-    # Back up 30 sec
-    pos=$((pos-30))
-    [[ $pos -lt 0 ]] && pos=0
-fi
-
-# Play videos forever (background)
-while sleep 1s; do
-    play_video
-done & playerpid=$!
-
-msg "disk usage monitor: PID $monitorpid; downloader: PID $dlpid; video player: PID $playerpid"
-
-# Wait here until something finished
-if ((first_time)); then
-    wait $dlpid
-else
-    wait $playerpid
-fi
-
-msg "reached the end, goodbye"

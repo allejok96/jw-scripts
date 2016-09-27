@@ -1,0 +1,12 @@
+[Unit]
+After=network.target
+Description=JW Broadcasting downloader
+
+[Service]
+ExecStart=/usr/local/bin/jwb-rpi-downloader --daemon
+# Your username here
+User=pi
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,229 @@
+#!/bin/bash
+#
+# jwb-rpi-downloader
+# Download videos from tv.jw.org to be used with jwb-rpi
+#
+
+load_shared_code()
+{
+    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
+	if [[ -f $code ]]; then
+	    if source "$code"; then
+		return 0
+	    else
+		echo "error when reading shared functions" 1>&2
+		exit 1
+	    fi
+	fi
+    done
+
+    echo "Cannot find shared functions file" 1>&2
+    echo "You can set the default path with the variable SHARED" 1>&2
+    exit 1
+}
+
+load_config()
+{
+    [[ $conf  && ! -f "$conf" ]] && error "$conf: file not found"
+    [[ $conf ]] || conf=/etc/jwb-rpi.conf
+
+    [[ -e "$conf" ]] &&	source "$conf" || error "$conf: failed to load configuration file"
+}
+
+show_help()
+{
+    cat<<EOF
+Usage: jwb-rpi-downloader [--daemon] [CONFIG FILE]
+Download videos from tv.jw.org for the jwb-rpi script.
+
+  --daemon	Run forever. Download latest videos with regular intervals.
+		Don't download videos from selected categories.
+
+  CONFIG FILE   Path to the configuration file, default: /etc/jwb-rpi.conf
+
+Without the --daemon flag, the script downloads all videos from the
+"keep_categories" in the configuration file
+
+EOF
+    exit
+}
+
+# Read from stdin and add line to files
+# Args: [--keep]
+add_to_list()
+{
+    # Add line if file exists and line is unique
+    while read -r; do
+	[[ -z $REPLY ]] && continue
+	name="$(basename "$REPLY")"
+	file="$dir_videos/$name"
+	[[ -e $file ]] && ! grep "^$name$" "$list_videos" &>/dev/null && echo "$name" >> "$list_videos"
+	[[ $1 = --keep ]] && ! grep -q "^$name$" "$list_keep" &>/dev/null && echo "$name" >> "$list_keep"
+    done
+}
+
+# INTEGER[b|k|M|G|T]
+computer_readable()
+{
+    # Convert units to numbers
+    [[ $1 =~ ^[0-9]+(\.[0-9]+)?(b|k|M|G|T)$ ]] || error "$1: invalid size or unit"
+    echo "$(( $(sed 's/b//; s/k/*1024/; s/M/*1024**2/; s/G/*1024**3/; s/T/*1024**4/;' <<< "$1") ))"
+}
+
+dir_monitor()
+{
+    # Loop until size is OK
+    while sleep 1s; do
+
+        # Break if size is below limit
+        size_total="$(du --bytes --summarize "$dir_videos" | egrep -o '^[0-9]+')" || error
+        [[ $size_total -lt $max_size ]] && break
+
+	# Include "keep" videos (see below)
+	skipkeep=0
+	
+        if [[ $min_size_latest && $keep_categories && -e $list_keep ]]; then
+            # Get total size of all "keep" videos
+            size_keep="$(cd "$dir_videos" && tr '\n' '\0' < "$list_keep" \
+			   | du --bytes --total --files0-from - 2>/dev/null \
+                           | tail -n1 \
+                           | egrep -o '^[0-9]+')"
+            
+            size_latest="$(( size_total - size_keep ))"
+
+	    # If "latest" videos are too big, skip "keep" videos
+	    [[ $size_latest -gt $min_size_latest ]] && skipkeep=1
+	fi
+
+	msg "video folder too big ($size_total bytes)"
+	
+	# Print file list sorted by size (biggest first)
+	# -c = sort by ctime
+        ls --escape --reverse -1 -c "$dir_videos" | while read name; do
+
+	    file="$dir_videos/$file"
+	    
+	    # Skip non-files (but there shouldn't be any)
+            [[ ! -f $file ]] && continue
+	    
+            # Skip "keep" videos
+            ((skipkeep)) && grep -q "^$name$" "$list_keep" && continue
+
+	    # Skip currently playing video
+	    [[ -e $list_now_playing ]] && grep -q "^$name$" "$list_now_playing" && continue
+
+            # Remove file from disk and list
+	    msg "removing $file"
+            rm -f "$file" && remove_from_lists "$name" "$list_keep" "$list_videos"
+
+	    # Re-check disk usage
+	    break
+        done
+
+    done
+}
+
+download_videos()
+{
+    if ((daemon)); then
+	keep_flags+=(--no-checksum --quiet)
+	latest_flags+=()
+    else
+	keep_flags+=(--download)
+	if ((no_checksum)); then
+	    keep_flags+=(--no-checksum)
+	    latest_flags+=(--no-checksum)
+	fi
+    fi
+
+    msg "checking all selected videos online"
+    
+    # Print videos from "keep" categories to list_keep (optionally download them)
+    "$jwb_script" \
+	--lang "$lang" \
+	--quality "$quality" \
+	--mode=urllist \
+	--limit-rate="$limit_rate" \
+	${keep_categories:+--category "$keep_categories"} \
+	"${keep_flags[@]}" \
+	"$dir_videos" \
+	2> >(sed 's/^/jwb-index: /' 1>&2) \
+	| add_to_list --keep
+
+    msg "checking latest videos online"
+    
+    # Download latest videos
+    "$jwb_script" \
+	--lang "$lang" \
+	--quality "$quality" \
+	--latest \
+	--download \
+	--mode=urllist \
+	--limit-rate="$limit_rate" \
+	"${latest_flags[@]}" \
+	"$dir_videos" \
+	2> >(sed 's/^/jwb-index: /' 1>&2) \
+	| add_to_list 
+}
+
+load_shared_code
+
+read_arguments --help:show_help --daemon:daemon=1 -- "$@"
+conf="$arguments"
+load_config
+
+# Default values
+if [[ $jwb_script ]]; then
+    if type jwb-index &>/dev/null; then
+	jwb_script=jwb-index
+    else
+	jwb_script=./jwb-index
+    fi
+fi
+[[ $lang ]] || lang=E
+[[ $dir ]] || dir=~/JWB
+[[ $quality ]] || quality=480
+[[ $update_timeout ]] || update_timeout=3h
+[[ $limit_rate_daemon ]] || limit_rate_daemon=1M
+[[ $limit_rate ]] || limit_rate=4M
+((daemon)) && limit_rate="$limit_rate_daemon"
+dir="$(realpath --canonicalize-missing "$dir")"
+dir_videos="$dir/videos"
+list_now_playing="$dir/now_playing"
+list_keep="$dir/keep.list"
+list_videos="$dir/videos.list"
+[[ $max_size ]] && max_size="$(computer_readable "$max_size")"
+[[ $min_size_latest ]] && min_size_latest="$(computer_readable "$min_size_latest")"
+
+requirement_check sed realpath "$jwb_script"
+
+# Kill subprocesses when exiting
+trap 'echo aborted 1>&2; exit 1' SIGHUP SIGTERM SIGINT
+trap 'trap - SIGTERM; kill 0' EXIT
+
+# Create video dir
+[[ ! -e "$dir_videos" ]] && mkdir -p "$dir_videos"
+
+# Remove old videos when dirs get full (background)
+if [[ $max_size ]]; then
+    while sleep 30s; do
+	dir_monitor
+    done & monitorpid=$!
+    msg "file size monitor: PID $monitorpid"
+fi
+
+# Download videos
+while :; do
+    # Wait for internet connection
+    until ping -c 3 8.8.8.8 &>/dev/null; do
+	((netmsg)) || msg "waiting for internet connection before starting download"
+	netmsg=1
+	sleep 1m
+    done
+    download_videos
+    ((daemon)) || break
+    sleep $update_timeout || break
+done
+
+((daemon)) && msg "download complete"
+
