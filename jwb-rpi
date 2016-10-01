@@ -76,7 +76,7 @@ save_pos()
 # FILE SECONDS
 video_player()
 {
-    exec omxplayer "${player_options[@]}" --pos "$2" "$1"
+    omxplayer "${player_options[@]}" --pos "$2" "$1"
 }
 
 load_shared_code
@@ -86,13 +86,6 @@ conf="$arguments"
 load_config
 
 requirement_check sed realpath
-
-# Extra commands
-if type mediainfo &>/dev/null; then
-    mediainfo=1
-else
-    msg "optionally install mediainfo to prevent the script from locking up if media player hangs"
-fi
 
 [[ $dir ]] || dir=~/JWB
 dir="$(realpath --canonicalize-missing "$dir")"
@@ -145,31 +138,22 @@ while sleep 1s; do
     # Play video
     msg "playing $video"
     pos_start="$(date +%s)"
-    video_player "$video" "${pos:-0}" &>/dev/null & vidpid=$!
 
     # Save video position every minute
     save_pos
     while sleep 1m; do
 	save_pos
     done & pospid=$!
-    
-    # If we can get the lenght of the video, kill it when it has gone more than 1 min
-    if ((mediainfo)); then
-	if duration="$(mediainfo --output="General;%Duration%" "$video")"; then
-	    if [[ $duration =~ ^[0-9]+$ ]]; then
-		sleep $((duration/1000+60-pos)) & killpid=$!
-	    fi
-	fi
-    fi
-    
-    wait -n $vidpid $killpid
-    kill -SIGINT $vidpid $killpid $pospid &>/dev/null
+
+    video_player "$video" "${pos:-0}" &>/dev/null
+
+    kill $pospid &>/dev/null
     
     # Add video to history
     basename "$video" >> "$list_history"
     
     # Forget video and position so we don't replay it next loop
-    unset video pos pos_start vidmsg
+    unset video pos pos_start vidmsg pospid
 
 done
 
