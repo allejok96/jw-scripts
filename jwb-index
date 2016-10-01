@@ -235,7 +235,6 @@ export lang maincode nosubtitles quality download norecursive maxrate mode lates
 [[ $maincode ]] || maincode=VideoOnDemand
 [[ $quality ]] || quality=720
 [[ $lang ]] || lang=E
-[[ $maxrate = 0 ]] && unset maxrate
 datadir="${arguments[0]:-.}"
 
 # Debug JSON

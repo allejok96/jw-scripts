@@ -397,11 +397,13 @@ download_file()
 	# Output just goes to stdout
 	exec 3>&1
     fi
+
+    [[ $maxrate && $maxrate != 0 ]] && local r="$maxrate"
     
     if ((hascurl)); then
-        curl ${maxrate:+--limit-rate "$maxrate"} --silent "$1" 1>&3 || error "failed to download file"
+        curl ${r:+--limit-rate "$r"} --silent "$1" 1>&3 || error "failed to download file"
     else
-        wget ${maxrate:+--limit-rate "$maxrate"} --quiet -O - "$1" 1>&3 || error "failed to download file"
+        wget ${r:+--limit-rate "$r"} --quiet -O - "$1" 1>&3 || error "failed to download file"
     fi
 
     # Download OK, don't delete anything
