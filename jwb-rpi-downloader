@@ -184,9 +184,7 @@ fi
 [[ $dir ]] || dir=~/JWB
 [[ $quality ]] || quality=480
 [[ $update_timeout ]] || update_timeout=3h
-[[ $limit_rate_daemon ]] || limit_rate_daemon=1M
-[[ $limit_rate ]] || limit_rate=4M
-((daemon)) && limit_rate="$limit_rate_daemon"
+[[ -z $limit_rate ]] && ((daemon)) && limit_rate=1M
 dir="$(realpath --canonicalize-missing "$dir")"
 dir_videos="$dir/videos"
 list_now_playing="$dir/now_playing"
