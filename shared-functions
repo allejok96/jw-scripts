@@ -169,7 +169,7 @@ write_subdir()
 
 # Save media in playlist/dir
 # and optionally download them
-# Args: TITLE LINK DATADIR CODE NAME [CHECKSUM]
+# Args: TITLE LINK DATADIR CODE NAME [CHECKSUM] [SIZE] [TIME]
 write_media()
 {
     local title="$1"
@@ -181,6 +181,7 @@ write_media()
     local destdir="$datadir"
     local checksum="$6"
     local size="$7"
+    local time="$8"
     
     [[ $title && $link && $file && $datadir && $code && $name ]] || error
 
@@ -218,6 +219,11 @@ write_media()
         fi
     fi
 
+    # Change timestamp
+    if [[ $time && -e $datadir/$file ]]; then
+	touch -d "$time" "$datadir/$file" || msg "$time: incorrect date format for $file"
+    fi
+    
     # Change link to point to local media (if any)
     [[ -e $datadir/$file ]] && link="$file"
     

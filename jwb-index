@@ -46,6 +46,7 @@ Advanced options:
                           VideoOnDemand
   --no-recursive        Don't automatically download more categories
   --no-checksum         Don't check video files
+  --no-timestamp        Don't change timestamps on downloaded files
   --json                Don't parse the JSON file, just show it (debug)
 
 Modes:
@@ -150,9 +151,9 @@ parse_lines()
                 # If there is a title an URL, save them
                 if [[ $title && $url ]]; then
 		    # If this belongs to other category, add it to that one
-		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize"
+		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize" "$time"
 		    # Unset variables so they don't get repeated
-		    unset title url realcode checksum
+		    unset title url realcode checksum filesize time
                 fi
 
                 title="${input#*:}"
@@ -192,12 +193,16 @@ parse_lines()
 		((savenextsize)) && savenextsize=0 && filesize="${input#*:}"
 		;;
 
+	    firstPublished:*)
+		((notime)) || time="${input#*:}"
+		;;
+
         esac
     done
 
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
-    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode" "$mainname" "$checksum" "$filesize"
+    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode" "$mainname" "$checksum" "$filesize" "$time"
 
     return 0
 }
@@ -223,10 +228,11 @@ read_arguments --help:show_help \
 	       --clean:clean=1 \
 	       --quiet:quiet=1 \
 	       --no-checksum:nomd5=1 \
+	       --no-timestamp:notime=1 \
                -- \
                "$@" || exit 1
 
-export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet nomd5
+export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet nomd5 notime
 [[ ${#arguments[@]} -gt 1 ]] && error "too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
@@ -290,7 +296,7 @@ for maincode in "${maincodes[@]}"; do
 
     # Download and parse the JSON file
     download_file "$mainurl" \
-	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize \
+	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize firstPublished \
 	| parse_lines
 
 done
