@@ -139,6 +139,7 @@ download_videos()
     msg "checking all selected videos online"
     
     # Print videos from "keep" categories to list_keep (optionally download them)
+    # The stdbuf thing is so the log gets printed out in realtime
     "$jwb_script" \
 	--lang "$lang" \
 	--quality "$quality" \
@@ -147,7 +148,7 @@ download_videos()
 	${keep_categories:+--category "$keep_categories"} \
 	"${keep_flags[@]}" \
 	"$dir_videos" \
-	2> >(sed 's/^/jwb-index: /' 1>&2) \
+	2> >(stdbuf -oL sed 's/^/jwb-index: /' 1>&2) \
 	| add_to_list --keep
 
     msg "checking latest videos online"
@@ -162,7 +163,7 @@ download_videos()
 	--limit-rate="$limit_rate" \
 	"${latest_flags[@]}" \
 	"$dir_videos" \
-	2> >(sed 's/^/jwb-index: /' 1>&2) \
+	2> >(stdbuf -oL sed '/LatestVideos/d; s/^/jwb-index: /' 1>&2) \
 	| add_to_list 
 }
 
