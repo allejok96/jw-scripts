@@ -22,6 +22,8 @@ load_shared_code()
     exit 1
 }
 
+load_shared_code
+
 show_help()
 {
     cat<<EOF
@@ -166,8 +168,6 @@ check_lang()
 }
 
 [[ $1 = --help ]] && show_help
-
-load_shared_code
 
 read_arguments --help:show_help \
                --lang=lang \

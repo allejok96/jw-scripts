@@ -22,6 +22,8 @@ load_shared_code()
     exit 1
 }
 
+load_shared_code
+
 load_config()
 {
     [[ $conf  && ! -f "$conf" ]] && error "$conf: file not found"
@@ -78,8 +80,6 @@ video_player()
 {
     omxplayer "${player_options[@]}" --pos "$2" "$1"
 }
-
-load_shared_code
 
 read_arguments --help:show_help -- "$@"
 conf="$arguments"
