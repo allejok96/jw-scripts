@@ -568,6 +568,6 @@ remove_from_lists()
     # Remove a line from the files
     for list in "$@"; do
 	[[ ! -e $list ]] && continue
-	sed -i "/^${1//\//\\/}$/d" "$list" # replace all / with \/ in $1
+	sed -i "/^${string//\//\\/}$/d" "$list" # escape all / in $string
     done
 }
