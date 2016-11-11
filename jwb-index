@@ -245,7 +245,7 @@ datadir="${arguments[0]:-.}"
 
 # Debug JSON
 if ((json)); then
-    mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode%%,*}?detailed=1"
+    mainurl="https://mediator.jw.org/v1/categories/$lang/${maincode%%,*}?detailed=1"
     download_file "$mainurl" | unsquash_file | less
     exit
 fi
@@ -286,7 +286,7 @@ IFS="$OLDIFS"
 
 for maincode in "${maincodes[@]}"; do
     
-    mainurl="http://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
+    mainurl="https://mediator.jw.org/v1/categories/$lang/${maincode}?detailed=1"
     
     # Write to the history file
     # and show a message with our progress

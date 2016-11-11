@@ -193,7 +193,7 @@ requirement_check sed curl xargs
 [[ $channel ]] || channel=OurStudio
 [[ $lang ]] || lang=E
 [[ $quality ]] || quality=720
-mainurl="http://mediator.jw.org/v1/schedules/$lang/Streaming${channel}?utcOffset=$(( $(date +%-z) * 60 / 100 ))"
+mainurl="https://mediator.jw.org/v1/schedules/$lang/Streaming${channel}?utcOffset=$(( $(date +%-z) * 60 / 100 ))"
 
 jwb_check_lang "$lang" || exit 1
 

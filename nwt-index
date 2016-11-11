@@ -142,7 +142,7 @@ check_lang()
     # Don't make more checks
     export NOCHECKLANG=1
 
-    local langurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$pub&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
+    local langurl="https://www.jw.org/apps/GETPUBMEDIALINKS?output=json&pub=$pub&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
     
     # Try to find the language code in the text
     if download_file "$langurl" | grep -q "\"$1\":{\"name\":" ; then
@@ -207,7 +207,7 @@ elif [[ $pub =~ ^(w|wp|g)[0-9] ]]; then
     error "Please use the format w20130215 or g201604"
 fi
 
-mainurl="http://www.jw.org/apps/TRGCHlZRQVNYVrXF?output=json&pub=$pub&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
+mainurl="https://www.jw.org/apps/GETPUBMEDIALINKS?output=json&pub=$pub&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
 
 [[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: Unknown mode"
 

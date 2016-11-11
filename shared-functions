@@ -525,7 +525,7 @@ read_arguments()
 jwb_check_lang()
 {
     [[ $1 ]] || error
-    local langurl="http://mediator.jw.org/v1/languages/E/web"
+    local langurl="https://mediator.jw.org/v1/languages/E/web"
     
     [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
     # Don't make more checks
