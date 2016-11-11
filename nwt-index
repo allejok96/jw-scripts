@@ -41,6 +41,9 @@ Options:
   DIRECTORY             Directory to save the playlists or recordings in
 
 Advanced options:
+  --checksum            Verify file integrity with md5 checksum
+  --no-timestamp        Don't change timestamps on files
+  
   --limit-rate RATE     Maximum download rate for recordings, for example
 			  1m means 1 megabyte per second
   --book NUM            Number of bible book to download
@@ -62,6 +65,16 @@ Modes:
 
 EOF
     exit
+}
+
+save()
+{
+    # If there is a title an URL, save them
+    if [[ $title && $url ]]; then
+	write_media "$title" "$url" "$datadir" "${maincode:-$pub$issue}" "$name" "$checksum" "$filesize" "$time"
+	# Unset variables so they don't get repeated                                                                           
+	unset title url checksum filesize time savenextsum savenextsize savenextdate
+    fi
 }
 
 # GIGANT CAVEATS:
@@ -96,12 +109,15 @@ parse_lines()
 
 	    # Title of link
             title:*)
+		save
+		
                 title="${input#*:}"
                 ;;
 
 	    # A bible book, parse it
             booknum:*)
-
+		save
+		
 		# This section only applies to bibles
 		[[ ! $pub =~ bi12|nwt ]] && continue
 		
@@ -127,11 +143,29 @@ parse_lines()
 	    # URL to the media
             url:*.mp3)
                 url="${input#*:}"
-                write_media "$title" "$url" "$datadir" "${maincode:-$pub$issue}" "$name"
+		savenextisum=1
+		savenextsize=1
+		savenextdate=1
                 ;;
 
+	    checksum:*)
+		((md5)) || continue
+		((savenextsum)) && savenextsum=0 && checksum="${input#*:}"
+		;;
+
+	    filesize:*)
+		((savenextsize)) && savenextsize=0 && filesize="${input#*:}"
+		;;
+
+	    modifiedDatetime:*)
+		((notime)) && continue
+		((savenextdate)) && savenextdate=0 && time="${input#*:}"
+		;;
         esac
     done
+
+    # Save last one
+    save
 }
 
 check_lang()
@@ -182,6 +216,8 @@ read_arguments --help:show_help \
 	       --child:child=1 \
 	       --clean:clean=1 \
 	       --pub=pub \
+	       --checksum:md5=1 \
+	       --no-timestamp:notime=1 \
                -- \
                "$@" || exit 1
 
@@ -241,5 +277,5 @@ fi
 
 # Download and parse the JSON file
 download_file "$mainurl" \
-    | unsquash_file pubName title booknum url \
+    | unsquash_file pubName title booknum url checksum filesize modifiedDatetime \
     | parse_lines

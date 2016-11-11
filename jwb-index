@@ -72,6 +72,18 @@ EOF
     exit
 }
 
+# Save a media link
+save()
+{
+    # If there is a title an URL, save them
+    if [[ $title && $url ]]; then
+	# If this belongs to other category, add it to that one
+	write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize" "$time"
+	# Unset variables so they don't get repeated                                                                           
+        unset title url realcode checksum filesize time savenextsum savenextsize
+    fi
+}
+
 # GIGANT CAVEATS:
 # - First there must be a "key" followed by "name" where
 #    "key" has the same value as --category. This will give
@@ -118,17 +130,11 @@ parse_lines()
                 ;;
 
             name:*)
-                # If there is a title an URL, save them
-                if [[ $title && $url ]]; then
-		    # If this belongs to other category, add it to that one
-		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname"
-		    # Unset variables so they don't get repeated
-		    unset title url realcode checksum
-                fi
-
-		name="${input#*:}"
+		save
 
                 ((skipnextname)) && skipnextname=0 && continue
+		
+		name="${input#*:}"
 
                 # First category (self)
                 if [[ $code = "$maincode" ]]; then
@@ -150,13 +156,7 @@ parse_lines()
                 ;;
 
             title:*)
-                # If there is a title an URL, save them
-                if [[ $title && $url ]]; then
-		    # If this belongs to other category, add it to that one
-		    write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize" "$time"
-		    # Unset variables so they don't get repeated
-		    unset title url realcode checksum filesize time
-                fi
+		save
 
                 title="${input#*:}"
                 ;;
@@ -204,7 +204,7 @@ parse_lines()
 
     # If there is a title and an URL left when we reach EOF
     # save them to the playlist
-    [[ $title && $url ]] && write_media "$title" "$url" "$datadir" "$maincode" "$mainname" "$checksum" "$filesize" "$time"
+    save
 
     return 0
 }
