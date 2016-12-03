@@ -103,7 +103,7 @@ dir_monitor()
 	# -c = sort by ctime
         ls --escape --reverse -1 -c "$dir_videos" | while read name; do
 
-	    file="$dir_videos/$file"
+	    file="$dir_videos/$name"
 	    
 	    # Skip non-files (but there shouldn't be any)
             [[ ! -f $file ]] && continue
