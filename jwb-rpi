@@ -135,16 +135,17 @@ while sleep 1s; do
 	continue
     fi
     
-    # Play video
-    msg "playing $video"
-    pos_start="$(date +%s)"
-
     # Save video position every minute
+    pos_start="$(date +%s)"
+    # Count the previously saved position in
+    [[ $pos ]] && pos_start=$((pos_start-pos))
     save_pos
     while sleep 1m; do
 	save_pos
     done & pospid=$!
 
+    # Play video
+    msg "playing $video"
     video_player "$video" "${pos:-0}" &>/dev/null
 
     kill $pospid &>/dev/null
