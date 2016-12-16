@@ -4,8 +4,7 @@ Description=JW Broadcasting downloader
 
 [Service]
 ExecStart=/usr/local/bin/jwb-rpi-downloader --daemon
-# Your username here
-User=pi
+User=%i
 Restart=always
 
 [Install]

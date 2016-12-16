@@ -1,0 +1,9 @@
+[Unit]
+Description=Download JW Broadcasting videos
+
+[Service]
+ExecStart=/usr/local/bin/jwb-index --latest --mode filesystem --download /home/%i/jwb
+User=%i
+
+[Install]
+WantedBy=multi-user.target
