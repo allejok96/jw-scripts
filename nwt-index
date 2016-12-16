@@ -27,41 +27,32 @@ load_shared_code
 show_help()
 {
     cat<<EOF
-Usage: nwt-index [OPTIONS] [DIRECTORY]
+Usage: nwt-index --mode MODE [OPTIONS] [DIRECTORY]
 Index sound recordings at jw.org
 
+Modes:
+  filesystem            Create symlinks and directories. Compatible with Plex.
+			  This mode is only really useful with --download.
+  m3u                   Create a "browsable" m3u playlist. Compatible with Kodi.
+  m3ucompat             Create multiple m3u playlists. Should work with most players.
+  urllist               Output a list of URLs or files to stdout. 
+
 Options:
-  --lang CODE           Change language
+  --clean               Clean out all old files exept downloaded recordings
+  --download            Make recordings available offline
+  --lang CODE           Set language
   --list-langs          Show a list of available language codes
   --pub CODE            Use the publication CODE, instead of the Bible
   --silver              Use the 2013 edition of the NWT
-  --download            Make recordings available offline
-  --mode MODE           The format in which files are saved (see Modes)
-  --clean               Clean out all old files exept downloaded recordings
   DIRECTORY             Directory to save the playlists or recordings in
 
 Advanced options:
-  --checksum            Verify file integrity with md5 checksum
-  --no-timestamp        Don't change timestamps on files
-  
-  --limit-rate RATE     Maximum download rate for recordings, for example
+  --book NUM            Bible book to download
+  --checksum            Verify file integrity
+  --limit-rate RATE     Maximum download rate for recordings
 			  1m means 1 megabyte per second
-  --book NUM            Number of bible book to download
   --json                Don't parse the JSON file, just show it (debug)
-
-Modes:
-  m3u                   Write a m3u hierarcy of m3u playlists. You can browse
-                          this by opening the first playlist. This works with
-                          Kodi, but can confuse other media players.
-  m3ucompat             Save multiple m3u playlists in the destination
-                          directory. There is no hierarcy, so you will have to
-                          open the correct playlist via a file browser, but
-                          this should work with most players.
-  filesystem            The media is saved in an actual folder hierarchy
-                          consisting of directories and symlinks. This is
-                          really only useful in combination with --download for
-                          media players that cannot read m3u files, e.g. Plex.
-  urllist               Simply output a list of URLs or files to stdout.
+  --no-timestamp        Don't change timestamps on files
 
 EOF
     exit
@@ -226,7 +217,6 @@ export lang maincode pub maxrate download mode
 
 # Assign variables
 [[ $pub ]] || pub=bi12
-[[ $mode ]] || mode=m3u
 [[ $lang ]] || lang=E
 [[ $datadir ]] || datadir="${arguments[0]:-.}"
 [[ $maincode ]] || maincode=0
@@ -245,6 +235,7 @@ fi
 
 mainurl="https://www.jw.org/apps/GETPUBMEDIALINKS?output=json&pub=$pub&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
 
+[[ $mode ]] || error "no mode specified"
 [[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: Unknown mode"
 
 # Pad code to 2 digits

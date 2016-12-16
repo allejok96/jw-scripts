@@ -27,46 +27,36 @@ load_shared_code
 show_help()
 {
     cat<<EOF
-Usage: jwb-index [OPTIONS] [DIRECTORY]
-Index the videos at tv.jw.org
+Usage: jwb-index --mode MODE [OPTIONS] [DIRECTORY]
+Index videos at tv.jw.org
 
-  --lang CODE           Change language
-  --list-langs          Show a list of available language codes
-  --quality NUM         Select maximum quality: 240, 360, 480 or 720
-  --no-subs             Prefer unsubtitled videos
-  --latest              Index "Latest Videos" instead of "Video on Demand"
-  --mode MODE           The format in which files are saved (see Modes)
-  --download            Make videos available offline
+Modes:
+  filesystem            Create symlinks and directories. Compatible with Plex.
+			  This mode is only really useful with --download.
+  m3u                   Create a "browsable" m3u playlist. Compatible with Kodi.
+  m3ucompat             Create multiple m3u playlists. Should work with most players.
+  urllist               Output a list of URLs or files to stdout. 
+
+Options:
   --clean               Clean out all old files except downloaded videos
-  --quiet               Only show errors
+  --download            Download videos
+  --lang CODE           Set language
+  --latest              Index "Latest Videos" instead of "Video on Demand"
+  --list-langs          Show a list of available language codes
+  --no-subs             Prefer unsubtitled videos
+  --quality NUM         Select maximum quality: 240, 360, 480 or 720
+  --quiet               Don't show status
   DIRECTORY             Directory to save the playlists or videos in
 
 Advanced options:
-  --limit-rate RATE     Maximum download rate for videos, default is
-                          500k (500 kilobytes per second), 0 disables limit
   --category CODENAMES  Comma separated list of categories to index. Default:
                           VideoOnDemand
-  --no-recursive        Don't automatically download more categories
-  --no-checksum         Don't check video files
-  --no-timestamp        Don't change timestamps on downloaded files
   --json                Don't parse the JSON file, just show it (debug)
-
-Modes:
-  m3u                   Write a m3u hierarcy of m3u playlists. You can browse
-                          this by opening the first playlist. This works with
-                          Kodi, but can confuse other media players.
-  m3ucompat             Save multiple m3u playlists in the destination
-                          directory. There is no hierarcy, so you will have to
-                          open the correct playlist via a file browser, but
-                          this should work with most players.
-  filesystem            The media is saved in an actual folder hierarchy
-                          consisting of directories and symlinks. This is
-                          really only useful in combination with --download for
-                          media players that cannot read m3u files, e.g. Plex.
-  urllist               Simply output a list of URLs or files to stdout.
-                          Note that unless --no-recursive is used, a media file
-			  can belong to multiple categories and that would
-			  cause duplicates in the output.
+  --limit-rate RATE     Maximum download rate for videos, default is
+                          500k (500 kilobytes per second), 0 disables limit
+  --no-checksum         Don't verify integrity of video files 
+  --no-recursive        Don't automatically download sub-categories
+  --no-timestamp        Don't change timestamps on files
 
 EOF
     exit
@@ -236,7 +226,6 @@ export lang maincode nosubtitles quality download norecursive maxrate mode lates
 [[ ${#arguments[@]} -gt 1 ]] && error "too many arguments" # $arguments gets set by read_arguments()
 
 # Assign variables
-[[ $mode ]] || mode=m3u
 [[ $maxrate ]] || maxrate=500k
 [[ $maincode ]] || maincode=VideoOnDemand
 [[ $quality ]] || quality=720
@@ -250,6 +239,7 @@ if ((json)); then
     exit
 fi
 
+[[ $mode ]] || error "no mode specified"
 [[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: unknown mode"
 
 # Things that only the parent may do
