@@ -33,6 +33,7 @@ Index videos at tv.jw.org
 Modes:
   filesystem            Create symlinks and directories. Compatible with Plex.
 			  This mode is only really useful with --download.
+  html			Generate a set of HTML pages with links to the videos.
   m3u                   Create a "browsable" m3u playlist. Compatible with Kodi.
   m3ucompat             Create multiple m3u playlists. Should work with most players.
   urllist               Output a list of URLs or files to stdout. 
