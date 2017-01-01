@@ -78,7 +78,7 @@ dir_monitor()
     while sleep 1s; do
 
         # Break if size is below limit
-        size_total="$(du --bytes --summarize "$dir_videos" | egrep -o '^[0-9]+')" || error
+        size_total="$(du --bytes --summarize "$dir_videos" | grep -E -o '^[0-9]+')" || error
         [[ $size_total -lt $max_size ]] && break
 
 	# Include "keep" videos (see below)
@@ -89,7 +89,7 @@ dir_monitor()
             size_keep="$(cd "$dir_videos" && tr '\n' '\0' < "$list_keep" \
 			   | du --bytes --total --files0-from - 2>/dev/null \
                            | tail -n1 \
-                           | egrep -o '^[0-9]+')"
+                           | grep -E -o '^[0-9]+')"
             
             size_latest="$(( size_total - size_keep ))"
 
@@ -101,7 +101,7 @@ dir_monitor()
 	
 	# Print file list sorted by size (biggest first)
 	# -c = sort by ctime
-        ls --escape --reverse -1 -c "$dir_videos" | while read name; do
+        ls --escape --reverse -1 -c "$dir_videos" | while read -r name; do
 
 	    file="$dir_videos/$name"
 	    
@@ -138,20 +138,25 @@ download_videos()
 	fi
     fi
 
-    msg "checking all selected videos online"
-    
-    # Print videos from "keep" categories to list_keep (optionally download them)
-    # The stdbuf thing is so the log gets printed out in realtime
-    "$jwb_script" \
-	--lang "$lang" \
-	--quality "$quality" \
-	--mode=urllist \
-	--limit-rate="$limit_rate" \
-	${keep_categories:+--category "$keep_categories"} \
-	"${keep_flags[@]}" \
-	"$dir_videos" \
-	2> >(stdbuf -oL sed 's/^/jwb-index: /' 1>&2) \
-	| add_to_list --keep
+    # Only update the WHOLE index of (keep-) videos once a day
+    if [[ $last_updated && $(date +%s) -gt $(( last_updated + 86400 )) ]]; then
+
+	last_updated="$(date +%s)"
+	msg "checking all selected videos online"
+	
+	# Print videos from "keep" categories to list_keep (optionally download them)
+	# The stdbuf thing is so the log gets printed out in realtime
+	"$jwb_script" \
+	    --lang "$lang" \
+	    --quality "$quality" \
+	    --mode=urllist \
+	    --limit-rate="$limit_rate" \
+	    ${keep_categories:+--category "$keep_categories"} \
+	    "${keep_flags[@]}" \
+	    "$dir_videos" \
+	    2> >(stdbuf -oL sed 's/^/jwb-index: /' 1>&2) \
+	    | add_to_list --keep
+    fi
 
     msg "checking latest videos online"
     
@@ -214,7 +219,8 @@ fi
 # Download videos
 while :; do
     # Wait for internet connection
-    until ping -c 3 8.8.8.8 &>/dev/null; do
+    netmsg=0
+    until ping -c 3 tv.jw.org &>/dev/null; do
 	((netmsg)) || msg "waiting for internet connection before starting download"
 	netmsg=1
 	sleep 1m
