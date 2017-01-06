@@ -99,8 +99,8 @@ parse_lines()
 {
     # Read stdin
     while read -r input; do
-        case "$input" in
-
+	case "$input" in
+	    
 	    status:404)
 		error "category not found"
 		;;
@@ -140,7 +140,7 @@ parse_lines()
                 # Start a new instance - download and parse category
                 if ! ((norecursive)); then
                     # Don't download categories we've already checked
-                    grep -q "$code" "$histfile" && continue
+                    grep -q "^$code$" "$histfile" && continue
 
                     ("$0" --child --category "$code" "$datadir") || error "child process failed" # exit if child process gets error
                 fi
@@ -263,7 +263,7 @@ if ! ((child)); then
 	histfile=/dev/null
     else
 	# Create history file
-	histfile="$(mktemp)" || error "failed to create temp file"
+	histfile="$(mktemp /tmp/jwb-index-XXXXXX.tmp)" || error "failed to create temp file"
 	# Remove the history file when we exit
 	trap '[[ -e $histfile ]] && rm "$histfile"' EXIT
     fi
@@ -287,7 +287,7 @@ for maincode in "${maincodes[@]}"; do
 
     # Download and parse the JSON file
     download_file "$mainurl" \
-	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize firstPublished \
+    	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize firstPublished \
 	| parse_lines
 
 done

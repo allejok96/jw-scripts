@@ -74,51 +74,33 @@ create_link()
     ln -sr "$dest" "$link" || error "$link: failed to create link"
 }
 
-# Add newline around squiggly and square brackets and commas
-# but not if they are quoted
-# Keep only the lines starting with "KEYWORD":
-# and remove all unescaped citation marks
-# Args: [KEYWORD ...]
+# Extract the JSON "keys" (or whatever) KEYWORDS
+# And remove the quotes around the key and its value
+# No keyword will match all letters, numbers, underscore and dash
+#
+# Example:
+#   unsquash_file animal
+# Will match:
+#   "animal":"dog"
+#   "animal":50
+#   "animal":null
+# And output:
+#  animal:dog
+#  animal:50
+#  animal:null
+#
+# TODO
+# If the string contains anything like JSON code,
+# this will create a depressing mess, therefore
+# this whole parsing stuff should be done by something
+# else that's supposed to parse JSON. Like Python.
+#
+# Args: [KEYWORDS ...]
 unsquash_file()
 {
-    local keywordstring
-
-    if [[ $@ ]]; then
-        # Append \| to all parameters
-        # and remove the last one
-        keywordstring="$(printf '%s\|' "$@" | sed 's/\\|$//')" || error
-    else
-        # Match everything that's not a citation mark
-        keywordstring='[^"]*'
-    fi
-
-    sed '
-        # Add a newline after all "special" characters
-        # Note how the character list starts with an ]
-        # Smart huh?
-        s/[][{},]/\n&\n/g
-
-' | sed -n '
-        : start
-        # Does this row have an uneven number of citation marks?
-        # That means that the quote continues on the next line...
-        /^\([^"\n]*"[^"\n]*"\)*[^"\n]*"[^"\n]*$/ {
-            # Append the next line of input
-            N
-            # Remove the newline between the two lines of input
-            s/\n//g
-            # Go back to start again
-            b start
-        }
-        # If the line is fine...
-        # Grep only the keywords
-        /^"\('"$keywordstring"'\)":/ {
-            # Remove all unescaped citation marks
-            s/\(^\|[^\]\)"\+/\1/g
-            # And print it
-            p
-        }
-' || error "failed to format JSON"
+    local regex
+    regex="$(echo "${@:-[a-zA-Z0-9_-]+}" | tr " " "|")" || error
+    grep -E -o '"('"$regex"')":("([^"]*(\\")*)*"|[0-9]*|null)' | sed 's/\([^\]\|^\)"\+/\1/g; s/\\\"/"/g' || error "failed to format JSON"
 }
 
 # Save link to other playlist/dir
@@ -363,12 +345,14 @@ write_to_html()
 	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
 	[[ $link ]] || error
     fi
+
+    [[ $link =~ .html$ ]] && local html_before="<h3>" html_after="</h3>"
     
     # If link already is written to file, skip it
     grep -q "^$link$" "$file" && return 0
 
     sed -i '$ d' "$file"
-    printf '%s\n' "<a href=\"$link\">$title</a><br><br>" "</body></html>" >> "$file" || error "$file: failed to write to html file"
+    printf '%s\n' "${html_before}<a href=\"$link\">$title</a><br><br>${html_after}" "</body></html>" >> "$file" || error "$file: failed to write to html file"
 }
 
 # Args: FILE
