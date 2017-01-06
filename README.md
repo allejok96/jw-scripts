@@ -1,7 +1,6 @@
 # JW bash scripts
 
-###### Update 2016-08-03: New `html` mode + bugfix in `jwb-index` (you should upgrade to get videos in correct category)
-###### Update 2016-08-02: `nwt-index` now downloads recordings of *any* publication from JW.ORG.
+###### Update 2017-01-06: More reliability and 20% less CPU usage (you should upgrade)
 
 ### JW Broadcasting and sound recordings anywhere
 
