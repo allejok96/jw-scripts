@@ -139,7 +139,7 @@ download_videos()
     fi
 
     # Only update the WHOLE index of (keep-) videos once a day
-    if [[ $last_updated && $(date +%s) -gt $(( last_updated + 86400 )) ]]; then
+    if [[ -z $last_updated || $(date +%s) -gt $(( last_updated + 86400 )) ]]; then
 
 	last_updated="$(date +%s)"
 	msg "checking all selected videos online"
