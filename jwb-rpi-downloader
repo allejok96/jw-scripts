@@ -106,7 +106,7 @@ dir_monitor()
 	    file="$dir_videos/$name"
 
 	    # Skip deleted file markers or currently downloading files
-	    [[ $file =~ '\.(part|deleted)$' ]] && continue
+	    [[ $file =~ \.(part|deleted)$ ]] && continue
 	    	    
 	    # Skip non-files (but there shouldn't be any)
             [[ ! -f $file ]] && continue
