@@ -26,10 +26,10 @@ load_shared_code
 
 load_config()
 {
-    [[ $conf  && ! -f "$conf" ]] && error "$conf: file not found"
+    [[ $conf  && ! -f "$conf" ]] && msg "$conf: file not found" && exit 1
     [[ $conf ]] || conf=/etc/jwb-rpi.conf
 
-    [[ -e "$conf" ]] && source "$conf" || error "$conf: failed to load configuration file"
+    [[ -e "$conf" ]] && source "$conf" || crash "$conf: failed to load configuration file"
 }
 
 show_help()
@@ -81,7 +81,7 @@ video_player()
     omxplayer "${player_options[@]}" --pos "$2" "$1"
 }
 
-read_arguments --help:show_help -- "$@"
+read_arguments --help:show_help -- "$@" || exit 1
 conf="$arguments"
 load_config
 

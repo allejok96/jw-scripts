@@ -63,7 +63,7 @@ save()
 {
     # If there is a title an URL, save them
     if [[ $title && $url ]]; then
-	write_media "$title" "$url" "$datadir" "${maincode:-$pub$issue}" "$name" "$checksum" "$filesize" "$time"
+	write_media "$title" "$url" "$datadir" "${maincode:-$pub$issue}" "$name" "$checksum" "$filesize" "$time" || err || return 1
 	# Unset variables so they don't get repeated                                                                           
 	unset title url checksum filesize time savenextsum savenextsize savenextdate
     fi
@@ -96,7 +96,7 @@ parse_lines()
                 echo "$name" 1>&2
 
 		# Empty out playlist
-		write_empty "$datadir" "${maincode:-$pub$issue}" "$name"
+		write_empty "$datadir" "${maincode:-$pub$issue}" "$name" || err
 		;;
 
 	    # Title of link
@@ -128,8 +128,14 @@ parse_lines()
 		# Add line number to books in filesystem mode, so they get sorted
 		[[ $mode = filesystem ]] && title="$code - $title"
 	
-                write_subdir "$title" "$code" "$datadir" "$maincode" "$name"
-                ("$0" --child --book "$code" "$datadir")
+                write_subdir "$title" "$code" "$datadir" "$maincode" "$name" || err || continue
+
+		("$0" --child --book "$code" "$datadir")
+
+		case $? in
+		    1) err "child process failed" ;;
+		    2) msg "child process killed"; exit 2 ;;
+		esac
                 ;;
 
 	    # URL to the media
@@ -162,7 +168,7 @@ parse_lines()
 
 check_lang()
 {
-    [[ $1 ]] || error
+    [[ $1 ]] || err || return 1
     
     [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
     # Don't make more checks
@@ -195,6 +201,8 @@ check_lang()
 
 [[ $1 = --help ]] && show_help
 
+trap 'echo "aborted (PID $$)" 1>&2; exit 2' SIGTERM SIGINT SIGHUP
+
 read_arguments --help:show_help \
                --lang=lang \
                --list-langs:lang=none \
@@ -211,10 +219,10 @@ read_arguments --help:show_help \
 	       --checksum:md5=1 \
 	       --no-timestamp:notime=1 \
                -- \
-               "$@" || exit 1
+               "$@"
 
 export lang maincode pub maxrate download mode
-[[ ${#arguments[@]} -gt 1 ]] && error "Too many arguments" # $arguments gets set by read_arguments()
+[[ ${#arguments[@]} -gt 1 ]] && msg "Too many arguments" && exit 1 # $arguments gets set by read_arguments()
 
 # Assign variables
 [[ $pub ]] || pub=bi12
@@ -231,13 +239,14 @@ if [[ $pub =~ ^(w|wp|g)[0-9]{6,8} ]]; then
     issue="${pub:1}"
     pub="${pub:0:1}"
 elif [[ $pub =~ ^(w|wp|g)[0-9] ]]; then
-    error "Please use the format w20130215 or g201604"
+    msg "Please use the format w20130215 or g201604"
+    exit 1
 fi
 
 mainurl="https://www.jw.org/apps/GETPUBMEDIALINKS?output=json&pub=$pub&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang${maincode:+&booknum=$maincode}${issue:+&issue=$issue}"
 
-[[ $mode ]] || error "no mode specified"
-[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: Unknown mode"
+[[ $mode ]] || msg "no mode specified" || exit 1
+[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || msg "$mode: Unknown mode" || exit 1
 
 # Pad code to 2 digits
 # $(( 10#n )) makes sure that n isn't read as an octal
@@ -252,9 +261,9 @@ if ! ((child)); then
     # Check that lang is valid
     check_lang "$lang" || exit 1
     # Check datadir
-    [[ -d $datadir ]] || error "$datadir: Destination directory does not exist"
+    [[ -d $datadir ]] || msg "$datadir: Destination directory does not exist" || exit 1
     # Make path absolute
-    datadir="$(realpath "$datadir")" || error
+    datadir="$(realpath "$datadir")" || crash
     # Add a subdir
     datadir="$datadir/$pub$issue-$lang"
     # Cleaning

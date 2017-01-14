@@ -10,10 +10,15 @@
 # maxrate      Set download rate
 # 
 
-error()
+crash()
 {
-    echo "${BASH_SOURCE[1]}, line ${BASH_LINENO[0]}: ${*:-something went wrong}" 1>&2
+    msg "${BASH_SOURCE[1]}, line ${BASH_LINENO[0]}: ${*:-something went wrong}"
     exit 1
+}
+
+err()
+{
+    msg "${BASH_SOURCE[1]}, line ${BASH_LINENO[0]}: ${*:-something went wrong}"
 }
 
 msg()
@@ -28,19 +33,25 @@ clean_dir()
 {
     local datadir="$1"
 
-    [[ $datadir ]] || error
+    [[ $datadir ]] || crash
 
     # If dir doesn't exist, it is clean, right?
     [[ ! -d "$datadir" ]] && return 0
     
-    # Remove links
+    # Remove symlinks
     find "$datadir" -type l -delete
     # Remove playlists
     find "$datadir" -name "*.m3u" -delete
+    # Remove HTML files
+    find "$datadir" -name "*.html" -delete
+    # Remove partially downloaded files
+    find "$datadir" -name "*.part" -delete
     # Remove empty directories
     find "$datadir" -type d -exec rmdir --ignore-fail-on-non-empty {} +
     # Remove symlinks outside $datadir that point to $datadir
     find "$(dirname "$datadir")" -maxdepth 1 -lname "$datadir/*" -or -lname "$(basename "$datadir")/*" -delete
+
+    return 0
 }
 
 # Make a link (but smarter)
@@ -49,13 +60,13 @@ create_link()
 {
     local dest="$1"
     local link="$2"
-    local linkdir="$(dirname "$link")"
+    local linkdir; linkdir="$(dirname "$link")"
 
-    [[ $dest && $link && $linkdir ]] || error
+    [[ $dest && $link && $linkdir ]] || crash
 
     # Create dir if not there
     if [[ ! -d $linkdir ]]; then
-	mkdir -p "$linkdir" || error "$linkdir: failed to create directory"
+	mkdir -p "$linkdir" || err || return 1
     fi
         
     # Does link exist?
@@ -65,13 +76,13 @@ create_link()
 	    return 0
 	else
 	    # If not, remove it
-	    rm "$link" || error "$link: failed to remove link"
+	    rm "$link" || err || return 1
 	fi
     fi
 
     # Make the actual link
     # -r makes it relative to link location
-    ln -sr "$dest" "$link" || error "$link: failed to create link"
+    ln -sr "$dest" "$link" || err || return 1
 }
 
 # Extract the JSON "keys" (or whatever) KEYWORDS
@@ -99,8 +110,8 @@ create_link()
 unsquash_file()
 {
     local regex
-    regex="$(echo "${@:-[a-zA-Z0-9_-]+}" | tr " " "|")" || error
-    grep -E -o '"('"$regex"')":("([^"]*(\\")*)*"|[0-9]*|null)' | sed 's/\([^\]\|^\)"\+/\1/g; s/\\\"/"/g' || error "failed to format JSON"
+    regex="$(echo "${@:-[a-zA-Z0-9_-]+}" | tr " " "|")" || return 1
+    grep -E -o '"('"$regex"')":("([^"]*(\\")*)*"|[0-9]*|null)' | sed 's/\([^\]\|^\)"\+/\1/g; s/\\\"/"/g' || err "failed to format JSON" || return 1
 }
 
 # Save link to other playlist/dir
@@ -114,28 +125,28 @@ write_subdir()
     local code="$4"
     local name="$5"
     
-    [[ $title && $link && $datadir && $code && $name ]] || error
+    [[ $title && $link && $datadir && $code && $name ]] || crash
 
     case "$mode" in
 	filesystem)
 	    # Create the directory to link to, before linking to it
 	    if [[ ! -d $datadir/$link ]]; then
-		mkdir -p "$datadir/$link" || error "$datadir/$link: failed to create directory"
+		mkdir -p "$datadir/$link" || err || return 1
 	    fi
 
 	    # First process saves outside datadir
             if ! ((child)); then
-		create_link "$datadir/$link" "$(dirname "$datadir")/$name/$title"
+		create_link "$datadir/$link" "$(dirname "$datadir")/$name/$title" || return 1
 	    else
-		create_link "$datadir/$link" "$datadir/$code/$title"
+		create_link "$datadir/$link" "$datadir/$code/$title" || return 1
 	    fi
 	    ;;
 	m3u|html)
 	    # First process saves playlist outside of datadir
 	    if ! ((child)); then
-		write_to_$mode "$title" "$link.$mode" "$(dirname "$datadir")/$name.$mode"
+		write_to_$mode "$title" "$link.$mode" "$(dirname "$datadir")/$name.$mode" || return 1
 	    else
-		write_to_$mode "$title" "$link.$mode" "$datadir/$code.$mode"
+		write_to_$mode "$title" "$link.$mode" "$datadir/$code.$mode" || return 1
 	    fi
 	    ;;
 	m3ucompat)
@@ -145,7 +156,30 @@ write_subdir()
 	    return 0
 	    ;;
     esac
-    
+}
+
+# Check a files integrity
+# Args: FILE SIZE MD5
+check_file()
+{
+    local file="$1"
+    local size="$2"
+    local checksum="$3"
+
+    [[ $file ]] || crash
+
+    # Check size
+    if [[ $size =~ [0-9]+ && ! $(du --bytes "$file" | cut -f1) -eq $size ]]; then
+	((quiet)) || msg "$file: incorrect file size"
+	return 1
+    fi
+	
+    # Check checksum
+    if [[ $checksum =~ [0-9a-f]{32} ]] && ! echo "$checksum  $file" | md5sum -c --status; then
+	((quiet)) || msg "$file: incorrect checksum"
+	return 1
+    fi
+
     return 0
 }
 
@@ -156,7 +190,7 @@ write_media()
 {
     local title="$1"
     local link="$2"
-    local file="$(basename "$link")"
+    local file; file="$(basename "$link")"
     local datadir="$3"
     local code="$4"
     local name="$5"
@@ -165,48 +199,35 @@ write_media()
     local size="$7"
     local time="$8"
     
-    [[ $title && $link && $file && $datadir && $code && $name ]] || error
+    [[ $title && $link && $file && $datadir && $code && $name ]] || crash
 
     [[ $mode = urllist ]] && datadir="$(dirname "$datadir")"
-    
-    # Check size
-    if [[ $size =~ [0-9]+ && -e $datadir/$file ]]; then
-	if [[ ! $(du --bytes "$datadir/$file" | cut -f1) -eq $size ]]; then
-	    msg "$datadir/$file: incorrect file size, removing file"
-	    rm -f "$datadir/$file"
-	fi
-    fi	
 
-    # Check checksum
-    if [[ $checksum =~ [0-9a-f]{32} && -e $datadir/$file ]]; then
-	if ! echo "$checksum  $datadir/$file" | md5sum -c --status; then
-	    msg "$datadir/$file: incorrect checksum, removing file"
-	    rm -f "$datadir/$file"
-	fi
+    # Remove broken files
+    if [[ -e $datadir/$file ]]; then
+	check_file "$datadir/$file" "$size" "$checksum" || rm -fv "$datadir/$file" || err || return 1
     fi
 
-    # Download media
-    if ((download)); then
-        if [[ ! -e $datadir/$file ]]; then
-	    [[ -d $datadir ]] || mkdir -p "$datadir" || error "$datadir: failed to create directory"
-            ((quiet)) || msg "downloading: $file"
-            download_file "$link" "$datadir/$file"
-	    # Re-check checksum
-	    if [[ -e $datadir/$file && $checksum =~ [0-9a-f]{32} ]]; then
-		if ! echo "$checksum  $datadir/$file" | md5sum -c --status; then
-		    msg "$datadir/$file: incorrect checksum, removing file"
-		    rm -f "$datadir/$file"
-		fi
+    # Download file
+    if ((download)) && [[ ! -e $datadir/$file ]]; then
+	((quiet)) || msg "downloading: $file"
+	download_file "$link" "$datadir/$file.part"
+	# Check downloaded file
+	if [[ -e $datadir/$file.part ]]; then
+	    if check_file "$datadir/$file.part" "$size" "$checksum"; then
+		mv "$datadir/$file.part" "$datadir/$file" || err || return 1
+	    else
+		rm -fv "$datadir/$file.part" || err || return 1
 	    fi
-        fi
+	fi
     fi
-
+    
     # Change timestamp
     if [[ $time && -e $datadir/$file ]]; then
-	touch -d "$time" "$datadir/$file" || msg "$time: incorrect date format for $file"
+	touch -d "$time" "$datadir/$file" || err
     fi
     
-    # Change link to point to local media (if any)
+    # Change link to point to local media
     [[ -e $datadir/$file ]] && link="$file"
     
     case "$mode" in
@@ -220,21 +241,21 @@ write_media()
 	    # Link to existing media
 	    if [[ -e $datadir/$file ]]; then
 		suffix="$(sed -n 's/.\+\.//p' <<< "$file")"
-		create_link "$datadir/$file" "$destdir/$code/$title.$suffix"
+		create_link "$datadir/$file" "$destdir/$code/$title.$suffix" || return 1
 	    else
 		# Create a playlist with a URL and link to it
-		reset_m3u "$datadir/$file.m3u"
-		write_to_m3u "$title" "$link" "$datadir/$file.m3u"
-		create_link "$datadir/$file.m3u" "$destdir/$code/$title.m3u"
+		reset_m3u "$datadir/$file.m3u" || return 1
+		write_to_m3u "$title" "$link" "$datadir/$file.m3u" || return 1
+		create_link "$datadir/$file.m3u" "$destdir/$code/$title.m3u" || return 1
 	    fi
 	    ;;
 	m3u|html)
 	    # First process saves playlist outside of datadir
 	    if ! ((child)); then
 		# Note: no need to make link relative to datadir, this is done in write_to_$mode
-		write_to_$mode "$title" "$link" "$(dirname "$datadir")/$name.$mode"
+		write_to_$mode "$title" "$link" "$(dirname "$datadir")/$name.$mode" || return 1
 	    else
-		write_to_$mode "$title" "$link" "$datadir/$code.$mode"
+		write_to_$mode "$title" "$link" "$datadir/$code.$mode" || return 1
 	    fi
 	    ;;
 	m3ucompat)
@@ -242,7 +263,7 @@ write_media()
 	    # Note: $code is in filename, not only to sort bible books in order, but also
 	    #       to avoid conflicts, as multiple categories can have the same name in
 	    #       JW Broadcasting, e.g. Featured Videos
-	    write_to_m3u "$title" "$link" "$(dirname "$datadir")/$code - $name.m3u"
+	    write_to_m3u "$title" "$link" "$(dirname "$datadir")/$code - $name.m3u" || return 1
 	    ;;
 	urllist)
 	    if [[ -e $datadir/$file ]]; then
@@ -264,7 +285,7 @@ write_empty()
     local name="$3"
     local file
 
-    [[ $dir && $code && $name ]] || error
+    [[ $dir && $code && $name ]] || crash
 
     case "$mode" in
 	m3u|html)
@@ -275,14 +296,15 @@ write_empty()
 	    else
 		file="$code.$mode"
 	    fi
-	    reset_$mode "$dir/$file"
+	    reset_$mode "$dir/$file" || return 1
 	    ;;
 	m3ucompat)
-	    reset_m3u "$(dirname "$dir")/$code - $name.m3u"
+	    reset_m3u "$(dirname "$dir")/$code - $name.m3u" || return 1
 	    ;;
 	filesystem)
 	    # Remove all links
 	    [[ -e $dir/$code ]] && find "$dir/$code" -type l -delete
+	    return 0
 	    ;;
 	urllist)
 	    return 0
@@ -294,12 +316,12 @@ write_empty()
 reset_m3u()
 {
     local file="$1"
-    local dir="$(dirname "$1")"
+    local dir; dir="$(dirname "$1")"
 
-    [[ $file && $dir ]] || error
+    [[ $file && $dir ]] || crash
     
-    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir: failed to create directory"
-    printf '%s\n' "#EXTM3U" > "$file" || error "$file: failed to write to playlist"
+    [[ -d $dir ]] || mkdir -p "$dir" || err || return 1
+    printf '%s\n' "#EXTM3U" > "$file" || err "$file: failed to write to playlist" || return 1
 }
 
 # Args: TITLE LINK FILE
@@ -309,22 +331,24 @@ write_to_m3u()
     local link="$2"
     local file="$3"
 
-    [[ $title && $link && $file ]] || error
+    [[ $title && $link && $file ]] || crash
         
     # Reset the file if empty
-    [[ ! -f $file ]] && reset_m3u "$file"
+    if [[ ! -f $file ]]; then
+	reset_m3u "$file" || return 1
+    fi
 
     # Make links to local files relative to the playlist dir
     if [[ ! $link =~ ^https?:// ]]; then
 	# --canonicalize-missing = don't care if file exists or not
 	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
-	[[ $link ]] || error
+	[[ $link ]] || err || return 1
     fi
     
     # If link already is written to file, skip it
     grep -q "^$link$" "$file" && return 0
     
-    printf '%s\n' "#EXTINF:0,$title" "$link" >> "$file" || error "$file: failed to write to playlist"
+    printf '%s\n' "#EXTINF:0,$title" "$link" >> "$file" || err "$file: failed to write to playlist" || return 1
 }
 
 # Args: TITLE LINK FILE
@@ -334,16 +358,18 @@ write_to_html()
     local link="$2"
     local file="$3"
 
-    [[ $title && $link && $file ]] || error
+    [[ $title && $link && $file ]] || crash
         
     # Reset the file if empty
-    [[ ! -f $file ]] && reset_html "$file"
+    if [[ ! -f $file ]]; then
+	reset_html "$file" || return 1
+    fi
 
     # Make links to local files relative to the playlist dir
     if [[ ! $link =~ ^https?:// ]]; then
 	# --canonicalize-missing = don't care if file exists or not
 	link="$(realpath --canonicalize-missing --relative-to="$(dirname "$file")" "$datadir/$link")"
-	[[ $link ]] || error
+	[[ $link ]] || err || return 1
     fi
 
     [[ $link =~ .html$ ]] && local html_before="<h3>" html_after="</h3>"
@@ -351,54 +377,63 @@ write_to_html()
     # If link already is written to file, skip it
     grep -q "^$link$" "$file" && return 0
 
-    sed -i '$ d' "$file"
-    printf '%s\n' "${html_before}<a href=\"$link\">$title</a><br><br>${html_after}" "</body></html>" >> "$file" || error "$file: failed to write to html file"
+    # Remove last line
+    sed -i '$ d' "$file" || err "$file: failed to write to html file" || return 1
+
+    printf '%s\n' "${html_before}<a href=\"$link\">$title</a><br><br>${html_after}" "</body></html>" >> "$file" || err "$file: failed to write to html file" || return 1
 }
 
 # Args: FILE
 reset_html()
 {
     local file="$1"
-    local dir="$(dirname "$1")"
+    local dir; dir="$(dirname "$1")"
 
-    [[ $file && $dir ]] || error
+    [[ $file && $dir ]] || crash
     
-    [[ -d $dir ]] || mkdir -p "$dir" || error "$dir: failed to create directory"
-    printf '%s\n' "<html><head><meta charset=\"utf-8\"/></head><body>" "</body></html>" > "$file" || error "$file: failed to write to html file"
+    [[ -d $dir ]] || mkdir -p "$dir" || err || return 1
+    printf '%s\n' "<html><head><meta charset=\"utf-8\"/></head><body>" "</body></html>" > "$file" || err "$file: failed to write to html file" || return 1
 }
 
 # Download a file with curl or wget
-# Note: subshell, because it has a trap!
-# Args: URL [RATE]
+# Args: URL [FILE]
 download_file()
-(
-    local link="$1"
+{
+    local url="$1"
     local file="$2"
-    [[ $link ]] || error
+    local dir; dir="$(dirname "$file")"
+    [[ $url ]] || crash
 
     if [[ $file ]]; then
-	# Check that file acctually is writable, so we don't try to delete it later
-	printf '' >&2 || error "$2: failed to write to file"
-	# Redirect output to file
-	exec 3>"$2"
-	# Remove file if something goes wrong
-	trap 'rm -fv "$2"' EXIT
+
+	# Create dir
+	if [[ ! -e $dir ]]; then
+	    mkdir -p "$dir" || err || return 1
+	fi
+	
+	# Continue the download
+	if [[ -e $file ]]; then
+	    ((quiet)) || msg "continuing on: $file"
+	    curl_args+=(--continue-at -)
+	    wget_args+=(--continue)
+	fi
+
+	# Limit rate only for file downloads
+	if [[ $maxrate && $maxrate != 0 ]]; then
+	    curl_args+=(--limit-rate "$r")
+	    wget_args+=(--limit-rate "$r")
+	fi
+	
     else
-	# Output just goes to stdout
-	exec 3>&1
+	file="-"
     fi
 
-    [[ $maxrate && $maxrate != 0 ]] && local r="$maxrate"
-    
     if ((hascurl)); then
-        curl ${r:+--limit-rate "$r"} --silent "$1" 1>&3 || error "failed to download file"
+        curl "${curl_args[@]}" --silent  -o "$file" "$url" || err "failed to download file" || return 1
     else
-        wget ${r:+--limit-rate "$r"} --quiet -O - "$1" 1>&3 || error "failed to download file"
+        wget "${wget_args[@]}" --quiet -O "$file" "$url" || err "failed to download file" || return 1
     fi
-
-    # Download OK, don't delete anything
-    trap - EXIT
-)
+}
 
 # Check that we have all we need
 requirement_check()
@@ -407,15 +442,13 @@ requirement_check()
 	case "$cmd" in
 
 	    sed)
-		type sed &>/dev/null || error "this script requires GNU sed"	    
-		sed --version | egrep -q "GNU sed" || cat <<EOF 1>&2
-Warning:
+		type sed &>/dev/null || crash "this script requires GNU sed"
+		sed --version | grep -q "GNU sed" || err "Warning:
 This script is build for and tested only with GNU sed.
 It looks like you are using a different version of sed,
 so I cannot guarrantee that it will work.
 Just saying :)
-
-EOF
+"
 		;;
 
 	    curl|wget)
@@ -423,14 +456,14 @@ EOF
 		    if type curl &>/dev/null; then
 			export hascurl=1
 		    else
-			type wget &>/dev/null || error "this script requires curl or wget"
+			type wget &>/dev/null || crash "this script requires curl or wget"
 			export hascurl=0
 		    fi
 		fi
 		;;
 
 	    *)
-		type "$cmd" &>/dev/null || error "this script requires the \"$cmd\" command"
+		type "$cmd" &>/dev/null || crash "this script requires the \"$cmd\" command"
 		;;
 	    
 	esac
@@ -446,7 +479,7 @@ read_arguments()
     until [[ $1 = -- ]]; do
         flags+=("$1")
         shift
-        [[ $# = 0 ]] && error
+        [[ $# = 0 ]] && crash
     done
 
     # Remove the --
@@ -472,7 +505,7 @@ read_arguments()
             # Flag with argument, separated by =
             elif [[ $flag =~ --[a-zA-Z0-9-]+=.* && $1 = "${flag%%=*}"=* ]]; then
                 # Check that we have the argument
-                [[ ${1#*=} ]] || error "${flag%%=*} requires an argument"
+                [[ ${1#*=} ]] || crash "${flag%%=*} requires an argument"
                 # Save in variable
                 eval "${flag#*=}"'="${1#*=}"'
                 shift
@@ -481,7 +514,7 @@ read_arguments()
             # Flag with argument, separated by space (and argument is not a flag)
             elif [[ $flag =~ --[a-zA-Z0-9-]+=.* && $1 = "${flag%%=*}" && $2 != --* ]]; then
                 # Check that we have the argument
-                [[ $2 ]] || error "${flag%%=*} requires an argument"
+                [[ $2 ]] || crash "${flag%%=*} requires an argument"
                 # Save in variable
                 eval "${flag#*=}"'="$2"'
                 shift 2
@@ -497,7 +530,7 @@ read_arguments()
         done
 
         # No matching flag
-        error "$1: unknown flag"
+        crash "$1: unknown flag"
 
     done
 
@@ -508,7 +541,7 @@ read_arguments()
 # Args: LANGCODE
 jwb_check_lang()
 {
-    [[ $1 ]] || error
+    [[ $1 ]] || crash
     local langurl="https://mediator.jw.org/v1/languages/E/web"
     
     [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
@@ -547,11 +580,12 @@ remove_from_lists()
     local string="$1"
     shift
     
-    [[ $string && $@ ]] || error
+    [[ $string && "$*" ]] || crash
     
-    # Remove a line from the files
     for list in "$@"; do
 	[[ ! -e $list ]] && continue
-	sed -i "/^${string//\//\\/}$/d" "$list" # escape all / in $string
+	# Remove a line from the files
+	# (bash: escape all / in $string)
+	sed -i "/^${string//\//\\/}$/d" "$list" || err
     done
 }

@@ -26,10 +26,10 @@ load_shared_code
 
 load_config()
 {
-    [[ $conf  && ! -f "$conf" ]] && error "$conf: file not found"
+    [[ $conf  && ! -f "$conf" ]] && msg "$conf: file not found" && exit 1
     [[ $conf ]] || conf=/etc/jwb-rpi.conf
 
-    [[ -e "$conf" ]] &&	source "$conf" || error "$conf: failed to load configuration file"
+    [[ -e "$conf" ]] &&	source "$conf" || crash "$conf: failed to load configuration file"
 }
 
 show_help()
@@ -68,7 +68,7 @@ add_to_list()
 computer_readable()
 {
     # Convert units to numbers
-    [[ $1 =~ ^[0-9]+(\.[0-9]+)?(b|k|M|G|T)$ ]] || error "$1: invalid size or unit"
+    [[ $1 =~ ^[0-9]+(\.[0-9]+)?(b|k|M|G|T)$ ]] || crash "$1: invalid size or unit"
     echo "$(( $(sed 's/b//; s/k/*1024/; s/M/*1024**2/; s/G/*1024**3/; s/T/*1024**4/;' <<< "$1") ))"
 }
 
@@ -78,7 +78,7 @@ dir_monitor()
     while sleep 1s; do
 
         # Break if size is below limit
-        size_total="$(du --bytes --summarize "$dir_videos" | grep -E -o '^[0-9]+')" || error
+        size_total="$(du --bytes --summarize "$dir_videos" | grep -E -o '^[0-9]+')" || crash
         [[ $size_total -lt $max_size ]] && break
 
 	# Include "keep" videos (see below)

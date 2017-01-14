@@ -95,7 +95,7 @@ parse_lines()
 	case "$input" in
 
 	    status:404)
-		error "$channel: Channel not found"
+		crash "$channel: Channel not found"
 		;;
 	    
 	    # A new video
@@ -162,7 +162,7 @@ parse_lines()
 array_replace()
 {
     local expression="$1" name="$2" array
-    [[ $expression && $name ]] || error
+    [[ $expression && $name ]] || crash
 
     # Everything done to "array" will acctually be done to the array named "$name"
     declare -n array=$name
@@ -184,7 +184,7 @@ read_arguments --help:show_help\
 	       --json:json=1\
 	       --forever:loop=1\
 	       --\
-	       "$@" || exit 1
+	       "$@"
 
 export quality lang category nosubtitles pos
 
@@ -203,7 +203,7 @@ if ((json)); then
     exit
 fi
 
-[[ -z $arguments ]] && error "Not enough arguments"  # $arguemnts gets set by read_arguemnts()
+[[ -z $arguments ]] && msg "Not enough arguments" && exit 1 # $arguemnts gets set by read_arguemnts()
 
 # If arguments have a %s, get starting position
 # Since the position is at the end, get it before parsing the whole file
@@ -226,7 +226,7 @@ while :; do
       download_file "$mainurl" \
 	  | unsquash_file status progressiveDownloadURL title \
 	  | parse_lines "${arguments_start[@]}" \
-	  | xargs --no-run-if-empty -- "${arguments[@]}" || error
+	  | xargs --no-run-if-empty -- "${arguments[@]}" || exit 1
 
       # Loop or break?
       ((loop)) || break

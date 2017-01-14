@@ -69,7 +69,7 @@ save()
     # If there is a title an URL, save them
     if [[ $title && $url ]]; then
 	# If this belongs to other category, add it to that one
-	write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize" "$time"
+	write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize" "$time" || return 1
 	# Unset variables so they don't get repeated                                                                           
         unset title url realcode checksum filesize time savenextsum savenextsize
     fi
@@ -102,7 +102,8 @@ parse_lines()
 	case "$input" in
 	    
 	    status:404)
-		error "category not found"
+		msg "category not found"
+		exit 1
 		;;
 	    
             key:*)
@@ -131,18 +132,23 @@ parse_lines()
                 if [[ $code = "$maincode" ]]; then
 		    mainname="$name"
 		    # Empty out the playlist for this category
-		    write_empty "$datadir" "$code" "$name"
+		    write_empty "$datadir" "$code" "$name" || err
                     continue
                 fi
 
-                write_subdir "${name^^*}" "$code" "$datadir" "$maincode" "$mainname"
+                write_subdir "${name^^*}" "$code" "$datadir" "$maincode" "$mainname" || err || continue
 
                 # Start a new instance - download and parse category
                 if ! ((norecursive)); then
                     # Don't download categories we've already checked
                     grep -q "^$code$" "$histfile" && continue
 
-                    ("$0" --child --category "$code" "$datadir") || error "child process failed" # exit if child process gets error
+                    ("$0" --child --category "$code" "$datadir")
+
+		    case $? in
+			1) err "child process failed" ;;
+			2) msg "child process killed"; exit 2 ;;
+		    esac
                 fi
                 ;;
 
@@ -167,8 +173,8 @@ parse_lines()
                     fi
 
                     # Compare quality (old < new <= maximum)
-                    newq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "$newurl")" || error "quality comparsion failed"
-                    oldq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" || error "quality comparsion failed"
+                    newq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "$newurl")" || err || continue
+                    oldq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" || err || continue
                     [[ $newq -lt $oldq || $newq -gt $quality ]] && continue
 
                 fi
@@ -200,7 +206,7 @@ parse_lines()
     return 0
 }
 
-trap 'echo "aborted (PID $$)" 1>&2; exit 1' SIGTERM SIGINT SIGHUP
+trap 'echo "aborted (PID $$)" 1>&2; exit 2' SIGTERM SIGINT SIGHUP
 
 read_arguments --help:show_help \
                --list-langs:lang=none \
@@ -221,10 +227,10 @@ read_arguments --help:show_help \
 	       --no-checksum:nomd5=1 \
 	       --no-timestamp:notime=1 \
                -- \
-               "$@" || exit 1
+               "$@"
 
 export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet nomd5 notime
-[[ ${#arguments[@]} -gt 1 ]] && error "too many arguments" # $arguments gets set by read_arguments()
+[[ ${#arguments[@]} -gt 1 ]] && msg "too many arguments" && exit 1 # $arguments gets set by read_arguments()
 
 # Assign variables
 [[ $maxrate ]] || maxrate=500k
@@ -240,8 +246,8 @@ if ((json)); then
     exit
 fi
 
-[[ $mode ]] || error "no mode specified"
-[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || error "$mode: unknown mode"
+[[ $mode ]] || msg "no mode specified" || exit 1
+[[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || msg "$mode: unknown mode" || exit 1
 
 # Things that only the parent may do
 # or that's only needed once
@@ -251,7 +257,7 @@ if ! ((child)); then
     # Check that lang is valid
     jwb_check_lang "$lang" || exit 1
     # Check datadir
-    [[ -d $datadir ]] || error "$datadir: destination directory does not exist"
+    [[ -d $datadir ]] || msg "$datadir: destination directory does not exist" || exit 1
     # Make path absolute
     datadir="$(realpath "$datadir")"
     # Add a subdir
@@ -263,7 +269,7 @@ if ! ((child)); then
 	histfile=/dev/null
     else
 	# Create history file
-	histfile="$(mktemp /tmp/jwb-index-XXXXXX.tmp)" || error "failed to create temp file"
+	histfile="$(mktemp /tmp/jwb-index-XXXXXX.tmp)" || crash "failed to create temp file"
 	# Remove the history file when we exit
 	trap '[[ -e $histfile ]] && rm "$histfile"' EXIT
     fi
@@ -281,8 +287,8 @@ for maincode in "${maincodes[@]}"; do
     
     # Write to the history file
     # and show a message with our progress
-    [[ $histfile ]] || error "histfile: variable empty, this should not happen"
-    echo "$maincode" >> "$histfile" || error "$histfile: failed to write to temp file"
+    [[ $histfile ]] || crash "histfile: variable empty, this should not happen"
+    echo "$maincode" >> "$histfile" || crash "$histfile: failed to write to temp file"
     ((quiet)) || echo "$maincode" 1>&2
 
     # Download and parse the JSON file
