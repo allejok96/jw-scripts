@@ -1,5 +1,7 @@
 # JW bash scripts
 
+###### Update 2017-01-14: Resuming download of partially downloaded files
+
 ###### Update 2017-01-06: More reliability and 20% less CPU usage (you should upgrade)
 
 ### JW Broadcasting and sound recordings anywhere
