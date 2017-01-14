@@ -407,6 +407,8 @@ download_file()
     local url="$1"
     local file="$2"
     local dir; dir="$(dirname "$file")"
+    local curl_args=
+    local wget_args=
     [[ $url ]] || crash
 
     if [[ $file ]]; then
