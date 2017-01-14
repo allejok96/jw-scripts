@@ -210,14 +210,19 @@ write_media()
 
     # Download file
     if ((download)) && [[ ! -e $datadir/$file ]]; then
-	((quiet)) || msg "downloading: $file"
-	download_file "$link" "$datadir/$file.part"
-	# Check downloaded file
-	if [[ -e $datadir/$file.part ]]; then
-	    if check_file "$datadir/$file.part" "$size" "$checksum"; then
-		mv "$datadir/$file.part" "$datadir/$file" || err || return 1
-	    else
-		rm -fv "$datadir/$file.part" || err || return 1
+	# Skip files deleted previously due to low disk space
+	if [[ -e $datadir/$file.deleted ]]; then
+	    msg "skip downloading: $file"
+	else
+	    ((quiet)) || msg "downloading: $file"
+	    download_file "$link" "$datadir/$file.part"
+	    # Check downloaded file
+	    if [[ -e $datadir/$file.part ]]; then
+		if check_file "$datadir/$file.part" "$size" "$checksum"; then
+		    mv "$datadir/$file.part" "$datadir/$file" || err || return 1
+		else
+		    rm -fv "$datadir/$file.part" || err || return 1
+		fi
 	    fi
 	fi
     fi

@@ -101,13 +101,16 @@ dir_monitor()
 	
 	# Print file list sorted by size (biggest first)
 	# -c = sort by ctime
-        ls --escape --reverse -1 -c "$dir_videos" | while read -r name; do
+        ls --escape --sort=time --reverse -1 "$dir_videos" | while read -r name; do
 
 	    file="$dir_videos/$name"
-	    
+
+	    # Skip deleted file markers or currently downloading files
+	    [[ $file =~ '\.(part|deleted)$' ]] && continue
+	    	    
 	    # Skip non-files (but there shouldn't be any)
             [[ ! -f $file ]] && continue
-	    
+
             # Skip "keep" videos
             ((skipkeep)) && grep -q "^$name$" "$list_keep" && continue
 
@@ -116,7 +119,11 @@ dir_monitor()
 
             # Remove file from disk and list
 	    msg "removing $file"
-            rm -f "$file" && remove_from_lists "$name" "$list_keep" "$list_videos"
+            rm -f "$file" || continue
+	    remove_from_lists "$name" "$list_keep" "$list_videos"
+
+	    # Mark it as "don't download again"
+	    touch "$file.deleted"
 
 	    # Re-check disk usage
 	    break
