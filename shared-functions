@@ -407,10 +407,13 @@ download_file()
     local url="$1"
     local file="$2"
     local dir; dir="$(dirname "$file")"
-    local curl_args wget_args
-    unset curl_args wget_args
-    [[ $url ]] || crash
 
+    local curl_args wget_args
+    curl_args=(--silent)
+    wget_args=(--quiet)
+    
+    [[ $url ]] || crash
+    
     if [[ $file ]]; then
 
 	# Create dir
@@ -427,8 +430,8 @@ download_file()
 
 	# Limit rate only for file downloads
 	if [[ $maxrate && $maxrate != 0 ]]; then
-	    curl_args+=(--limit-rate "$r")
-	    wget_args+=(--limit-rate "$r")
+	    curl_args+=(--limit-rate "$maxrate")
+	    wget_args+=(--limit-rate "$maxrate")
 	fi
 	
     else
@@ -436,9 +439,9 @@ download_file()
     fi
 
     if ((hascurl)); then
-        curl "${curl_args[@]}" --silent  -o "$file" "$url" || err "failed to download file" || return 1
+        curl "${curl_args[@]}" -o "$file" "$url" || err "failed to download file" || return 1
     else
-        wget "${wget_args[@]}" --quiet -O "$file" "$url" || err "failed to download file" || return 1
+        wget "${wget_args[@]}" -O "$file" "$url" || err "failed to download file" || return 1
     fi
 }
 
