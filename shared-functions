@@ -111,7 +111,7 @@ unsquash_file()
 {
     local regex
     regex="$(echo "${@:-[a-zA-Z0-9_-]+}" | tr " " "|")" || return 1
-    grep -E -o '"('"$regex"')":("([^"]*(\\")*)*"|[0-9]*|null)' | sed 's/\([^\]\|^\)"\+/\1/g; s/\\\"/"/g' || err "failed to format JSON" || return 1
+    grep -E -o '"('"$regex"')":("([^"]*(\\")*)*"|[0-9]*|null|true|false)' | sed 's/\([^\]\|^\)"\+/\1/g; s/\\\"/"/g' || err "failed to format JSON" || return 1
 }
 
 # Save link to other playlist/dir
