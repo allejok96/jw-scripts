@@ -47,6 +47,7 @@ Options:
   --no-subs             Prefer unsubtitled videos
   --quality NUM         Select maximum quality: 240, 360, 480 or 720
   --quiet               Don't show status
+  --since DATE          Only save videos newer than DATE
   DIRECTORY             Directory to save the playlists or videos in
 
 Advanced options:
@@ -66,12 +67,31 @@ EOF
 # Save a media link
 save()
 {
-    # If there is a title an URL, save them
-    if [[ $title && $url ]]; then
-	# If this belongs to other category, add it to that one
-	write_media "$title" "$url" "$datadir" "${realcode:-$maincode}" "$mainname" "$checksum" "$filesize" "$time" || return 1
+    # If there is a title and URL, save them
+    if [[ $title && ${#url[@]} -gt 0 ]]; then
+
+	# Skip if it was published before SINCE date
+	[[ $time && $since && $(date -d "$time" +%s) -lt $since ]] && return 0
+	
+	# This very obscure chunk of code sorts URLs by the order:
+	#   1. Subtitle choice
+	#   2. Not greater than max quality
+	#   3. Actual quality
+	# This is done by printing out a table of the values and sorting it.
+	# Probably a very bad idea, but efficient.
+	i=$(for i in ${!url[@]}; do
+		# Note: use reverse tests because 1 sorts higher than 0
+		[[ ${subtitled[$i]} != "$subtitles" ]]; local s=$?
+		[[ ${qualitylabel[$i]:-0} -gt "$quality" ]]; local q=$?
+		echo "$s $q ${qualitylabel[$i]:-0} $i ${url[$i]}"
+	    done | sort | tail -n1 | cut -d " " -f4)
+	 
+	[[ ${url[$i]} ]] || err || return 1
+	
+	# If this belongs to other category (realcode), add it to that one
+	write_media "$title" "${url[$i]}" "$datadir" "${realcode:-$maincode}" "$mainname" "${checksum[$i]}" "${filesize[$i]}" "$time" || return 1
 	# Unset variables so they don't get repeated                                                                           
-        unset title url realcode checksum filesize time savenextsum savenextsize
+        unset title url realcode checksum filesize time qualitylabel subtitled urlindex
     fi
 }
 
@@ -159,37 +179,29 @@ parse_lines()
                 ;;
 
             progressiveDownloadURL:*.mp4)
-                newurl="${input#*:}"
-                # Already have url? Compare them!
-                if [[ $url ]]; then
-
-                    # Prefer subtitles or not
-                    if ((nosubtitles)); then
-                        # Old one doesn't have subs and new one has
-                        [[ $url != *_s-Sub_* && $newurl = *_s-Sub_* ]] && continue
-                    else
-                        # Old one have subs and new one doesn't
-                        [[ $url = *_s-Sub_* && $newurl != *_s-Sub_* ]] && continue
-                    fi
-
-                    # Compare quality (old < new <= maximum)
-                    newq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "$newurl")" || err || continue
-                    oldq="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" || err || continue
-                    [[ $newq -lt $oldq || $newq -gt $quality ]] && continue
-
-                fi
-                # Save URL
-                url="$newurl"
-		local savenextsum=1 savenextsize=1
+		# Every URL gets an unique index and URL specific data
+		# is saved to that index in its array
+		urlindex=$((urlindex+1))
+		url[$urlindex]="${input#*:}"
                 ;;
 
 	    checksum:*)
 		((nomd5)) && continue
-		((savenextsum)) && savenextsum=0 && checksum="${input#*:}"
+		[[ -v checksum[$urlindex] ]] || checksum[$urlindex]="${input#*:}"
 		;;
 
 	    filesize:*)
-		((savenextsize)) && savenextsize=0 && filesize="${input#*:}"
+		[[ -v filesize[$urlindex] ]] || filesize[$urlindex]="${input#*:}"
+		;;
+
+	    label:*)
+		# Remove the trailing p, e.g. "720p"
+		[[ -v qualitylabel[$urlindex] ]] || qualitylabel[$urlindex]="$(sed 's/^.*://; s/p$//' <<< "$input")"
+		;;
+
+	    subtitled:*)
+		# true -> 1, false -> 0
+		[[ -v subtitled[$urlindex] ]] || subtitled[$urlindex]="$(sed 's/^.*://; s/true/1/; s/false/0/;' <<< "$input")"
 		;;
 
 	    firstPublished:*)
@@ -214,7 +226,7 @@ read_arguments --help:show_help \
                --category=maincode \
                --quality=quality \
                --child:child=1 \
-               --no-subs:nosubtitles=1 \
+               --no-subs:subtitles=0 \
                --latest:maincode=LatestVideos\;latest=1 \
                --download:download=1 \
                --no-recursive:norecursive=1 \
@@ -226,10 +238,11 @@ read_arguments --help:show_help \
 	       --quiet:quiet=1 \
 	       --no-checksum:nomd5=1 \
 	       --no-timestamp:notime=1 \
+	       --since=since \
                -- \
                "$@"
 
-export lang maincode nosubtitles quality download norecursive maxrate mode latest histfile quiet nomd5 notime
+export lang maincode subtitles quality download norecursive maxrate mode latest histfile quiet nomd5 notime since
 [[ ${#arguments[@]} -gt 1 ]] && msg "too many arguments" && exit 1 # $arguments gets set by read_arguments()
 
 # Assign variables
@@ -237,6 +250,7 @@ export lang maincode nosubtitles quality download norecursive maxrate mode lates
 [[ $maincode ]] || maincode=VideoOnDemand
 [[ $quality ]] || quality=720
 [[ $lang ]] || lang=E
+[[ $subtitles ]] || subtitles=1
 datadir="${arguments[0]:-.}"
 
 # Debug JSON
@@ -273,6 +287,10 @@ if ! ((child)); then
 	# Remove the history file when we exit
 	trap '[[ -e $histfile ]] && rm "$histfile"' EXIT
     fi
+    # Convert date to seconds
+    if [[ $since ]]; then
+	since="$(date -d "$since" +%s)" || exit 1
+    fi
 fi
 
 # Split codes where commas are
@@ -293,7 +311,7 @@ for maincode in "${maincodes[@]}"; do
 
     # Download and parse the JSON file
     download_file "$mainurl" \
-    	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize firstPublished \
+    	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize firstPublished subtitled label \
 	| parse_lines
 
 done
