@@ -7,7 +7,7 @@
 # download     If true download the media files
 # child        If true we are subprocess (affects some things)
 # hascurl      If true use curl, else use wget
-# maxrate      Set download rate
+# limit_rate   Max download rate
 # 
 
 crash()
@@ -429,9 +429,9 @@ download_file()
 	fi
 
 	# Limit rate only for file downloads
-	if [[ $maxrate && $maxrate != 0 ]]; then
-	    curl_args+=(--limit-rate "$maxrate")
-	    wget_args+=(--limit-rate "$maxrate")
+	if [[ $limit_rate && $limit_rate != 0 ]]; then
+	    curl_args+=(--limit-rate "$limit_rate")
+	    wget_args+=(--limit-rate "$limit_rate")
 	fi
 	
     else
@@ -483,7 +483,7 @@ Just saying :)
 }
 
 # Read the arguments and save variables or do things
-# Args: --flag=variable --flag:action -- arguments ...
+# Args: [--FLAG=VARIABLE | --FLAG:COMMAND] ... -- ARGUMENTS ...
 read_arguments()
 {
     until [[ $1 = -- ]]; do
@@ -515,7 +515,7 @@ read_arguments()
             # Flag with argument, separated by =
             elif [[ $flag =~ --[a-zA-Z0-9-]+=.* && $1 = "${flag%%=*}"=* ]]; then
                 # Check that we have the argument
-                [[ ${1#*=} ]] || crash "${flag%%=*} requires an argument"
+                [[ ${1#*=} ]] || msg "${flag%%=*} requires an argument" || return 1
                 # Save in variable
                 eval "${flag#*=}"'="${1#*=}"'
                 shift
@@ -524,7 +524,7 @@ read_arguments()
             # Flag with argument, separated by space (and argument is not a flag)
             elif [[ $flag =~ --[a-zA-Z0-9-]+=.* && $1 = "${flag%%=*}" && $2 != --* ]]; then
                 # Check that we have the argument
-                [[ $2 ]] || crash "${flag%%=*} requires an argument"
+                [[ $2 ]] || msg "${flag%%=*} requires an argument" || return 1
                 # Save in variable
                 eval "${flag#*=}"'="$2"'
                 shift 2
@@ -540,7 +540,8 @@ read_arguments()
         done
 
         # No matching flag
-        crash "$1: unknown flag"
+        msg "$1: unknown flag"
+	return 1
 
     done
 
@@ -552,14 +553,12 @@ read_arguments()
 jwb_check_lang()
 {
     [[ $1 ]] || crash
-    local langurl="https://mediator.jw.org/v1/languages/E/web"
+    local url="https://mediator.jw.org/v1/languages/E/web"
     
-    [[ $1 = E || $NOCHECKLANG = 1 ]] && return 0
-    # Don't make more checks
-    export NOCHECKLANG=1
+    [[ $1 = E ]] && return 0
 
     # Try to find the language code in the text
-    if download_file "$langurl" | grep -q "\"code\":\"$1\""; then
+    if download_file "$url" | grep -q "\"code\":\"$1\""; then
 	return 0
     else
 	# Download the language list and make it readable
@@ -573,10 +572,11 @@ jwb_check_lang()
 	#    with LANG CODE
 	# 4. Sort it
 	# 5. Make a nice list with columns
-	download_file "$langurl" \
-            | sed 's/{/\n/g' \
-            | sed -n 's/.*"name":"\([^"]*\)".*"code":"\([^"]*\)".*/\2:\1/p' \
-            | sort \
+	download_file "$url" \
+            | grep -o -e '"code":"[^"]*"' -e '"name":"[^"]*"' \
+	    | sed 'N; s/\n/:/' \
+	    | sed 's/"//g; s/code:\|name://g' \
+	    | sort \
             | column -t -s :
 	
 	return 1
@@ -598,4 +598,57 @@ remove_from_lists()
 	# (bash: escape all / in $string)
 	sed -i "/^${string//\//\\/}$/d" "$list" || err
     done
+}
+
+# Get settings from config file or default value
+# Args: NAME CONFIG_FILE VARIABLE=DEFAULT_VALUE ...
+#   NAME        The name of a section in the config file
+load_settings()
+{
+    local name="$1"
+    local conf="$2"
+    local variable value default_value
+    shift 2
+
+    [[ $name && $* ]] || crash
+
+    # User config, global config, or no config
+    if [[ $conf ]]; then
+	[[ ! -f "$conf" ]] && msg "$conf: file not found" && return 1
+    elif [[ -e $HOME/.jw.conf ]]; then
+	conf="$HOME/.jw.conf"
+    elif [[ -e /etc/jw.conf ]]; then
+	conf=/etc/jw.conf
+    fi
+
+    # Get values for all variables
+    for arg in "$@"; do
+	unset variable default_value value
+	variable="${arg%%=*}"
+	default_value="${arg#*=}"
+	[[ $variable ]] || crash
+	# Export this setting so it applies to child processes too
+	export $variable
+
+	# Skip already set variables
+	[[ ${!variable} ]] && continue
+
+	if [[ $conf ]]; then
+	    # Script specific / global settings
+	    for n in $name global; do
+		# Start at the first appearance of [NAME]
+		# Stop at the first appearance of VARIABLE=VALUE and print VALUE
+		line="$(sed -n "/^\[$n\]/,/^\[\|^$variable=/ { /^$variable=/p }" "$conf")" || err "error when reading config"
+		eval "$line" || err "error in config file"
+		[[ ${!variable} ]] && continue
+	    done
+	fi
+
+	# Still no value, use default
+	[[ ${!variable} ]] && continue
+	eval "$variable='$default_value'" || err
+	
+    done
+
+    return 0
 }
