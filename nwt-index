@@ -182,19 +182,17 @@ check_lang()
 	return 0
     else
 	# Download the language list and make it readable
-	# CAVEATS
-	# - "name" must be the first variable in the language list
-	echo "Languages:"
+	# CAVEATS: "name" must be the first variable in each language
 	# 1. Download the list
 	# 2. Replace commas with newlines
 	# 3. Replace "CODE":{"name":"LANG" with CODE:LANG
-	# 4. Sort it
-	# 5. Make a nice list with columns
+	# 4. Sort, columns, pager ...
 	download_file "$url" \
             | sed 's/,/\n/g' \
             | sed -n 's/.*"\([^"]*\)":{"name":"\([^"]*\)"/\1:\2/p' \
             | sort \
-            | column -t -s :
+            | column -t -s : \
+	    | less --quit-if-one-screen
 	
 	return 1
     fi
