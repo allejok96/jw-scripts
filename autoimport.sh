@@ -1,12 +1,17 @@
 #!/bin/bash
 #
 # autoimport.sh
-# Import files for jwb-rpi
 #
-# Usage: autoimport.sh USER DIRECTORY
-#
-# Must be run as root
-#
+
+if [[ $1 = --help ]]; then
+    cat<<EOF
+Usage: autoimport.sh USER DIRECTORY
+Import videos to jwb-rpi.
+
+Usually executed by devmon. Must be run as root.
+EOF
+    exit
+fi
 
 user="$1"
 dir="$2"
