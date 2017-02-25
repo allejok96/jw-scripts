@@ -24,34 +24,42 @@ load_shared_code()
 
 load_shared_code
 
-load_config()
-{
-    [[ $conf  && ! -f "$conf" ]] && msg "$conf: file not found" && exit 1
-    [[ $conf ]] || conf=/etc/jwb-rpi.conf
-
-    [[ -e "$conf" ]] &&	source "$conf" || crash "$conf: failed to load configuration file"
-}
-
 show_help()
 {
     cat<<EOF
-Usage: jwb-rpi-downloader [--daemon] [CONFIG FILE]
-Download videos from tv.jw.org for the jwb-rpi script.
+Usage: jwb-rpi-downloader [OPTIONS] [DIR]
+Download videos from tv.jw.org to be played by the jwb-rpi script.
 
-  --daemon	Run forever. Download latest videos with regular intervals.
-		Don't download videos from selected categories.
+Options:
+  --checksum             Verify integrity of video files (default)
+  --config FILE          Custom configuration file
+  --daemon	         Download latest videos with regular intervals
+  --free-space PCT       Percentage of disk to keep free
+  --import DIR           Import videos from another jwb-rpi directory
+  --lang CODE            Set language
+  --limit-rate RATE      Download rate for videos, 0 disables limit
+  --no-checksum          Don't verify integrity of video files
+  --no-subsubtitles      Prefer unsubtitled videos
+  --only-latest          Only download the latest videos
+  --prio CATEGORIES      Categories to download or keep longer
+  --prio CODENAMES       Comma-separated list of categories
+  --prio-share PCT       Percentage of space reserved for prio videos
+  --quality NUM          Maximum quality: 240, 360, 480 or 720
+  --since DATE           Only save videos newer than DATE
+  --subtitles            Prefer subtitled videos (default)
+  --update-timeout TIME  Time between looking for new videos online
+  DIRECTORY              Directory to save data in (can be copied and imported)
 
-  CONFIG FILE   Path to the configuration file, default: /etc/jwb-rpi.conf
+Without --daemon, download all videos from prioritized categories.
 
-Without the --daemon flag, the script downloads all videos from the
-"keep_categories" in the configuration file
+If DATE is "auto", the date the last import was done is used.
 
 EOF
     exit
 }
 
 # Read from stdin and add line to files
-# Args: [--keep]
+# Args: [--prio]
 add_to_list()
 {
     # Add line if file exists and line is unique
@@ -60,171 +68,242 @@ add_to_list()
 	name="$(basename "$REPLY")"
 	file="$dir_videos/$name"
 	[[ -e $file ]] && ! grep "^$name$" "$list_videos" &>/dev/null && echo "$name" >> "$list_videos"
-	[[ $1 = --keep ]] && ! grep -q "^$name$" "$list_keep" &>/dev/null && echo "$name" >> "$list_keep"
+	[[ $1 = --prio ]] && ! grep -q "^$name$" "$list_prio" &>/dev/null && echo "$name" >> "$list_prio"
     done
 }
 
-# INTEGER[b|k|M|G|T]
-computer_readable()
+disk_usage_limitor()
 {
-    # Convert units to numbers
-    [[ $1 =~ ^[0-9]+(\.[0-9]+)?(b|k|M|G|T)$ ]] || crash "$1: invalid size or unit"
-    echo "$(( $(sed 's/b//; s/k/*1024/; s/M/*1024**2/; s/G/*1024**3/; s/T/*1024**4/;' <<< "$1") ))"
-}
+    local size_total size_prio size_latest
 
-dir_monitor()
-{
-    # Loop until size is OK
-    while sleep 1s; do
-
-        # Break if size is below limit
-        size_total="$(du --bytes --summarize "$dir_videos" | grep -E -o '^[0-9]+')" || crash
-        [[ $size_total -lt $max_size ]] && break
-
-	# Include "keep" videos (see below)
-	skipkeep=0
+    disk_usage="$(df --output=pcent "$dir_videos" | grep -o '[0-9]\+')" || err "failed to get used disk space" || return 1
+    [[ $disk_usage -lt $((100 - free_percent)) ]] && return 0
+    
+    msg "disk space low (${disk_usage}% used)"
+    
+    # Let prioritized videos be? ... see download_videos()
+    local skip_prio=0	
+    if [[ $prio_percent && $prio_categories && -e $list_prio ]]; then
+	# Size of all videos
+	size_total="$(du --bytes --summarize "$dir_videos" | grep -o '[0-9]\+')" || err "failed to get total size of all videos"
+        # Size of prioritized videos
+        size_prio="$(cd "$dir_videos" && tr '\n' '\0' < "$list_prio" \
+			| du --bytes --total --files0-from - 2>/dev/null \
+                        | tail -n1 \
+                        | grep -o '[0-9]\+')" \
+	    || err "failed to get total size of prioritized videos"
 	
-        if [[ $min_size_latest && $keep_categories && -e $list_keep ]]; then
-            # Get total size of all "keep" videos
-            size_keep="$(cd "$dir_videos" && tr '\n' '\0' < "$list_keep" \
-			   | du --bytes --total --files0-from - 2>/dev/null \
-                           | tail -n1 \
-                           | grep -E -o '^[0-9]+')"
-            
-            size_latest="$(( size_total - size_keep ))"
-
-	    # If "latest" videos are too big, skip "keep" videos
-	    [[ $size_latest -gt $min_size_latest ]] && skipkeep=1
+	if [[ $size_total && $size_prio ]]; then
+	    msg "(prio: ${size_prio}B, other: $((size_total-size_prio))B)"
+	    # If prio videos are below limit, let them be alone!
+	    [[ $size_prio -lt $((max_size*prio_percent/100)) ]] && skip_prio=1
 	fi
-
-	msg "video folder too big ($size_total bytes)"
+    fi
+    
+    # Print file list sorted by time (oldest first)
+    local name
+    ls --escape --sort=time --reverse -1 "$dir_videos" | while read -r name; do
 	
-	# Print file list sorted by size (biggest first)
-	# -c = sort by ctime
-        ls --escape --sort=time --reverse -1 "$dir_videos" | while read -r name; do
-
-	    file="$dir_videos/$name"
-
-	    # Skip deleted file markers or currently downloading files
-	    [[ $file =~ \.(part|deleted)$ ]] && continue
-	    	    
-	    # Skip non-files (but there shouldn't be any)
-            [[ ! -f $file ]] && continue
-
-            # Skip "keep" videos
-            ((skipkeep)) && grep -q "^$name$" "$list_keep" && continue
-
-	    # Skip currently playing video
-	    [[ -e $list_now_playing ]] && grep -q "^$name$" "$list_now_playing" && continue
-
-            # Remove file from disk and list
-	    msg "removing $file"
-            rm -f "$file" || continue
-	    remove_from_lists "$name" "$list_keep" "$list_videos"
-
-	    # Mark it as "don't download again"
-	    touch "$file.deleted"
-
-	    # Re-check disk usage
-	    break
-        done
-
+	local file="$dir_videos/$name"
+	
+	# Skip deleted file markers or currently downloading files
+	[[ $file =~ \.(part|deleted)$ ]] && continue
+	
+	# Skip non-files (but there shouldn't be any)
+        [[ ! -f $file ]] && continue
+	
+        # Skip prio videos? Check if prioritized.
+        ((skip_prio)) && grep -q "^$name$" "$list_prio" && continue
+	
+	# Skip currently playing video
+	[[ -e $list_now_playing ]] && grep -q "^$name$" "$list_now_playing" && continue
+	
+        # Remove file from disk and lists
+	msg "removing $file"
+        rm -f "$file" || continue
+	remove_from_lists "$name" "$list_prio" "$list_videos"
+	
+	# Mark it as "don't download again"
+	touch "$file.deleted"
+	
+	# Re-check disk usage
+	break
     done
+
+    return 0
 }
 
 download_videos()
 {
+    local prio_flags
+    
     if ((daemon)); then
-	keep_flags+=(--no-checksum --quiet)
-	latest_flags+=()
+	prio_flags+=(--quiet)
+	prio_flags+=(--no-checksum)
+	prio_flags+=(--limit-rate=0)
     else
-	keep_flags+=(--download)
-	if ((no_checksum)); then
-	    keep_flags+=(--no-checksum)
-	    latest_flags+=(--no-checksum)
-	fi
+	prio_flags+=(--download)
     fi
 
-    # Only update the WHOLE index of (keep-) videos once a day
-    if [[ -z $last_updated || $(date +%s) -gt $(( last_updated + 86400 )) ]]; then
+    [[ $prio_categories ]] && prio_flags+=(--category="$prio_categories")
+    
+    # Only update the WHOLE index of (prio) videos once a day
+    if [[ $latest != 1 || -z $last_updated || $(date +%s) -gt $(( last_updated + 86400 )) ]]; then
 
 	last_updated="$(date +%s)"
-	msg "checking all selected videos online"
+	msg "checking all prioritized videos online"
 	
-	# Print videos from "keep" categories to list_keep (optionally download them)
-	# The stdbuf thing is so the log gets printed out in realtime
+	# Print videos from prio categories to list_prio (optionally download them)
+	# The stdbuf thing is so status messages gets printed out in realtime
 	"$jwb_script" \
-	    --lang "$lang" \
-	    --quality "$quality" \
 	    --mode=urllist \
-	    --limit-rate="$limit_rate" \
-	    ${keep_categories:+--category "$keep_categories"} \
-	    "${keep_flags[@]}" \
+	    --timestamp \
+	    "${prio_flags[@]}" \
 	    "$dir_videos" \
 	    2> >(stdbuf -oL sed 's/^/jwb-index: /' 1>&2) \
-	    | add_to_list --keep
+	    | add_to_list ${prio_categories:+--prio}
     fi
 
     msg "checking latest videos online"
     
     # Download latest videos
     "$jwb_script" \
-	--lang "$lang" \
-	--quality "$quality" \
-	--latest \
-	--download \
 	--mode=urllist \
-	--limit-rate="$limit_rate" \
-	"${latest_flags[@]}" \
+	--download \
+	--latest \
+	--timestamp \
 	"$dir_videos" \
 	2> >(stdbuf -oL sed '/LatestVideos/d; s/^/jwb-index: /' 1>&2) \
-	| add_to_list 
+	| add_to_list
+
+    return 0
 }
 
-read_arguments --help:show_help --daemon:daemon=1 -- "$@"
-conf="$arguments"
-load_config
 
-# Default values
-if [[ $jwb_script ]]; then
-    if type jwb-index &>/dev/null; then
-	jwb_script=jwb-index
-    else
-	jwb_script=./jwb-index
-    fi
-fi
-[[ $lang ]] || lang=E
-[[ $dir ]] || dir=~/JWB
-[[ $quality ]] || quality=480
-[[ $update_timeout ]] || update_timeout=3h
-[[ -z $limit_rate ]] && ((daemon)) && limit_rate=1M
+
+### LOAD SETTINGS AND PARSE ARGUMENTS
+
+unset daemon latest
+export checksum subtitles
+
+read_arguments --help:show_help \
+	       --checksum:checksum=1 \
+	       --config=conf \
+	       --daemon:daemon=1 \
+	       --free-space=free_percent \
+	       --import=import \
+	       --lang=lang \
+	       --limit-rate=limit_rate \
+	       --no-checksum:checksum=0 \
+	       --no-subtitles:subtitles=0 \
+	       --only-latest:latest=1 \
+	       --prio=prio_categories \
+	       --prio-share=prio_percent \
+	       --quality=quality \
+	       --since=since \
+	       --subtitles:subtitles=1 \
+	       --update-timeout=update_timeout \
+	       -- "$@" || exit 1
+
+[[ ${#arguments[@]} -gt 1 ]] && msg "too many arguments" && exit 1
+dir="${arguments[0]}"
+
+requirement_check sed realpath
+
+load_settings jwb-rpi "$conf" \
+	      checksums=1 \
+	      dir=~/JWB \
+	      free_percent=10 \
+	      jwb_script=jwb-index \
+	      lang=E \
+	      limit_rate=1M \
+	      prio_categories= \
+	      prio_percent=75 \
+	      quality=480 \
+	      subtitles=1 \
+	      update_timeout=3h \
+	      since= \
+    || exit 1
+
+# jwb_script must be absolute path or start with ./
+jwb_script="$(type -p "$jwb_script")" || jwb_script=./jwb-index
+
+requirement_check "$jwb_script"
+
+# Make dir path absolute
 dir="$(realpath --canonicalize-missing "$dir")"
 dir_videos="$dir/videos"
 list_now_playing="$dir/now_playing"
-list_keep="$dir/keep.list"
+list_import_date="$dir/last_imported"
+list_prio="$dir/prio.list"
 list_videos="$dir/videos.list"
-[[ $max_size ]] && max_size="$(computer_readable "$max_size")"
-[[ $min_size_latest ]] && min_size_latest="$(computer_readable "$min_size_latest")"
 
-requirement_check sed realpath "$jwb_script"
+
+
+#### BEGIN SCRIPT
 
 # Kill subprocesses when exiting
 trap 'echo aborted 1>&2; exit 1' SIGHUP SIGTERM SIGINT
 trap 'trap - SIGTERM; kill 0' EXIT
 
 # Create video dir
-[[ ! -e "$dir_videos" ]] && mkdir -p "$dir_videos"
+[[ -e "$dir_videos" ]] || mkdir -p "$dir_videos" || crash
+
+# Date since last import
+if [[ $since = auto ]]; then
+    if [[ -e $list_import_date ]]; then
+        since="$(< "$list_import_date")" || crash
+	date -d "$since" '+downloading videos since %x' 1>&2 || exit 1
+    else
+	msg "warning: no date since last import was found"
+	unset since
+    fi
+fi
+
+# Import videos?
+if [[ $import ]]; then
+
+    [[ ! -d $import ]] && msg "directory does not exist" && exit 1
+    [[ ! -d $import/videos ]] && msg "the directory to import should contain ./videos/" && exit 1
+    [[ $import/videos/* = "$import/videos/*" ]] && msg "no videos to import" && exit 1
+
+    # Merge the prio videos lists
+    if [[ $import/prio.list ]]; then
+	sort --unique "$import/prio.list" "$list_prio" > "$list_prio.new"
+	mv -f "$list_prio.new" "$list_prio"
+    fi
+
+    # Remove old videos when destination dir get full (background)
+    if [[ $free_percent -gt 0 ]]; then
+	while sleep 1s; do
+	    disk_usage_limitor || msg "disk usage monitor failed" || exit 1
+	done &
+    fi
+
+    # Copy videos, add to list, and show progress
+    msg "importing videos:"
+    for file in "$import/videos/"*; do
+	[[ -e $dir_videos/$(basename "$file") ]] && continue
+	cp -a "$file" "$dir_videos" && echo "$file" | tee /dev/stderr
+    done | add_to_list
+
+    # Timestamp for this import
+    LANG=C date > "$list_import_date"
+    
+    exit 0
+fi
 
 # Remove old videos when dirs get full (background)
-if [[ $max_size ]]; then
-    while sleep 30s; do
-	dir_monitor
+if [[ $free_percent -gt 0 ]]; then
+    while sleep 1s; do
+	disk_usage_limitor || msg "disk usage monitor failed" || exit 1
     done & monitorpid=$!
-    msg "file size monitor: PID $monitorpid"
+    msg "disk usage monitor: PID $monitorpid"
 fi
 
 # Download videos
 while :; do
+
     # Wait for internet connection
     netmsg=0
     until ping -c 3 tv.jw.org &>/dev/null; do
@@ -232,10 +311,13 @@ while :; do
 	netmsg=1
 	sleep 1m
     done
+
     download_videos
-    ((daemon)) || break
+    
+    ((daemon)) || msg "download complete" || break
+
     sleep $update_timeout || break
 done
 
-((daemon)) && msg "download complete"
+
 
