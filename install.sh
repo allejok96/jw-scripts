@@ -10,19 +10,23 @@ if [[ $UID != 0 ]]; then
     exit 1
 fi
 
-install -d /usr/local/bin /usr/local/lib/jw-scripts
-install -m 755 ./jwb-index /usr/local/bin/jwb-index
-install -m 755 ./nwt-index /usr/local/bin/nwt-index
-install -m 755 ./jwb-stream /usr/local/bin/jwb-stream
-install -m 755 ./jwb-rpi /usr/local/bin/jwb-rpi
-install -m 755 ./jwb-rpi-downloader /usr/local/bin/jwb-rpi-downloader
-install -m 644 ./shared-functions /usr/local/lib/jw-scripts/shared-functions
+prefix=/usr/local
 
+bin=$prefix/bin
+lib=$prefix/lib/jw-scripts
+share=$prefix/share/jw-scripts
+
+install -d $bin $lib
+install -m 755 -t $bin ./jwb-index ./nwt-index ./jwb-stream ./jwb-rpi ./jwb-rpi-downloader
+install -m 755 -t $lib ./autoimport.sh
+install -m 644 -t $lib ./shared-functions
 install -m 644 -t /etc/systemd/system/ ./systemd/*
 
-if [[ -e /etc/jwb-rpi.conf ]]; then
-    echo "installing jwb-rpi.conf as /etc/jwb-rpi.conf.new"
-    install -m 644 ./jwb-rpi.conf /etc/jwb-rpi.conf.new
+if [[ -e /etc/jw.conf ]]; then
+    echo "installing jw.conf as /etc/jw.conf.new"
+    install -m 644 ./jw.conf /etc/jw.conf.new
 else
-    install -m 644 ./jwb-rpi.conf /etc/jwb-rpi.conf
+    install -m 644 ./jw.conf /etc/jw.conf
 fi
+
+[[ -e /etc/jwb-rpi.conf ]] && echo "Configuration file has been re-done. Please have a look at /etc/jw.conf and then remove /etc/jwb-rpi.conf."
