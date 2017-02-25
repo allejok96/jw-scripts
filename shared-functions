@@ -562,22 +562,17 @@ jwb_check_lang()
 	return 0
     else
 	# Download the language list and make it readable
-	# CAVEATS:
-	# - "name" must be followed by "code"
-	echo "Languages:"
-	# 1. Download the list
-	# 2. Make newline at every opening bracket
-	#    where a new language starts
-	# 3. Replace "name":"LANG" ... "code":"CODE"
-	#    with LANG CODE
-	# 4. Sort it
-	# 5. Make a nice list with columns
+	# 1. Find code:CODE and name:NAME
+	# 2. Remove every second newline
+	# 3. Remove JSON garbage
+	# 4. Sort, column, pager ...
 	download_file "$url" \
             | grep -o -e '"code":"[^"]*"' -e '"name":"[^"]*"' \
 	    | sed 'N; s/\n/:/' \
 	    | sed 's/"//g; s/code:\|name://g' \
 	    | sort \
-            | column -t -s :
+            | column -t -s : \
+	    | less --quit-if-one-screen
 	
 	return 1
     fi
