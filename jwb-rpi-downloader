@@ -135,6 +135,14 @@ disk_usage_limitor()
 download_videos()
 {
     local prio_flags
+
+    # Wait for internet connection
+    netmsg=0
+    until ping -c 3 tv.jw.org &>/dev/null; do
+	((netmsg)) || msg "waiting for internet connection before starting download"
+	netmsg=1
+	sleep 1m
+    done
     
     if ((daemon)); then
 	prio_flags+=(--quiet)
@@ -176,6 +184,25 @@ download_videos()
 	| add_to_list
 
     return 0
+}
+
+import_videos()
+{
+    # Merge the prio videos lists
+    if [[ $import/prio.list ]]; then
+	sort --unique "$import/prio.list" "$list_prio" > "$list_prio.new"
+	mv -f "$list_prio.new" "$list_prio"
+    fi
+
+    # Copy videos, add to list, and show progress
+    msg "importing videos:"
+    for file in "$import/videos/"*; do
+	[[ -e $dir_videos/$(basename "$file") ]] && continue
+	cp -a "$file" "$dir_videos" && echo "$file" | tee /dev/stderr
+    done | add_to_list
+
+    # Timestamp for this import
+    LANG=C date > "$list_import_date"
 }
 
 
@@ -259,64 +286,35 @@ if [[ $since = auto ]]; then
     fi
 fi
 
-# Import videos?
+
+# Remove old videos when dirs get full (background)
+if [[ $free_percent -gt 0 ]]; then
+    while sleep 1s; do
+	disk_usage_limitor || msg "disk usage monitor failed" || break
+    done & pid_list+=$!
+fi
+
+# Import videos (background)
 if [[ $import ]]; then
 
     [[ ! -d $import ]] && msg "directory does not exist" && exit 1
     [[ ! -d $import/videos ]] && msg "the directory to import should contain ./videos/" && exit 1
     [[ $import/videos/* = "$import/videos/*" ]] && msg "no videos to import" && exit 1
 
-    # Merge the prio videos lists
-    if [[ $import/prio.list ]]; then
-	sort --unique "$import/prio.list" "$list_prio" > "$list_prio.new"
-	mv -f "$list_prio.new" "$list_prio"
-    fi
+    import_videos & pid_list+=$!
 
-    # Remove old videos when destination dir get full (background)
-    if [[ $free_percent -gt 0 ]]; then
-	while sleep 1s; do
-	    disk_usage_limitor || msg "disk usage monitor failed" || exit 1
-	done &
-    fi
-
-    # Copy videos, add to list, and show progress
-    msg "importing videos:"
-    for file in "$import/videos/"*; do
-	[[ -e $dir_videos/$(basename "$file") ]] && continue
-	cp -a "$file" "$dir_videos" && echo "$file" | tee /dev/stderr
-    done | add_to_list
-
-    # Timestamp for this import
-    LANG=C date > "$list_import_date"
-    
-    exit 0
+# Download videos (background)
+else
+    while :; do  
+	
+	download_videos
+	
+	((daemon)) || msg "download complete" || break
+	
+	sleep $update_timeout || break
+	
+    done & pid_list+=$!
 fi
 
-# Remove old videos when dirs get full (background)
-if [[ $free_percent -gt 0 ]]; then
-    while sleep 1s; do
-	disk_usage_limitor || msg "disk usage monitor failed" || exit 1
-    done & monitorpid=$!
-    msg "disk usage monitor: PID $monitorpid"
-fi
-
-# Download videos
-while :; do
-
-    # Wait for internet connection
-    netmsg=0
-    until ping -c 3 tv.jw.org &>/dev/null; do
-	((netmsg)) || msg "waiting for internet connection before starting download"
-	netmsg=1
-	sleep 1m
-    done
-
-    download_videos
-    
-    ((daemon)) || msg "download complete" || break
-
-    sleep $update_timeout || break
-done
-
-
-
+# Exit when the first child process finishes
+wait -n ${pid_list[@]}
