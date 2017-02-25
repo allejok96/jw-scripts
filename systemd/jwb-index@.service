@@ -2,7 +2,8 @@
 Description=Download JW Broadcasting videos
 
 [Service]
-ExecStart=/usr/local/bin/jwb-index --latest --mode filesystem --download /home/%i/jwb
+ExecStart=/usr/local/bin/jwb-index
+WorkingDirectory=~
 User=%i
 
 [Install]
