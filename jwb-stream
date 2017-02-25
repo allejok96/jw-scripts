@@ -27,30 +27,19 @@ load_shared_code
 show_help()
 {
     cat<<EOF
-Usage: jwb-stream [OPTIONS] -- PROGRAM [ARGUMENTS] ...
+Usage: jwb-stream [OPTIONS] -- COMMAND [ARGUMENTS] ...
 Play a streaming channel from tv.jw.org
 
 Options:
-  --lang CODE    Change language
-  --list-langs   Show a list of available language codes
-  --quality NUM  Select maximum quality: 240, 360, 480 or 720
-  --channel KEY  Pick a channel, see list below
-  --no-subs      Prefer unsubtitled videos
-  --json         Debug option: show the formated JSON file
-  --forever      Re-run when playlist has finished
-  PROGRAM        Program to stream the URLs with
-  ARGUMENTS      Arguments to PROGRAM. %s for starting time, see
-	         below.
-
-URLs of the videos will be appended as arguments to PROGRAM.
-The videos will play in ~1.5 hour. If --forever is used, PROGRAM
-will be re-run with new URLs forever.
-
-If the string %s is used in ARGUMENTS it will be replaced by the
-number of seconds the first video should skip to sync up with
-tv.jw.org. Then, after that video has finished, PROGRAM will be
-restarted, playing the rest of the videos as usual, that time
-with %s replaced by 0. %% will be replaced by the litteral %.
+  --channel CODENAME    Channel to stream (see Channels)
+  --config FILE         Custom configuration file
+  --forever             Fetch channel guide again once it has finished
+  --json                Only show the formated JSON file (debug)
+  --lang CODE           Set language
+  --list-langs          Show a list of available language codes
+  --no-subtitles        Prefer unsubtitled videos
+  --quality NUM         Maximum quality: 240, 360, 480 or 720
+  COMMAND               Command used to play the stream
 
 Channels:
   OurStudio (default)
@@ -64,18 +53,61 @@ Channels:
   Bible
   Movies
   MusicVideos
-  StreamingIntExp
+  IntExp
+
+URLs gets appended to COMMAND. If no COMMMAND is given, "mpv" is used.
+
+%s in ARGUMENTS gets replaced by the number of seconds needed to sync
+up with the stream at tv.jw.org.
 
 Examples:
-  Stream swedish family videos with Gnome videos:
-    jwb-stream --category Family --lang Z totem
-  Stream with various players, syncronized with tv.jw.org:
-    jwb-stream -- mpv --start=%s
-    jwb-stream -- vlc --start-time=%s --play-and-exit
-    jwb-stream -- omxplayer --pos %s
+  jwb-stream -- mpv --start=%s
+  jwb-stream -- vlc --start-time=%s --play-and-exit
+  jwb-stream -- omxplayer --pos %s
 EOF
     exit
 }
+
+# Play or send a video to the queue
+queue()
+{
+    # If there is a title and URL, save them
+    if [[ ${#url[@]} -gt 0 ]]; then
+
+	# This very obscure chunk of code sorts URLs by the order:
+	#   1. Subtitle choice
+	#   2. Not greater than max quality
+	#   3. Actual quality
+	# This is done by printing out a table of the values and sorting it.
+	# Probably a very bad idea, but efficient.
+	local i
+	i=$(for i in ${!url[@]}; do
+		# Note: use reverse tests because 1 sorts higher than 0
+		[[ ${subtitled[$i]} != "$subtitles" ]]; local s=$?
+		[[ ${qualitylabel[$i]:-0} -gt "$quality" ]]; local q=$?
+		echo "$s $q ${qualitylabel[$i]:-0} $i ${url[$i]}"
+	    done | sort | tail -n1 | cut -d " " -f4)
+	 
+	[[ ${url[$i]} ]] || err || return 1
+
+	if [[ $first_command ]]; then
+	    # -- Run player directly from inside this function --
+	    # So that we can have a different $pos than xargs has
+	    # Redirect stdout or else that will be sent to xargs
+	    # echo prevents player to read from stdin of bash
+	    echo -n | "${first_command[@]}" "${url[$i]}" 1>&2
+	    # Forget command, never do this again
+	    unset first_command
+	else
+	    # echo out to xargs
+	    echo "${url[$i]}"
+	fi
+
+	# Unset variables so they don't get repeated                                                                           
+        unset url qualitylabel subtitled urlindex
+    fi
+}
+
 
 # Read the formated JSON file on stdin
 # write videos to playlists
@@ -88,145 +120,100 @@ EOF
 # args: [command [arguments ...]]
 parse_lines()
 {
-    local cmd=("$@")
-    
     # Read stdin
     while read -r input; do
 	case "$input" in
 
 	    status:404)
-		crash "$channel: Channel not found"
+		msg "channel not found"
+		exit 1
 		;;
 	    
+            progressiveDownloadURL:*.mp4)
+		# Every URL gets an unique index and URL specific data
+		# is saved to that index in its array
+		urlindex=$((urlindex+1))
+		url[$urlindex]="${input#*:}"
+                ;;
+
+	    label:*)
+		# Remove the trailing p, e.g. "720p"
+		[[ -v qualitylabel[$urlindex] ]] || qualitylabel[$urlindex]="$(sed 's/^.*://; s/p$//' <<< "$input")"
+		;;
+
+	    subtitled:*)
+		# true -> 1, false -> 0
+		[[ -v subtitled[$urlindex] ]] || subtitled[$urlindex]="$(sed 's/^.*://; s/true/1/; s/false/0/;' <<< "$input")"
+		;;
+
 	    # A new video
 	    title:*)
-		
-		# Next video in queue
-		# If an URL is saved, play it
-		if [[ $url ]]; then
-		    if [[ $cmd ]]; then
-			# Run player directly
-			# Redirect stdout because else that will be caught by xargs
-			# echo prevents players to read from stdin
-			echo -n | "${cmd[@]}" "$url" 1>&2
-			# Forget command, never run it again
-			unset cmd
-		    else
-			# echo out to xargs
-			echo "$url"
-		    fi
-		    # Forget, never play again
-		    unset url
-		fi
-		;;
-	    
-	    # An URL - is it better than previous?
-	    progressiveDownloadURL:*.mp4)
-		if [[ $url ]]; then
-		    
-		    # Prefer subtitles or not
-		    if ((nosubtitles)); then
-			# Old one doesn't have subs and new one has
-			[[ $url != *_s-Sub_* && ${input#*:} = *_s-Sub_* ]] && continue
-		    else
-			# Old one have subs and new one doesn't
-			[[ $url = *_s-Sub_* && ${input#*:} != *_s-Sub_* ]] && continue
-		    fi
-		    
-		    # Compare quality
-		    # Save if this is true: old < new <= max
-		    new="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i'<<< "${input#*:}")" # new quality
-		    old="$(sed 's/^.*r\([0-9]*\)P\.mp4$/\1/i' <<< "$url")" # old quality
-		    [[ $new -lt $old || $new -gt $quality ]] && continue
-		    
-		fi
-		# Save URL
-		url="${input#*:}"
+		queue
 		;;
 	    
 	esac
     done
-    
-    # If there is an URL left when we reach EOF, play it
-    if [[ $url ]]; then
-	if [[ $cmd ]]; then
-	    echo -n | "${cmd[@]}" "$url" 1>&2
-	else
-	    echo "$url"
-	fi
-    fi
-}
 
-# A more sophisticated version of ${array[@]/pattern/string}
-# Args: sed_expression name_of_array
-array_replace()
-{
-    local expression="$1" name="$2" array
-    [[ $expression && $name ]] || crash
+    # If there is a URL left when we reach EOF queue it
+    queue
 
-    # Everything done to "array" will acctually be done to the array named "$name"
-    declare -n array=$name
-
-    # Run sed expression on every in array
-    for key in "${!array[@]}"; do
-	array[$key]="$(sed "$expression" <<< "${array[$key]}")"
-    done
+    return 0
 }
 
 [[ $1 = --help ]] && show_help
 
-read_arguments --help:show_help\
-	       --lang=lang\
-	       --list-langs:lang=none\
-	       --quality=quality\
-	       --channel=channel\
-	       --no-subs:nosubtitles=1\
-	       --json:json=1\
-	       --forever:loop=1\
-	       --\
-	       "$@"
+unset json
 
-export quality lang category nosubtitles pos
+read_arguments --help:show_help \
+	       --channel=channel \
+	       --config=conf \
+	       --forever:loop=1 \
+	       --json:json=1 \
+	       --lang=lang \
+	       --list-langs:lang=none \
+	       --no-subs:subtitles=1 \
+	       --quality=quality \
+	       -- "$@" || exit 1
+
+[[ ${#arguments[@]} -gt 0 ]] && command=("${arguments[@]}") # $arguemnts gets set by read_arguemnts()
 
 requirement_check sed curl xargs
 
-[[ $channel ]] || channel=OurStudio
-[[ $lang ]] || lang=E
-[[ $quality ]] || quality=720
-mainurl="https://mediator.jw.org/v1/schedules/$lang/Streaming${channel}?utcOffset=$(( $(date +%-z) * 60 / 100 ))"
+load_settings jwb-stream "$conf" \
+	      channel=OurStudio \
+	      command='mpv --start=%s' \
+	      lang=E \
+	      quality=720 \
+	      subtitles=1 \
+    || exit 1
 
-jwb_check_lang "$lang" || exit 1
+main_url="https://mediator.jw.org/v1/schedules/$lang/Streaming${channel}?utcOffset=$(( $(date +%-z) * 60 / 100 ))"
 
 # Debug JSON
 if ((json)); then
-    download_file "$mainurl" | unsquash_file | less
+    download_file "$main_url" | unsquash_file | less
     exit
 fi
 
-[[ -z $arguments ]] && msg "Not enough arguments" && exit 1 # $arguemnts gets set by read_arguemnts()
+jwb_check_lang "$lang" || exit 1
 
 # If arguments have a %s, get starting position
 # Since the position is at the end, get it before parsing the whole file
-if [[ ${arguments[*]} =~ [^%](%%)*%s ]]; then
+if [[ ${command[*]} =~ %s ]]; then
     # Get start position (occurs only once per channel)
-    pos="$(download_file "$mainurl" | unsquash_file time | sed 's/^time:\([0-9]*\)\..*$/\1/')"
+    pos="$(download_file "$main_url" | unsquash_file time | sed 's/^time:\([0-9]*\)\(\..*\)\?$/\1/')"
     # In first command: replace %s with $pos
-    arguments_start=("${arguments[@]}")
-    array_replace "s/\([^%]\(%%\)*\)%s/\1$pos/g" arguments_start
+    first_command=("${command[@]/\%s/$pos}")
     # In the rest of commands: replace %s with 0
-    array_replace "s/\([^%]\(%%\)*\)%s/\10/g" arguments
+    command=("${command[@]/\%s/0}")
 fi
-
-# Replace %% with % in command
-arguments=("${arguments[@]//%%/%}")
-arguments_start=("${arguments_start[@]//%%/%}")
 
 # Optional loop
 while :; do
-      download_file "$mainurl" \
-	  | unsquash_file status progressiveDownloadURL title \
-	  | parse_lines "${arguments_start[@]}" \
-	  | xargs --no-run-if-empty -- "${arguments[@]}" || exit 1
+      download_file "$main_url" \
+	  | unsquash_file status progressiveDownloadURL title label subtitled \
+	  | parse_lines \
+	  | xargs --no-run-if-empty -- "${command[@]}" || exit 1
 
       # Loop or break?
       ((loop)) || break
@@ -239,3 +226,4 @@ while :; do
 done
 
 exit 0
+
