@@ -24,21 +24,15 @@ load_shared_code()
 
 load_shared_code
 
-load_config()
-{
-    [[ $conf  && ! -f "$conf" ]] && msg "$conf: file not found" && exit 1
-    [[ $conf ]] || conf=/etc/jwb-rpi.conf
-
-    [[ -e "$conf" ]] && source "$conf" || crash "$conf: failed to load configuration file"
-}
-
 show_help()
 {
     cat<<EOF
-Usage: jwb-rpi [CONFIG FILE]
+Usage: jwb-rpi [OPTIONS] [DIR]
 Shuffle and play JW Broadcasting videos forever
 
-  CONFIG FILE   Path to the configuration file, default: /etc/jwb-rpi.conf
+Options:
+  --config FILE    Custom configuration file
+  DIR              Data directory
 
 EOF
     exit
@@ -78,16 +72,23 @@ save_pos()
 # FILE SECONDS
 video_player()
 {
-    omxplayer "${player_options[@]}" --pos "$2" "$1"
+    eval "$video_player"
 }
 
-read_arguments --help:show_help -- "$@" || exit 1
-conf="$arguments"
-load_config
+read_arguments --help:show_help \
+	       --config=conf \
+	       --dir=dir \
+	       -- "$@" || exit 1
+
+[[ ${#arguments[@]} -gt 1 ]] && msg "too many arguments" && exit 1
+dir="${arguments[0]}"
 
 requirement_check sed realpath
 
-[[ $dir ]] || dir=~/JWB
+load_settings jwb-rpi "$conf" \
+	      dir=~/JWB \
+	      video_player='omxplayer --pos "$2" "$1"'
+
 dir="$(realpath --canonicalize-missing "$dir")"
 dir_videos="$dir/videos"
 list_now_playing="$dir/now_playing"
