@@ -31,19 +31,18 @@ Usage: jwb-rpi-downloader [OPTIONS] [DIR]
 Download videos from tv.jw.org to be played by the jwb-rpi script.
 
 Options:
+  --category CODENAMES   Comma-separated list of categories to prioritize
   --checksum             Verify integrity of video files (default)
   --config FILE          Custom configuration file
   --daemon	         Download latest videos with regular intervals
-  --free-space PCT       Percentage of disk to keep free
+  --free-space PCT       Percentage of disk space to keep free
   --import DIR           Import videos from another jwb-rpi directory
   --lang CODE            Set language
   --limit-rate RATE      Download rate for videos, 0 disables limit
   --no-checksum          Don't verify integrity of video files
   --no-subsubtitles      Prefer unsubtitled videos
   --only-latest          Only download the latest videos
-  --prio CATEGORIES      Categories to download or keep longer
-  --prio CODENAMES       Comma-separated list of categories
-  --prio-share PCT       Percentage of space reserved for prio videos
+  --prio-percent PCT     Percentage of space reserved for prioritized videos
   --quality NUM          Maximum quality: 240, 360, 480 or 720
   --since DATE           Only save videos newer than DATE
   --subtitles            Prefer subtitled videos (default)
@@ -187,6 +186,7 @@ unset daemon latest
 export checksum subtitles
 
 read_arguments --help:show_help \
+	       --category=prio_categories \
 	       --checksum:checksum=1 \
 	       --config=conf \
 	       --daemon:daemon=1 \
@@ -197,8 +197,7 @@ read_arguments --help:show_help \
 	       --no-checksum:checksum=0 \
 	       --no-subtitles:subtitles=0 \
 	       --only-latest:latest=1 \
-	       --prio=prio_categories \
-	       --prio-share=prio_percent \
+	       --prio-percent=prio_percent \
 	       --quality=quality \
 	       --since=since \
 	       --subtitles:subtitles=1 \
