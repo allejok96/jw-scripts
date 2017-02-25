@@ -1,0 +1,30 @@
+
+##### REQUIREMENTS #####
+
+GNU sed
+curl or wget
+realpath (separate package in some distros)
+
+Optional:
+udevil (for auto mounting and importing)
+omxplayer (default video player for Raspberry Pi)
+mpv (default video player for streaming)
+
+
+##### INSTALLATION #####
+
+Simply run the ./install.sh script from the jw-scripts directory as root:
+
+    cd jw-scripts
+    sudo ./install.sh
+
+Please take a look at /etc/jw.conf and tweak the settings as you like.
+
+Now you can enable one or more of these systemd servicies (replace USER with your user or choice):
+
+    jwb-index@USER.timer        Daily update of JW Broadcasting videos
+    jwb-rpi@USER                Play downloaded videos like a TV channel
+    jwb-rpi-downloader@USER     Download videos for jwb-rpi
+    jwb-rpi-autoimport@USER     Automatically mount media and import videos
+
+
