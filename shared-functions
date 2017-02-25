@@ -452,8 +452,8 @@ requirement_check()
 	case "$cmd" in
 
 	    sed)
-		type sed &>/dev/null || crash "this script requires GNU sed"
-		sed --version | grep -q "GNU sed" || err "Warning:
+		type sed &>/dev/null || msg "this script requires GNU sed" || exit 1
+		sed --version | grep -q "GNU sed" || msg "Warning:
 This script is build for and tested only with GNU sed.
 It looks like you are using a different version of sed,
 so I cannot guarrantee that it will work.
@@ -466,14 +466,14 @@ Just saying :)
 		    if type curl &>/dev/null; then
 			export hascurl=1
 		    else
-			type wget &>/dev/null || crash "this script requires curl or wget"
+			type wget &>/dev/null || msg "this script requires curl or wget" || exit 1
 			export hascurl=0
 		    fi
 		fi
 		;;
 
 	    *)
-		type "$cmd" &>/dev/null || crash "this script requires the \"$cmd\" command"
+		type "$cmd" &>/dev/null || msg "this script requires the \"$cmd\" command" || exit 1
 		;;
 	    
 	esac
