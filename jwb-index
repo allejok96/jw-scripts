@@ -225,7 +225,7 @@ trap 'echo "aborted (PID $$)" 1>&2; exit 2' SIGTERM SIGINT SIGHUP
 
 ### LOAD SETTINGS AND PARSE ARGUMENTS
 
-unset clean child json norecursive quiet
+unset clean child json norecursive
 export checksums download mode subtitles timestamps quiet
 
 read_arguments --help:show_help \

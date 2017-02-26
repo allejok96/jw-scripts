@@ -43,7 +43,6 @@ Options:
   --mode MODE           Output mode, see "Modes"
   --no-timestamp        Don't change timestamps on files
   --pub CODE            Use the publication CODE, instead of the Bible
-  --recursive           Index the Bible book by book
   --silver              Use the 2013 edition of the NWT
   --timestamp           Change timestamps on files
   DIRECTORY             Directory to save the playlists or recordings in
@@ -205,7 +204,7 @@ trap 'echo "aborted (PID $$)" 1>&2; exit 2' SIGTERM SIGINT SIGHUP
 
 ### LOAD SETTINGS AND PARSE ARGUMENTS
 
-unset child clean json recursive
+unset child clean json
 export checksums download mode timestamps pub
 
 read_arguments --help:show_help \
