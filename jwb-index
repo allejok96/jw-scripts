@@ -295,7 +295,7 @@ if ! ((child)); then
     # Debug JSON
     # (do this before any other things get done)
     if ((json)); then
-	main_url="https://mediator.jw.org/v1/categories/$lang/${category%%,*}?detailed=1"
+	main_url="https://mediator.jw.org/v1/categories/$lang/${categories%%,*}?detailed=1"
 	download_file "$main_url" | unsquash_file | less
 	exit
     fi
@@ -325,7 +325,7 @@ fi
 ### MAIN LOOP
 
 # Split categories list where commas are
-for main_category in "${categories[@]//,/ }"; do
+for main_category in "${categories//,/ }"; do
     
     main_url="https://mediator.jw.org/v1/categories/$lang/${main_category}?detailed=1"
     
