@@ -7,8 +7,160 @@ import os
 import argparse
 import sys
 import hashlib
+import subprocess
 
 pj = os.path.join
+
+
+def validate_lang(code=None):
+    """Print out a language code list or check if the code is in the list"""
+
+    url = 'https://mediator.jw.org/v1/languages/E/web'
+
+    with urllib.request.urlopen(url) as response:
+        response = json.load(response)
+
+        if code is None:
+            # Print table of language codes
+            print('language codes:', file=sys.stderr)
+            for lang in sorted(response['languages'], key=lambda x: x['name']):
+                print('{:>3}  {:<}'.format(lang['code'], lang['name']), file=sys.stderr)
+        else:
+            # Check if the code is valid
+            for lang in response['languages']:
+                if lang['code'] == code:
+                    return True
+
+            print(code + ': invalid language code')
+
+
+def parse_vod(cat):
+    """Download JSON and do stuff"""
+
+    url = 'https://mediator.jw.org/v1/categories/{0}/{1}?detailed=1'.format(option.lang, cat)
+    with urllib.request.urlopen(url) as response:
+        response = json.load(response)
+
+        if 'status' in response and response['status'] == '404':
+            print('no such category or language', file=sys.stderr)
+            quit()
+
+        # Set output destination based on current category
+        cat = response['category']['key']
+        name = response['category']['name']
+        if not option.quiet:
+            print('{} ({})'.format(cat, name), file=sys.stderr)
+        output.set_cat(cat, name)
+
+        # Add subcategories to the queue
+        if 'subcategories' in response['category']:
+            for s in response['category']['subcategories']:
+                output.save_subcat(s['key'], s['name'])
+                if s['key'] not in queue:
+                    queue.append(s['key'])
+
+        # Output media data to current destination
+        if 'media' in response['category']:
+            for media in response['category']['media']:
+                video = get_best_video(media['files'])
+
+                m = Media()
+                m.url = video['progressiveDownloadURL']
+                m.name = media['title']
+
+                if 'firstPublished' in media:
+                    m.date = media['firstPublished']
+                if 'checksum' in video:
+                    m.md5 = video['checksum']
+                if 'filesize' in video:
+                    m.size = video['filesize']
+
+                m.file = download_media(m, output.media_dir)
+
+                output.save_media(m)
+
+
+def get_best_video(files):
+    videos = sorted([x for x in files if x['frameHeight'] <= option.quality],
+                    reverse=True,
+                    key=lambda v: v['frameWidth'])
+    videos = sorted(videos, reverse=True, key=lambda v: v['subtitled'] == option.subtitles)
+    return videos[0]
+
+
+def truncate_file(file, string=''):
+    """Create a file and its parent directories"""
+
+    d = os.path.dirname(file)
+    if not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
+
+    # Don't truncate non-empty files
+    if os.path.exists(file) and os.stat(file).st_size != 0:
+        return
+
+    with open(file, 'w') as f:
+        f.write(string)
+
+
+def download_media(media, directory=None):
+    """Download media and check it"""
+
+    if directory is None:
+        directory = option.work_dir
+
+    os.makedirs(directory, exist_ok=True)
+
+    base = urllib.parse.urlparse(media.url).path
+    base = os.path.basename(base)
+    file = pj(directory, base)
+
+    # Only try resuming and downloading once
+    resumed = False
+    downloaded = False
+
+    while True:
+
+        if os.path.exists(file):
+
+            fsize = os.path.getsize(file)
+
+            if media.size is None:
+                return file
+
+            # File size is OK, check MD5
+            elif fsize == media.size:
+                if option.checksum is False or media.md5 is None:
+                    return file
+                elif md5(file) == media.md5:
+                    return file
+                else:
+                    print('deleting: {}, checksum mismatch'.format(base), file=sys.stderr)
+                    os.remove(file)
+
+            # File is smaller, try to resume download once
+            elif fsize < media.size and not resumed and option.download:
+                resumed = True
+                if not option.quiet:
+                    print('resuming: {} ({})'.format(base, media.name), file=sys.stderr)
+                curl(media.url, file, resume=True)
+                continue
+
+            # File size is wrong, delete it
+            else:
+                print('deleting: {}, size mismatch'.format(base), file=sys.stderr)
+                os.remove(file)
+
+        # Download whole file once
+        if not downloaded and option.download:
+            downloaded = True
+            if not option.quiet:
+                print('downloading: {} ({})'.format(base, media.name), file=sys.stderr)
+            curl(media.url, file)
+            continue
+
+        # Already tried to download and didn't pass tests
+        break
 
 
 def md5(file):
@@ -21,84 +173,18 @@ def md5(file):
     return hash_md5.hexdigest()
 
 
-def download_media(url, directory=None, size=None, checksum=None, resume=False):
-    """Download a file to a directory"""
+def curl(url, file, resume=False):
+    """Throttled download of a file with curl"""
 
-    if directory is None:
-        directory = option.work_dir
+    proc = ['curl', url, '--silent', '-o', file]
+    if resume:
+        proc.append('--continue-at')
+        proc.append('-')
+    if option.rate_limit != 0:
+        proc.append('--limit-rate')
+        proc.append(option.rate_limit)
 
-    os.makedirs(directory, exist_ok=True)
-
-    base = urllib.parse.urlparse(url).path
-    base = os.path.basename(base)
-    file = pj(directory, base)
-
-    for loop in range(0, 2):
-
-        request = None
-
-        if os.path.exists(file):
-
-            # If file is smaller, try to resume download once.
-            fsize = os.path.getsize(file)
-            if size is not None and fsize < size:
-                print('Resuming ' + url, file=sys.stderr)
-                request = urllib.request.Request(url, headers={'Range': 'bytes={0}-' + fsize + '-'})
-            elif fsize == size:
-                if checksum and checksum is not None:
-                    if not checksum == md5(file):
-                        os.remove(file)
-                        print(file + ': deleting, checksum mismatch', file=sys.stderr)
-            else:
-                os.remove(file)
-                print(file + ': deleting, size mismatch', file=sys.stderr)
-
-
-        if request is None:
-            print('Downloading ' + file, file=sys.stderr)
-            request = url
-
-
-        urllib.request.urlretrieve(request, file)
-
-    if os.path.exists(file):
-        if size is not None and not os.path.getsize(file) == size:
-            err = 'size mismatch'
-        elif checksum is not None and not md5(file) == checksum:
-            err = 'checksum mismatch'
-        else:
-            return True
-
-        print(file + ': deleting corrupted file, ' + err, file=sys.stderr)
-        os.remove(file)
-        return False
-
-    return file
-
-
-def truncate_file(file, string='', overwrite=False):
-    """Create a file and its parent directories"""
-
-    d = os.path.dirname(file)
-    if not os.path.exists(d):
-        os.makedirs(d, exist_ok=True)
-
-    if overwrite:
-        pass
-    elif os.path.exists(file) and os.stat(file).st_size == 0:
-        # Truncate empty files
-        pass
-    else:
-        return
-
-    with open(file, 'w') as f:
-        f.write(string)
-
-
-def check_file(file, size, checksum):
-    """Validate a file and delete invalid ones"""
-
-
+    subprocess.run(proc, stderr=sys.stderr)
 
 
 class Media:
@@ -107,7 +193,7 @@ class Media:
     def __init__(self):
         self.url = None
         self.name = None
-        self.checksum = None
+        self.md5 = None
         self.time = None
         self.size = None
         self.file = None
@@ -138,6 +224,7 @@ class OutputM3U(OutputStdout):
     def __init__(self):
         super().__init__()
         self._output_file = None
+        self._inserted_subdir = ''
         self.file_ending = '.m3u'
         self.media_dir = pj(option.work_dir, option.subdir)
 
@@ -163,12 +250,12 @@ class OutputM3U(OutputStdout):
         # Switch to a new file
 
         if self._output_file is None:
-            # The first time this method runs:
+            # The first time THIS method runs:
             # The current (first) file gets saved outside the subdir,
             # all other data (later files) gets saved inside the subdir,
             # so all paths in the current file must have the subdir prepended.
             self._inserted_subdir = option.subdir
-            self._output_file = pj(option.work_dir, cat + self.file_ending)
+            self._output_file = pj(option.work_dir, name + self.file_ending)
         else:
             # The second time and forth:
             # Don't prepend the subdir no more
@@ -230,10 +317,10 @@ class OutputHTML(OutputM3U):
         if file is None:
             file = self._output_file
 
-        truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>\n')
+        truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>')
 
         with open(file, 'a') as f:
-            f.write('<a href="{0}">{1}</a><br>'.format(source, name))
+            f.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
 
     write_to_file = write_to_html
 
@@ -294,120 +381,61 @@ class OutputFilesystem(OutputStdout):
             os.symlink(source, link, dir_fd=dir_fd)
 
 
-def parse_vod(cat):
-    """Download JSON and do stuff"""
+parser = argparse.ArgumentParser(prog='jwb-index.py', usage='%(prog)s [options] [DIR]',
+                                 description='Index or download media from tv.jw.org')
+# TODO
+parser.add_argument('--config')
 
-    history.add(cat)
+# TODO
+parser.add_argument('--clean', action='store_true')
 
-    url = 'https://mediator.jw.org/v1/categories/{0}/{1}?detailed=1'.format(option.lang, cat)
-    with urllib.request.urlopen(url) as response:
-        response = json.load(response)
+parser.add_argument('--quiet', action='store_true')
 
-        if 'status' in response and response['status'] == '404':
-            print('No such category', file=sys.stderr)
-            quit()
-
-        # Set output destination based on current category
-        cat = response['category']['key']
-        name = response['category']['name']
-        print('{0} - {1}'.format(cat, name), file=sys.stderr)
-        output.set_cat(cat, name)
-
-        # Add subcategories to the queue
-        if 'subcategories' in response['category']:
-            for s in response['category']['subcategories']:
-                if s['key'] not in history:
-                    output.save_subcat(s['key'], s['name'])
-                    queue.add(s['key'])
-
-        # Output media data to current destination
-        if 'media' in response['category']:
-            for media in response['category']['media']:
-                video = get_best_video(media['files'])
-
-                m = Media()
-                m.url = video['progressiveDownloadURL']
-                m.name = media['title']
-
-                if 'firstPublished' in media:
-                    m.date = media['firstPublished']
-                if 'checksum' in video:
-                    m.checksum = video['checksum']
-                if 'size' in video:
-                    m.size = video['size']
-
-                if option.download:
-                    file = download_media(m.url, output.media_dir, resume=True)
-                    if os.path.exists(file):
-                        m.file = file
-
-                output.save_media(m)
-                
-
-def get_best_video(files):
-    videos = sorted([x for x in files if x['frameHeight'] <= option.quality],
-                    reverse=True,
-                    key=lambda v: v['frameWidth'])
-    videos = sorted(videos, reverse=True, key=lambda v: v['subtitled'] == option.subtitles)
-    return videos[0]
-
-
-# flags, action, nargs, const, default, type, choices, required, help, metavar, dest
-parser = argparse.ArgumentParser(prog='jwb-index.py',
-                                 description='Index or download media from tv.jw.org',
-                                 usage='%(prog)s [options] [DIR]')
-
-parser.add_argument('--quality',
-                    default=720,
-                    type=int,
-                    choices=[240, 360, 480, 720],
-                    help='maximum video quality')
-
-parser.add_argument('--mode',
-                    default='stdout',
-                    choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
+parser.add_argument('--mode', default='stdout', choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
                     help='output mode')
 
-parser.add_argument('--subtitles',
-                    action='store_true',
-                    help='prefer subtitled videos')
-
-parser.add_argument('--category',
-                    default='VideoOnDemand',
-                    help='category/section to index',
-                    dest='category')
-
-parser.add_argument('--lang',
-                    default='E',
+parser.add_argument('--lang', nargs='?', default='E',
                     help='language code')
 
-parser.add_argument('--download',
-                    action='store_true',
+parser.add_argument('--category', default='VideoOnDemand', dest='category',
+                    help='category/section to index')
+
+parser.add_argument('--latest', action='store_const', const='LatestVideos', dest='category')
+
+parser.add_argument('--quality', default=720, type=int, choices=[240, 360, 480, 720],
+                    help='maximum video quality')
+
+parser.add_argument('--subtitles', action='store_true')
+
+parser.add_argument('--no-subtitles', action='store_false', dest='subtitles',
+                    help='prefer un-subtitled videos')
+
+parser.add_argument('--download', action='store_true',
                     help='download media')
 
-parser.add_argument('work_dir',
-                    action='store',
-                    nargs='?',
-                    default=os.getcwd(),
-                    help='directory to save data in',
-                    metavar='DIR')
+parser.add_argument('--limit-rate', default='1M', dest='rate_limit')
 
+# TODO
+parser.add_argument('--since')
 
+parser.add_argument('--checksum', action='store_true',
+                    help='check md5 checksum')
 
-# HACKISH
-argv = ['--lang', 'Z',
-        '--mode', 'stdout',
-        '--download',
-        '--category', 'ChildrenFeatured',
-        '/home/alex/mapp',
-        '--quality', '240',
-        '--download']
+parser.add_argument('--no-checksum', action='store_false',
+                    help='check md5 checksum')
 
+# TODO
+parser.add_argument('--timestamp', action='store_true')
 
+parser.add_argument('--no-timestamp', action='store_false', dest='timestamp')
 
-option = parser.parse_args(argv)
-option.subdir = pj(option.work_dir, 'jwb-' + option.lang)
+parser.add_argument('work_dir', nargs='?', default=os.getcwd(), metavar='DIR',
+                    help='directory to save data in')
 
+option = parser.parse_args()
+
+validate_lang(option.lang) or exit()
+option.subdir = pj('jwb-' + option.lang)
 print(option)
 
 modes = {'stdout': OutputStdout,
@@ -420,8 +448,7 @@ output = modes[option.mode]()
 
 # Begin with the first category
 # (more categories will be added as we move on)
-queue = {option.category}
-history = set()
+queue = [option.category]
 
 for c in queue:
     parse_vod(c)
