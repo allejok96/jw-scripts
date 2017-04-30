@@ -8,6 +8,8 @@ import argparse
 import sys
 import hashlib
 import subprocess
+import time
+import re
 
 pj = os.path.join
 
@@ -69,6 +71,13 @@ def parse_vod(cat):
                 m.name = media['title']
 
                 if 'firstPublished' in media:
+                    if option.since:
+                        published = re.sub('\.[0-9]+Z$', '', media['firstPublished'])
+                        published = time.strptime(published, '%Y-%m-%dT%H:%M:%S')
+                        published = time.mktime(published)
+                        if published < option.since:
+                            continue
+
                     m.date = media['firstPublished']
                 if 'checksum' in video:
                     m.md5 = video['checksum']
@@ -415,8 +424,7 @@ parser.add_argument('--download', action='store_true',
 
 parser.add_argument('--limit-rate', default='1M', dest='rate_limit')
 
-# TODO
-parser.add_argument('--since')
+parser.add_argument('--since', metavar='YYYY-MM-DD')
 
 parser.add_argument('--checksum', action='store_true',
                     help='check md5 checksum')
@@ -434,17 +442,27 @@ parser.add_argument('work_dir', nargs='?', default=os.getcwd(), metavar='DIR',
 
 option = parser.parse_args()
 
+
+# Check language code validity
 validate_lang(option.lang) or exit()
 option.subdir = pj('jwb-' + option.lang)
-print(option)
 
+# Check date option validity
+if option.since:
+    try:
+        option.since = time.mktime(time.strptime(option.since, '%Y-%m-%d'))
+    except ValueError:
+        print('wrong date format')
+        exit()
+
+# Set the output mode
 modes = {'stdout': OutputStdout,
          'm3u': OutputM3U,
          'm3ucompat': OutputM3UCompat,
          'filesystem': OutputFilesystem,
          'html': OutputHTML}
-
 output = modes[option.mode]()
+
 
 # Begin with the first category
 # (more categories will be added as we move on)
