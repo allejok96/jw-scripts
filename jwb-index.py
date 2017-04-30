@@ -69,20 +69,23 @@ def parse_vod(cat):
                 m = Media()
                 m.url = video['progressiveDownloadURL']
                 m.name = media['title']
-
-                if 'firstPublished' in media:
-                    if option.since:
-                        published = re.sub('\.[0-9]+Z$', '', media['firstPublished'])
-                        published = time.strptime(published, '%Y-%m-%dT%H:%M:%S')
-                        published = time.mktime(published)
-                        if published < option.since:
-                            continue
-
-                    m.date = media['firstPublished']
                 if 'checksum' in video:
                     m.md5 = video['checksum']
                 if 'filesize' in video:
                     m.size = video['filesize']
+
+                if 'firstPublished' in media:
+                    # Remove last stuff from date, what is it anyways?
+                    d = re.sub('\.[0-9]+Z$', '', media['firstPublished'])
+                    # Try to convert it to seconds
+                    try:
+                        d = time.mktime(time.strptime(d, '%Y-%m-%dT%H:%M:%S'))
+                    except ValueError:
+                        pass
+                    else:
+                        m.date = d
+                        if option.since and d < option.since:
+                            continue
 
                 m.file = download_media(m, output.media_dir)
 
@@ -131,6 +134,10 @@ def download_media(media, directory=None):
     while True:
 
         if os.path.exists(file):
+
+            # Set timestamp to date of publishing
+            if option.timestamp and media.date:
+                os.utime(file, (media.date, media.date))
 
             fsize = os.path.getsize(file)
 
@@ -432,7 +439,6 @@ parser.add_argument('--checksum', action='store_true',
 parser.add_argument('--no-checksum', action='store_false',
                     help='check md5 checksum')
 
-# TODO
 parser.add_argument('--timestamp', action='store_true')
 
 parser.add_argument('--no-timestamp', action='store_false', dest='timestamp')
