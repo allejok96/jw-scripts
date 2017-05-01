@@ -125,7 +125,7 @@ def download_media(media, directory=None):
 
     base = urllib.parse.urlparse(media.url).path
     base = os.path.basename(base)
-    file = pj(directory, base)
+    file = pj(directory, base + '.part')
 
     # Only try resuming and downloading once
     resumed = False
@@ -142,14 +142,14 @@ def download_media(media, directory=None):
             fsize = os.path.getsize(file)
 
             if media.size is None:
-                return file
+                break
 
             # File size is OK, check MD5
             elif fsize == media.size:
                 if option.checksum is False or media.md5 is None:
-                    return file
+                    break
                 elif md5(file) == media.md5:
-                    return file
+                    break
                 else:
                     print('deleting: {}, checksum mismatch'.format(base), file=sys.stderr)
                     os.remove(file)
@@ -176,7 +176,12 @@ def download_media(media, directory=None):
             continue
 
         # Already tried to download and didn't pass tests
-        break
+        return
+
+    # Tests were successful
+    # Remove the .part extension and return file
+    os.rename(file, file[:-5])
+    return file[:-5]
 
 
 def md5(file):
@@ -201,6 +206,23 @@ def curl(url, file, resume=False):
         proc.append(option.rate_limit)
 
     subprocess.run(proc, stderr=sys.stderr)
+
+
+def clean_symlinks(clean_all=False):
+    """Clean out broken symlinks from work_dir/subdir/*/"""
+
+    d = pj(option.work_dir, option.subdir)
+
+    if not os.path.exists(d):
+        return
+
+    for sd in os.listdir(d):
+        sd = pj(d, sd)
+        if os.path.isdir(sd):
+            for l in os.listdir(sd):
+                l = pj(sd, l)
+                if clean_all or os.path.lexists(l):
+                    os.remove(l)
 
 
 class Media:
@@ -402,7 +424,6 @@ parser = argparse.ArgumentParser(prog='jwb-index.py', usage='%(prog)s [options] 
 # TODO
 parser.add_argument('--config')
 
-# TODO
 parser.add_argument('--clean', action='store_true')
 
 parser.add_argument('--quiet', action='store_true')
@@ -469,6 +490,8 @@ modes = {'stdout': OutputStdout,
          'html': OutputHTML}
 output = modes[option.mode]()
 
+if option.mode == 'filesystem':
+    clean_symlinks()
 
 # Begin with the first category
 # (more categories will be added as we move on)
