@@ -125,7 +125,7 @@ def download_media(media, directory=None):
 
     base = urllib.parse.urlparse(media.url).path
     base = os.path.basename(base)
-    file = pj(directory, base + '.part')
+    file = pj(directory, base)
 
     # Only try resuming and downloading once
     resumed = False
@@ -179,9 +179,7 @@ def download_media(media, directory=None):
         return
 
     # Tests were successful
-    # Remove the .part extension and return file
-    os.rename(file, file[:-5])
-    return file[:-5]
+    return file
 
 
 def md5(file):
