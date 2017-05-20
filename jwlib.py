@@ -1,11 +1,11 @@
 from sys import stderr
 import os
-import urllib
+import time
+import re
+
 import json
 import urllib.request
 import urllib.parse
-import time
-import re
 
 pj = os.path.join
 
@@ -19,11 +19,15 @@ class JWBroadcasting:
         self.subtitles = False
         self.download = False
         self.streaming = False
-        self.quiet = False
+        self.quiet = 0
         self.checksums = False
         self.category = 'VideoOnDemand'
         self.rate_limit = '1M'
         self.utc_offset = 0
+        # Don't download or check files
+        self.dry_run = False
+        # Used by download_media()
+        self._checked_files = set()
 
     @property
     def lang(self):
@@ -31,14 +35,16 @@ class JWBroadcasting:
 
     @lang.setter
     def lang(self, code=None):
-        """Set language code if valid, or print out a list"""
-
+        """Set language code.
+        
+        If valid the code is invalid, print out a list and exit.
+        """
         url = 'https://mediator.jw.org/v1/languages/E/web'
 
         with urllib.request.urlopen(url) as response:
             response = json.load(response)
 
-            if code is None:
+            if not code:
                 # Print table of language codes
                 print('language codes:', file=stderr)
                 for lang in sorted(response['languages'], key=lambda x: x['name']):
@@ -50,7 +56,7 @@ class JWBroadcasting:
                         self.__lang = code
                         return
 
-                print(code + ': invalid language code')
+                raise ValueError(code + ': invalid language code')
 
             exit()
 
@@ -60,15 +66,14 @@ class JWBroadcasting:
 
     @mindate.setter
     def mindate(self, date):
+        """Convert human readable date to seconds since epoch."""
         try:
             self.__mindate = time.mktime(time.strptime(date, '%Y-%m-%d'))
         except ValueError:
-            print('wrong date format')
-            exit()
+            raise ValueError('wrong date format')
 
     def parse(self, output):
-        """Download JSON and do stuff"""
-
+        """Download JSON, create Media objects and send them to the Output object."""
         if self.streaming:
             section = 'schedules'
         else:
@@ -85,14 +90,13 @@ class JWBroadcasting:
                 response = json.load(response)
 
                 if 'status' in response and response['status'] == '404':
-                    print('no such category or language', file=stderr)
-                    quit()
+                    raise ValueError('No such category or language')
 
                 # Initialize the cateogory (setting output destination)
                 cat = response['category']['key']
                 name = response['category']['name']
                 output.set_cat(cat, name)
-                if not self.quiet:
+                if self.quiet == 0:
                     print('{} ({})'.format(cat, name), file=stderr)
 
                 if self.streaming:
@@ -111,7 +115,12 @@ class JWBroadcasting:
                 # Output media data to current destination
                 if 'media' in response['category']:
                     for media in response['category']['media']:
-                        video = self.get_best_video(media['files'])
+                        # Skip videos marked as hidden
+                        if 'tags' in response['category']['media']:
+                            if 'WebExclude' in response['category']['media']['tags']:
+                                continue
+
+                        video = self._get_best_video(media['files'])
 
                         m = Media()
                         m.url = video['progressiveDownloadURL']
@@ -136,26 +145,52 @@ class JWBroadcasting:
                                     continue
 
                         # [Download and] check local file (not when streaming, of course)
-                        if not self.streaming:
+                        if not self.streaming and not self.dry_run:
                             m.file = self.download_media(m, output.media_dir)
 
                         output.save_media(m)
 
-    def get_best_video(self, files):
-        videos = sorted([x for x in files if x['frameHeight'] <= self.quality],
-                        reverse=True,
-                        key=lambda v: v['frameWidth'])
+    def _get_best_video(self, video_list: list):
+        """Take a list of media files and metadata and return the best one"""
+
+        videos = []
+        for vid in video_list:
+            try:
+                # Convert labels like 720p to int in a most forgiving way
+                vid['label'] = int(vid['label'][:-1])
+            except ValueError or TypeError:
+                # In case the label is wrong format, use frame height
+                # (But this may be misleading)
+                vid['label'] = vid['frameHeight']
+            # Only save videos that match quality setting
+            if vid['label'] <= self.quality:
+                videos.append(vid)
+
+        # Sort by quality and subtitle setting
+        videos = sorted(videos, reverse=True, key=lambda v: v['label'])
         videos = sorted(videos, reverse=True, key=lambda v: v['subtitled'] == self.subtitles)
         return videos[0]
 
     def download_media(self, media, directory):
-        """Download media and check it"""
+        """Download media file and check it.
 
+        Download file, check MD5 sum and size, delete file if it missmatches.
+        Return the filename, or None if unsucessfull.
+
+        Arguments:
+        media - A Media instance
+        directory - Dir to save the files to
+        """        
         os.makedirs(directory, exist_ok=True)
 
         base = urllib.parse.urlparse(media.url).path
         base = os.path.basename(base)
         file = pj(directory, base)
+
+        # Since the same files can occur in multiple categories
+        # only check each file once
+        if file in self._checked_files:
+            return file
 
         # Only try resuming and downloading once
         resumed = False
@@ -171,14 +206,14 @@ class JWBroadcasting:
 
                 fsize = os.path.getsize(file)
 
-                if media.size is None:
+                if not media.size:
                     break
 
                 # File size is OK, check MD5
                 elif fsize == media.size:
-                    if self.checksums is False or media.md5 is None:
+                    if not self.checksums or not media.md5:
                         break
-                    elif md5(file) == media.md5:
+                    elif _md5(file) == media.md5:
                         break
                     else:
                         print('deleting: {}, checksum mismatch'.format(base), file=stderr)
@@ -187,9 +222,9 @@ class JWBroadcasting:
                 # File is smaller, try to resume download once
                 elif fsize < media.size and not resumed and self.download:
                     resumed = True
-                    if not self.quiet:
+                    if self.quiet <= 1:
                         print('resuming: {} ({})'.format(base, media.name), file=stderr)
-                    curl(media.url, file, resume=True, rate_limit=self.rate_limit)
+                    _curl(media.url, file, resume=True, rate_limit=self.rate_limit)
                     continue
 
                 # File size is wrong, delete it
@@ -200,21 +235,28 @@ class JWBroadcasting:
             # Download whole file once
             if not downloaded and self.download:
                 downloaded = True
-                if not self.quiet:
+                if self.quiet <= 1:
                     print('downloading: {} ({})'.format(base, media.name), file=stderr)
-                curl(media.url, file, rate_limit=self.rate_limit)
+                _curl(media.url, file, rate_limit=self.rate_limit)
                 continue
 
             # Already tried to download and didn't pass tests
-            return
+            return None
 
         # Tests were successful
+        self._checked_files.add(file)
         return file
 
 
-def truncate_file(file, string=''):
-    """Create a file and its parent directories"""
+def _truncate_file(file, string=''):
+    """Create a file and the parent directories.
 
+    Arguments:
+    file - File to create/overwrite
+
+    Keyword arguments:
+    string - A string to write to the file
+    """
     d = os.path.dirname(file)
     if not os.path.exists(d):
         os.makedirs(d, exist_ok=True)
@@ -227,8 +269,8 @@ def truncate_file(file, string=''):
         f.write(string)
 
 
-def md5(file):
-    """MD5 a file"""
+def _md5(file):
+    """Return MD5 of a file."""
     import hashlib
 
     hash_md5 = hashlib.md5()
@@ -238,8 +280,17 @@ def md5(file):
     return hash_md5.hexdigest()
 
 
-def curl(url, file, resume=False, rate_limit='0'):
-    """Throttled download of a file with curl"""
+def _curl(url, file, resume=False, rate_limit='0'):
+    """Throttled file download by calling the curl command.
+
+    Arguments:
+    url - URL to be downloaded
+    file - File to write to
+
+    Keyword arguments:
+    resume - Resume download of file (default False)
+    rate_limit - Rate to pass to curl --limit-rate
+    """
     import subprocess
 
     proc = ['curl', url, '--silent', '-o', file]
@@ -254,7 +305,7 @@ def curl(url, file, resume=False, rate_limit='0'):
 
 
 class Media:
-    """Object with media info"""
+    """Object to put media info in."""
 
     def __init__(self):
         self.url = None
@@ -266,12 +317,18 @@ class Media:
 
 
 class Output:
-    """Output class for use in JWBroadcasting
+    """Base output class.
 
-    This class does nothing"""
-
+    This class does nothing.
+    """
+    
     def __init__(self, work_dir=None):
-        if work_dir is None:
+        """Set working dir and dir for media download.
+        
+        Keyword arguments:
+            work_dir -- Working directory
+        """
+        if not work_dir:
             work_dir = os.getcwd()
         self.work_dir = work_dir
         self.media_dir = work_dir
@@ -283,17 +340,18 @@ class Output:
 
 
 class OutputStdout(Output):
-    """Output URLs to stdout"""
+    """Output text only."""
 
     def save_media(self, media):
-        if media.file is not None:
+        """Output URL/filename from Media instance to stdout."""
+        if media.file:
             print(os.path.relpath(media.file, self.media_dir))
         else:
             print(media.url)
 
 
 class OutputM3U(Output):
-    """Create a M3U playlist tree"""
+    """Create a M3U playlist tree."""
 
     def __init__(self, work_dir, subdir):
         super().__init__(work_dir)
@@ -304,9 +362,8 @@ class OutputM3U(Output):
         self.media_dir = pj(self.work_dir, self._subdir)
 
     def save_media(self, media):
-        # Write media to a playlist
-
-        if media.file is not None:
+        """Write media entry to playlist."""
+        if media.file:
             source = pj('.', self._subdir, os.path.basename(media.file))
         else:
             source = media.url
@@ -314,17 +371,14 @@ class OutputM3U(Output):
         self.write_to_file(source, media.name)
 
     def save_subcat(self, cat, name):
-        # Write a link to another playlist to the current playlist
-
+        """Write link to another category, i.e. playlist, to the current one."""
         name = name.upper()
-
         source = pj('.', self._inserted_subdir, cat + self.file_ending)
         self.write_to_file(source, name)
 
     def set_cat(self, cat, name):
-        # Switch to a new file
-
-        if self._output_file is None:
+        """Set destination playlist file."""
+        if not self._output_file:
             # The first time THIS method runs:
             # The current (first) file gets saved outside the subdir,
             # all other data (later files) gets saved inside the subdir,
@@ -343,12 +397,10 @@ class OutputM3U(Output):
             os.remove(self._output_file)
 
     def write_to_m3u(self, source, name, file=None):
-        # Write something to a M3U file
-
-        if file is None:
+        """Write entry to a M3U playlist file."""
+        if not file:
             file = self._output_file
-
-        truncate_file(file, string='#EXTM3U\n')
+        _truncate_file(file, string='#EXTM3U\n')
         with open(file, 'a') as f:
             f.write('#EXTINF:0,' + name + '\n' + source + '\n')
 
@@ -356,37 +408,37 @@ class OutputM3U(Output):
 
 
 class OutputM3UCompat(OutputM3U):
-    """Create multiple M3U playlists"""
+    """Create multiple M3U playlists."""
 
     def set_cat(self, cat, name):
-        # Switch to a new file
-
+        """Set/remove destination playlist file."""
         self._output_file = pj(self.work_dir, cat + ' - ' + name + self.file_ending)
-
         # Since we want to start on a clean file, remove the old one
         if os.path.exists(self._output_file):
             os.remove(self._output_file)
 
-    # Don't link to other playlists to not crash media players
-    # hence the "compat" part of M3UCompat
     def save_subcat(self, cat, name):
-        return
+        """Do nothing.
+
+        Unlike the parent class, this class doesn't save links to other categories,
+        e.g. other playlists, inside the current playlist.
+        """
+        pass
 
 
 class OutputHTML(OutputM3U):
-    """Create a HTML file"""
+    """Create a HTML file."""
 
     def __init__(self, work_dir, subdir):
         super().__init__(work_dir, subdir)
         self.file_ending = '.html'
 
     def write_to_html(self, source, name, file=None):
-        # Write a link to a HTML file
-
-        if file is None:
+        """Write a HTML file with a hyperlink to a media file."""
+        if not file:
             file = self._output_file
 
-        truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>')
+        _truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>')
 
         with open(file, 'a') as f:
             f.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
@@ -395,7 +447,7 @@ class OutputHTML(OutputM3U):
 
 
 class OutputFilesystem(Output):
-    """Create a directory structure with symlinks to videos"""
+    """Creates a directory structure with symlinks to videos"""
 
     def __init__(self, work_dir, subdir):
         super().__init__(work_dir)
@@ -404,17 +456,15 @@ class OutputFilesystem(Output):
         self._output_dir = None
 
     def set_cat(self, cat, name):
-        # Create a directory for saving stuff
-
-        first = self._output_dir is None
-
+        """Create a directory (category) where symlinks will be saved"""
+        output_dir_before = self._output_dir
+        
         self._output_dir = pj(self.work_dir, self._subdir, cat)
-
         if not os.path.exists(self._output_dir):
             os.makedirs(self._output_dir)
 
         # First time: create link outside subdir
-        if first:
+        if output_dir_before is None:
             link = pj(self.work_dir, name)
             if not os.path.lexists(link):
                 dir_fd = os.open(self._output_dir, os.O_RDONLY)
@@ -423,8 +473,7 @@ class OutputFilesystem(Output):
                 os.symlink(source, link, dir_fd=dir_fd)
 
     def save_subcat(self, cat, name):
-        # Create a symlink to a directory
-
+        """Create a symlink to a directory (category)"""
         dir_ = pj(self.work_dir, self._subdir, cat)
         if not os.path.exists(dir_):
             os.makedirs(dir_)
@@ -437,9 +486,8 @@ class OutputFilesystem(Output):
             os.symlink(source, link, dir_fd=dir_fd)
 
     def save_media(self, media):
-        # Create a symlink to some media
-
-        if media.file is None:
+        """Create a symlink to a media file"""
+        if not media.file:
             return
 
         source = pj('..', os.path.basename(media.file))
@@ -452,7 +500,6 @@ class OutputFilesystem(Output):
 
     def clean_symlinks(self, clean_all=False):
         """Clean out broken symlinks from work_dir/subdir/*/"""
-
         d = pj(self.work_dir, self._subdir)
 
         if not os.path.exists(d):
@@ -461,23 +508,36 @@ class OutputFilesystem(Output):
         for sd in os.listdir(d):
             sd = pj(d, sd)
             if os.path.isdir(sd):
-                for l in os.listdir(sd):
-                    l = pj(sd, l)
-                    if clean_all or os.path.lexists(l):
-                        os.remove(l)
+                for L in os.listdir(sd):
+                    L = pj(sd, L)
+                    if clean_all or os.path.lexists(L):
+                        os.remove(L)
+
+                        
+class OutputQueue(Output):
+    """Queues media objects"""
+
+    def __init__(self, work_dir):
+        super().__init__(work_dir)
+        self.queue = []
+
+    def save_media(self, media):
+        """Add a media object to the queue"""
+        self.queue.append(media)
 
 
 class OutputStreaming(Output):
-    """Save URLs in a list"""
-
+    """Queue URLs from a single category"""
+    
     def __init__(self):
         super().__init__()
         self.queue = []
         self.pos = 0
 
     def save_media(self, media):
+        """Add an URL to the queue"""
         self.queue.append(media.url)
 
     def set_cat(self, cat, name):
-        # Reset queue
+        """Reset queue"""
         self.queue = []
