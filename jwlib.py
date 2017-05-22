@@ -248,6 +248,68 @@ class JWBroadcasting:
         return file
 
 
+class JWPubMedia(JWBroadcasting):
+
+    def __init__(self):
+        super().__init__()
+        self.pub = 'bi12'
+        self.book = 0
+
+    # TODO
+    # Make the language validation pull from JW org
+    # @lang.setter
+    # def lang(self, code=None):
+
+    def parse(self, output):
+        """Download JSON, create Media objects and send them to the Output object."""
+        queue = [self.book]
+
+        for bookid in queue:
+            url = 'https://apps.jw.org/GETPUBMEDIALINKS' \
+                  '?output=json&fileformat=MP3&alllangs=0&langwritten={l}&txtCMSLang={l}&pub={p}&{n}={i}'
+
+            # Watchtower/Awake reference is split up into pub and issue
+            match = re.match('(wp?|g)([0-9]+)', self.pub)
+            if match:
+                url = url.format(l=self.lang, p=match.group(1), n='issue', i=match.group(2))
+                codename = self.pub
+            else:
+                url = url.format(l=self.lang, p=self.pub, n='booknum', i=bookid)
+                codename = format(bookid, '02')
+
+            with urllib.request.urlopen(url) as response:
+                response = json.load(response)
+
+                # Initialize the publication or book (setting output destination)
+                name = response['pubName']
+                output.set_cat(codename, name)
+
+                if self.quiet == 0:
+                    print('{} ({})'.format(codename, name), file=stderr)
+
+                # For the Bible's index page
+                # Add all books to the queue
+                if bookid == 0 and (self.pub == 'bi12' or self.pub == 'nwt'):
+                    for book in response['files'][self.lang]['MP3']:
+                        output.save_subcat(format(book['booknum'], '02'), book['title'])
+                        if book['booknum'] not in queue:
+                            queue.append(book['booknum'])
+                else:
+                    # Output media data to current destination
+                    for chptr in response['files'][self.lang]['MP3']:
+                        # Skip the ZIP
+                        if chptr['mimetype'] != 'audio/mpeg':
+                            continue
+
+                        m = Media()
+                        m.url = chptr['file']['url']
+                        m.name = chptr['title']
+                        if 'filesize' in chptr['file']:
+                            m.size = chptr['file']['filesize']
+                        m.file = self.download_media(m, output.media_dir)
+                        output.save_media(m)
+
+
 def _truncate_file(file, string=''):
     """Create a file and the parent directories.
 
