@@ -1,6 +1,8 @@
 # JW scripts
 
-###### Update 2017-05-23: Ported most thing to Python (beta)
+### 2017-05-23: HUGE UPDATE! This is ported to Python now (still beta)
+
+---
 
 ### JW Broadcasting and sound recordings anywhere
 
