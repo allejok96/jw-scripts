@@ -1,27 +1,24 @@
-# JW bash scripts
+# JW scripts
 
-###### Update 2017-01-14: Resuming download of partially downloaded files
-
-###### Update 2017-01-06: More reliability and 20% less CPU usage (you should upgrade)
+###### Update 2017-05-23: Ported most thing to Python (beta)
 
 ### JW Broadcasting and sound recordings anywhere
 
-With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of [publications at JW.ORG](https://www.jw.org/en/publications/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine, either playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline.
+With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of [publications at JW.ORG](https://www.jw.org/en/publications/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine by playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline (work in progress).
 
 ## Get started
 
-Install the scripts ([requirements](https://github.com/allejok96/jw-scripts/wiki/Installation))
+Install the scripts
 
     git clone https://github.com/allejok96/jw-scripts.git
     cd jw-scripts
-    sudo ./install.sh
+    sudo python setup.py install
 
-Next, click on one of the scripts below for more info.
+Next, click on one of the scripts below for more info (the info there can be wrong as the scripts been ported to Python)
 
 * [jwb-index](https://github.com/allejok96/jw-scripts/wiki/jwb-index) - Download videos from JW Broadcasting, or make playlists. Can be used together with **Plex** or **Kodi**.
 * [jwb-stream](https://github.com/allejok96/jw-scripts/wiki/jwb-stream) - Stream from JW Broadcasting in your media player of choice, like **VLC**.
 * [nwt-index](https://github.com/allejok96/jw-scripts/wiki/nwt-index) - Download Bible or publication recordings from JW.ORG, or make playlists.
-* [jwb-rpi](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi) - Create your own "streaming channel". Uses jwb-index + omxplayer + a lot of fancy.
 
 ## Questions
 
@@ -40,8 +37,6 @@ It seems to be realated to the `--limit-rate` flag ([why?](https://github.com/al
 Yes. The [Terms of Service](http://www.jw.org/en/terms-of-use/) allows:
 
 > distribution of free, non-commercial applications designed to download electronic files (for example, EPUB, PDF, MP3, AAC, MOBI, and MP4 files) from public areas of this site.
-
-More info [here](https://github.com/allejok96/jw-scripts/wiki/How-it-works#is-it-legal).
 
 #### Why doesn't this do XYZ?
 
