@@ -1,9 +1,0 @@
-[Unit]
-Description=Import JWB videos from removable media
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/devmon --exec-on-drive "/usr/local/lib/jw-scripts/autoimport.sh %i %d"
-
-[Install]
-WantedBy=multi-user.target

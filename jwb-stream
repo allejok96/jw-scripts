@@ -1,229 +1,69 @@
-#!/bin/bash
-#
-# jwb-stream
-# Stream from tv.jw.org
-#
+#!/usr/bin/env python3
+import time
+import subprocess
+import argparse
 
-load_shared_code()
-{
-    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
-	if [[ -f $code ]]; then
-	    if source "$code"; then
-		return 0
-	    else
-		echo "Failed to load shared functions" 1>&2
-		exit 1
-	    fi
-	fi
-    done
-
-    echo "Cannot find shared functions file" 1>&2
-    echo "You can set the default path with the variable SHARED" 1>&2
-    exit 1
-}
-
-load_shared_code
-
-show_help()
-{
-    cat<<EOF
-Usage: jwb-stream [OPTIONS] -- COMMAND [ARGUMENTS] ...
-Play a streaming channel from tv.jw.org
-
-Options:
-  --channel CODENAME    Channel to stream (see Channels)
-  --config FILE         Custom configuration file
-  --forever             Fetch channel guide again once it has finished
-  --json                Only show the formated JSON file (debug)
-  --lang CODE           Set language
-  --list-langs          Show a list of available language codes
-  --no-subtitles        Prefer unsubtitled videos
-  --quality NUM         Maximum quality: 240, 360, 480 or 720
-  COMMAND               Command used to play the stream
-
-Channels:
-  OurStudio (default)
-  Children
-  Teenagers
-  Family
-  ProgramsEvents
-  OurActivities
-  Ministry
-  OurOrganization
-  Bible
-  Movies
-  MusicVideos
-  IntExp
-
-URLs gets appended to COMMAND. If no COMMMAND is given, "mpv" is used.
-
-%s in ARGUMENTS gets replaced by the number of seconds needed to sync
-up with the stream at tv.jw.org.
-
-Examples:
-  jwb-stream -- mpv --start=%s
-  jwb-stream -- vlc --start-time=%s --play-and-exit
-  jwb-stream -- omxplayer --pos %s
-EOF
-    exit
-}
-
-# Play or send a video to the queue
-queue()
-{
-    # If there is a title and URL, save them
-    if [[ ${#url[@]} -gt 0 ]]; then
-
-	# This very obscure chunk of code sorts URLs by the order:
-	#   1. Subtitle choice
-	#   2. Not greater than max quality
-	#   3. Actual quality
-	# This is done by printing out a table of the values and sorting it.
-	# Probably a very bad idea, but efficient.
-	local i
-	i=$(for i in ${!url[@]}; do
-		# Note: use reverse tests because 1 sorts higher than 0
-		[[ ${subtitled[$i]} != "$subtitles" ]]; local s=$?
-		[[ ${qualitylabel[$i]:-0} -gt "$quality" ]]; local q=$?
-		echo "$s $q ${qualitylabel[$i]:-0} $i ${url[$i]}"
-	    done | sort | tail -n1 | cut -d " " -f4)
-	 
-	[[ ${url[$i]} ]] || err || return 1
-
-	if [[ $first_command ]]; then
-	    # -- Run player directly from inside this function --
-	    # So that we can have a different $pos than xargs has
-	    # Redirect stdout or else that will be sent to xargs
-	    # echo prevents player to read from stdin of bash
-	    echo -n | "${first_command[@]}" "${url[$i]}" 1>&2
-	    # Forget command, never do this again
-	    unset first_command
-	else
-	    # echo out to xargs
-	    echo "${url[$i]}"
-	fi
-
-	# Unset variables so they don't get repeated                                                                           
-        unset url qualitylabel subtitled urlindex
-    fi
-}
+import jwlib.parse
+import jwlib.output
 
 
-# Read the formated JSON file on stdin
-# write videos to playlists
-# and download and parse new categories
-#
-# GIGANT CAVEATS:
-# - "key" must be followed by "name"
-# - "title" must come before "progressiveDownloadURL"
-#
-# args: [command [arguments ...]]
-parse_lines()
-{
-    # Read stdin
-    while read -r input; do
-	case "$input" in
+parser = argparse.ArgumentParser(prog='jwb-stream.py',
+                                 usage='%(prog)s [options] COMMAND [ARGUMENTS]',
+                                 description='Stream media from tv.jw.org')
+# TODO
+parser.add_argument('--config')
+parser.add_argument('--lang',
+                    nargs='?',
+                    default='E',
+                    help='language code')
+parser.add_argument('--channel',
+                    default='OurStudio',
+                    dest='channel',
+                    choices=['OurStudio', 'Children', 'Teenagers', 'Family', 'ProgramEvents', 'OurActivities',
+                             'Ministry', 'OurOrganization', 'Bible', 'Movies', 'MusicVideo', 'IntExp'],
+                    help='channel to stream')
+parser.add_argument('--quality',
+                    default=720,
+                    type=int,
+                    choices=[240, 360, 480, 720],
+                    help='maximum video quality')
+parser.add_argument('--subtitles',
+                    action='store_true')
+parser.add_argument('--no-subtitles',
+                    action='store_false',
+                    dest='subtitles',
+                    help='prefer un-subtitled videos')
+parser.add_argument('cmd',
+                    nargs=argparse.REMAINDER)
 
-	    status:404)
-		msg "channel not found"
-		exit 1
-		;;
-	    
-            progressiveDownloadURL:*.mp4)
-		# Every URL gets an unique index and URL specific data
-		# is saved to that index in its array
-		urlindex=$((urlindex+1))
-		url[$urlindex]="${input#*:}"
-                ;;
 
-	    label:*)
-		# Remove the trailing p, e.g. "720p"
-		[[ -v qualitylabel[$urlindex] ]] || qualitylabel[$urlindex]="$(sed 's/^.*://; s/p$//' <<< "$input")"
-		;;
+jwb = jwlib.parse.JWBroadcasting()
+output = jwlib.output.OutputStreaming()
 
-	    subtitled:*)
-		# true -> 1, false -> 0
-		[[ -v subtitled[$urlindex] ]] || subtitled[$urlindex]="$(sed 's/^.*://; s/true/1/; s/false/0/;' <<< "$input")"
-		;;
+jwb.streaming = True
+jwb.quiet = 1
+jwb.utc_offset = (-time.altzone // 60)
 
-	    # A new video
-	    title:*)
-		queue
-		;;
-	    
-	esac
-    done
+parser.parse_args(namespace=jwb)
+jwb.category = 'Streaming' + jwb.channel  # set by argparse
 
-    # If there is a URL left when we reach EOF queue it
-    queue
+if not jwb.cmd:
+    raise RuntimeError("Not enough arguments")
 
-    return 0
-}
+# Replace the occurrences of `{}` with `0` in the command
+cmd = [arg.replace('{}', '0') for arg in jwb.cmd]
 
-[[ $1 = --help ]] && show_help
+first = True
+while True:
 
-unset json
+    jwb.parse(output)
 
-read_arguments --help:show_help \
-	       --channel=channel \
-	       --config=conf \
-	       --forever:loop=1 \
-	       --json:json=1 \
-	       --lang=lang \
-	       --list-langs:lang=none \
-	       --no-subs:subtitles=1 \
-	       --quality=quality \
-	       -- "$@" || exit 1
+    if first:
+        # Replace {} with starting position in command
+        cmd_first = [arg.replace('{}', str(output.pos)) for arg in jwb.cmd]
+        # Run command with first URL as argument
+        subprocess.run(cmd_first + [output.queue.pop(0)], check=True)
+        first = False
 
-[[ ${#arguments[@]} -gt 0 ]] && command=("${arguments[@]}") # $arguemnts gets set by read_arguemnts()
-
-requirement_check sed curl xargs
-
-load_settings jwb-stream "$conf" \
-	      channel=OurStudio \
-	      command='mpv --start=%s' \
-	      lang=E \
-	      quality=720 \
-	      subtitles=1 \
-    || exit 1
-
-main_url="https://mediator.jw.org/v1/schedules/$lang/Streaming${channel}?utcOffset=$(( $(date +%-z) * 60 / 100 ))"
-
-# Debug JSON
-if ((json)); then
-    download_file "$main_url" | unsquash_file | less
-    exit
-fi
-
-jwb_check_lang "$lang" || exit 1
-
-# If arguments have a %s, get starting position
-# Since the position is at the end, get it before parsing the whole file
-if [[ ${command[*]} =~ %s ]]; then
-    # Get start position (occurs only once per channel)
-    pos="$(download_file "$main_url" | unsquash_file time | sed 's/^time:\([0-9]*\)\(\..*\)\?$/\1/')"
-    # In first command: replace %s with $pos
-    first_command=("${command[@]/\%s/$pos}")
-    # In the rest of commands: replace %s with 0
-    command=("${command[@]/\%s/0}")
-fi
-
-# Optional loop
-while :; do
-      download_file "$main_url" \
-	  | unsquash_file status progressiveDownloadURL title label subtitled \
-	  | parse_lines \
-	  | xargs --no-run-if-empty -- "${command[@]}" || exit 1
-
-      # Loop or break?
-      ((loop)) || break
-
-      # When starting next loop, don't skip anything
-      pos=0
-
-      # Give us some time to abort if we would want that
-      sleep 1s || exit 1
-done
-
-exit 0
-
+    # Run command with all URLs as arguments
+    subprocess.run(cmd + output.queue, check=True)

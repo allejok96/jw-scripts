@@ -1,344 +1,110 @@
-#!/bin/bash
-#
-# jwb-index
-# Index JW Broadcasting (tv.jw.org)
-#
+#!/usr/bin/env python3
+import argparse
 
-load_shared_code()
-{
-    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
-	if [[ -f $code ]]; then
-	    if source "$code"; then
-		return 0
-	    else
-		echo "error when reading shared functions" 1>&2
-		exit 1
-	    fi
-	fi
-    done
-
-    echo "Cannot find shared functions file" 1>&2
-    echo "You can set the default path with the variable SHARED" 1>&2
-    exit 1
-}
-
-load_shared_code
-
-show_help()
-{
-    cat<<EOF
-Usage: jwb-index [OPTIONS] [DIRECTORY]
-Index videos at tv.jw.org
-
-Options:
-  --category CODENAMES  Comma-separated list of categories to index
-  --checksum            Verify integrity of video files (default)
-  --clean               Clean out all files except downloaded videos
-  --config FILE         Custom configuration file
-  --download            Download videos
-  --json                Only show the formatted JSON file (debug)
-  --lang CODE           Set language
-  --latest              Index "Latest Videos" instead of "Video on Demand"
-  --limit-rate RATE     Download rate for videos, 0 disables limit
-  --list-langs          Show a list of available language codes
-  --mode MODE           Set output mode, see "Modes".
-  --no-recursive        Don't parse sub-categories
-  --no-subsubtitles     Prefer unsubtitled videos
-  --no-timestamp        Don't change timestamps on files
-  --quality NUM         Maximum quality: 240, 360, 480 or 720
-  --quiet               Don't show progress
-  --since DATE          Only save videos newer than DATE
-  --subtitles           Prefer subtitled videos (default)
-  --timestamp           Change timestamps on files (default)
-  DIRECTORY             Directory to save the playlists or videos in
-
-Modes:
-  filesystem            Create a directory tree with symlinks. Compatible with Plex.
-  html			Generate a set of HTML pages with links to the videos.
-  m3u                   Create a "browsable" m3u playlist. Compatible with Kodi.
-  m3ucompat             Create multiple m3u playlists. Should work with most players.
-  urllist               Output a list of URLs or files to stdout (default). 
-
-EOF
-    exit
-}
-
-# Save a video
-save()
-{
-    # If there is a title and URL, save them
-    if [[ $title && ${#url[@]} -gt 0 ]]; then
-
-	# Skip if it was published before SINCE date
-	[[ $time && $since && $(date -d "$time" +%s) -lt $since ]] && return 0
-	
-	# This very obscure chunk of code sorts URLs by the order:
-	#   1. Subtitle choice
-	#   2. Not greater than max quality
-	#   3. Actual quality
-	# This is done by printing out a table of the values and sorting it.
-	# Probably a very bad idea, but efficient.
-	i=$(for i in ${!url[@]}; do
-		# Note: use reverse tests because 1 sorts higher than 0
-		[[ ${subtitled[$i]} != "$subtitles" ]]; local s=$?
-		[[ ${qualitylabel[$i]:-0} -gt "$quality" ]]; local q=$?
-		echo "$s $q ${qualitylabel[$i]:-0} $i ${url[$i]}"
-	    done | sort | tail -n1 | cut -d " " -f4)
-	 
-	[[ ${url[$i]} ]] || err || return 1
-	
-	# If this belongs to other category (real_category), add it to that one
-	write_media "$title" "${url[$i]}" "$dir" "${real_category:-$main_category}" "$main_category_name" "${checksum[$i]}" "${filesize[$i]}" "$time" || return 1
-	# Unset variables so they don't get repeated                                                                           
-        unset title url real_category checksum filesize time qualitylabel subtitled urlindex
-    fi
-}
-
-# GIGANT CAVEATS:
-# - First there must be a "key" followed by "name" where
-#    "key" has the same value as --category. This will give
-#    us the name of the playlist to save to, and clean it.
-# - "key" must be followed by "name". This is a sub-
-#    category and will be downloaded and parsed
-# - "title" must be followed by "progressiveDownloadURL".
-#    This is a media link and will be saved to a playlist
-#    and alternatively downloaded.
-# - "parentCategory" must be followed by "name" and this
-#    will be skipped, since we want to go recursive on
-#    DEPTH and not upwards.
-# - "primaryCategory" is only used with the --latest flag.
-#    It must not be followed by "key". It will cause the
-#    media to be saved in the category set by
-#    primaryCategory instead of the category set by "key".
-#    This has no affect when using --mode=m3ucompat
-#    because that requires the REAL name of the category
-#    (as opposed to the codename).
-#
-parse_lines()
-{
-    # Read stdin
-    while read -r input; do
-	case "$input" in
-	    
-	    status:404)
-		msg "category not found"
-		exit 1
-		;;
-	    
-            key:*)
-                code="${input#*:}"
-                ;;
-
-            parentCategory:)
-                # Next name refers to parent category, don't parse it
-                local skipnextname=1
-                ;;
-
-            primaryCategory:*)
-		# The LatestVideos actually belong in another category. Use that one.
-		# Execept in m3ucompat mode since there is no spoken name for the category
-		# that can be used in the filename
-                [[ $main_category = LatestVideos && $mode != m3ucompat ]] && real_category="${input#*:}"
-                ;;
-
-            name:*)
-		save
-
-                ((skipnextname)) && skipnextname=0 && continue
-		
-		name="${input#*:}"
-
-                # First category (self)
-                if [[ $code = "$main_category" ]]; then
-		    main_category_name="$name"
-		    # Empty out the playlist for this category
-		    write_empty "$dir" "$code" "$name" || err
-                    continue
-                fi
-
-                write_subdir "${name^^*}" "$code" "$dir" "$main_category" "$main_category_name" || err || continue
-
-                # Start a new instance - download and parse category
-                if ! ((norecursive)); then
-                    # Don't download categories we've already checked
-                    grep -q "^$code$" "$history" && continue
-
-                    ("$0" --child --category "$code" "$dir")
-
-		    case $? in
-			1) err "child process failed" ;;
-			2) msg "child process killed"; exit 2 ;;
-		    esac
-                fi
-                ;;
-
-            title:*)
-		save
-
-                title="${input#*:}"
-                ;;
-
-            progressiveDownloadURL:*.mp4)
-		# Every URL gets an unique index and URL specific data
-		# is saved to that index in its array
-		urlindex=$((urlindex+1))
-		url[$urlindex]="${input#*:}"
-                ;;
-
-	    checksum:*)
-		((checksums)) || continue
-		[[ -v checksum[$urlindex] ]] || checksum[$urlindex]="${input#*:}"
-		;;
-
-	    filesize:*)
-		[[ -v filesize[$urlindex] ]] || filesize[$urlindex]="${input#*:}"
-		;;
-
-	    label:*)
-		# Remove the trailing p, e.g. "720p"
-		[[ -v qualitylabel[$urlindex] ]] || qualitylabel[$urlindex]="$(sed 's/^.*://; s/p$//' <<< "$input")"
-		;;
-
-	    subtitled:*)
-		# true -> 1, false -> 0
-		[[ -v subtitled[$urlindex] ]] || subtitled[$urlindex]="$(sed 's/^.*://; s/true/1/; s/false/0/;' <<< "$input")"
-		;;
-
-	    firstPublished:*)
-		((timestamps)) && time="${input#*:}"
-		;;
-
-        esac
-    done
-
-    # If there is a title and an URL left when we reach EOF
-    # save them to the playlist
-    save
-
-    return 0
-}
+import jwlib.parse
+import jwlib.output
 
 
-trap 'echo "aborted (PID $$)" 1>&2; exit 2' SIGTERM SIGINT SIGHUP
+parser = argparse.ArgumentParser(prog='jwb-index.py',
+                                 usage='%(prog)s [options] [DIR]',
+                                 description='Index or download media from tv.jw.org')
+# TODO
+parser.add_argument('--config')
+parser.add_argument('--clean',
+                    action='store_true')
+parser.add_argument('--quiet',
+                    action='count')
+parser.add_argument('--mode',
+                    default='stdout',
+                    choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html', 'downloader'],
+                    help='output mode')
+parser.add_argument('--lang',
+                    nargs='?',
+                    default='E',
+                    help='language code')
+parser.add_argument('--category',
+                    default='VideoOnDemand',
+                    dest='category',
+                    help='category/section to index')
+parser.add_argument('--latest',
+                    action='store_const',
+                    const='LatestVideos',
+                    dest='category')
+parser.add_argument('--quality',
+                    default=720,
+                    type=int,
+                    choices=[240, 360, 480, 720],
+                    help='maximum video quality')
+parser.add_argument('--subtitles',
+                    action='store_true')
+parser.add_argument('--no-subtitles',
+                    action='store_false',
+                    dest='subtitles',
+                    help='prefer un-subtitled videos')
+parser.add_argument('--download',
+                    action='store_true',
+                    help='download media')
+parser.add_argument('--limit-rate',
+                    default='1M',
+                    dest='rate_limit')
+parser.add_argument('--since',
+                    metavar='YYYY-MM-DD')
+parser.add_argument('--checksum',
+                    action='store_true',
+                    help='check md5 checksum')
+parser.add_argument('--no-checksum',
+                    action='store_false',
+                    help='check md5 checksum')
+parser.add_argument('work_dir',
+                    nargs='?',
+                    default=None,
+                    metavar='DIR',
+                    help='directory to save data in')
+
+jwb = jwlib.parse.JWBroadcasting()
+parser.parse_args(namespace=jwb)
+
+# jwb.mode and jwb.work_dir gets set by argparse
+wd = jwb.work_dir
+sd = 'jwb-' + jwb.lang
+
+if jwb.mode == 'stdout':
+    output = jwlib.output.OutputStdout(wd)
+
+elif jwb.mode == 'm3u':
+    output = jwlib.output.OutputM3U(wd, sd)
+
+elif jwb.mode == 'm3ucompat':
+    output = jwlib.output.OutputM3UCompat(wd, sd)
+
+elif jwb.mode == 'filesystem':
+    output = jwlib.output.OutputFilesystem(wd, sd)
+    output.clean_symlinks()
+
+elif jwb.mode == 'html':
+    output = jwlib.output.OutputHTML(wd, sd)
+
+elif jwb.mode == 'downloader':
+    output = jwlib.output.OutputQueue(wd)
+    jwb.download = True
+    # Turn of downloading and checking for now
+    jwb.dry_run = True
 
 
-
-### LOAD SETTINGS AND PARSE ARGUMENTS
-
-unset clean child json norecursive
-export checksums download mode subtitles timestamps quiet
-
-read_arguments --help:show_help \
-               --category=categories \
-	       --checksum:checksums=1 \
-               --child:child=1 \
-	       --clean:clean=1 \
-	       --config=conf \
-	       --download:download=1 \
-	       --filesystem:mode=filesystem \
-               --json:json=1 \
-               --lang=lang \
-               --latest:categories=LatestVideos \
-	       --limit-rate=maxrate \
-	       --list-langs:lang=none \
-	       --mode=mode \
-	       --no-checksum:checksums=0 \
-               --no-recursive:norecursive=1 \
-               --no-subtitles:subtitles=0 \
-	       --no-timestamp:timestamps=0 \
-               --quality=quality \
-	       --quiet:quiet=1 \
-	       --since=since \
-	       --subtitles:subtitles=1 \
-	       --timestamp:timestamps=1 \
-	       -- "$@" || exit 1
-
-[[ ${#arguments[@]} -gt 1 ]] && msg "too many arguments" && exit 1 # $arguments gets set by read_arguments()
-dir="${arguments[0]}"
+# Note:
+# output cannot be anything else, argparse takes care of that
 
 
-
-### CHECKS AND PREPARATIONS
-
-if ! ((child)); then
-
-    requirement_check sed curl realpath mktemp
-
-    load_settings jwb-index "$conf" \
-		  categories=VideoOnDemand \
-		  checksums=1 \
-		  dir=. \
-		  download=0 \
-		  jwb_script=jwb-index \
-		  lang=E \
-		  limit_rate=500k \
-		  mode=urllist \
-		  quality=720 \
-		  since= \
-		  subtitles=1 \
-		  timestamps=1 \
-	|| exit 1
-
-    # Check that lang is valid
-    # Note: this must be done before anything else happens
-    # so we can display a language list if needed
-    jwb_check_lang "$lang" || exit 1
-    
-    # Valid modes
-    [[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || msg "$mode: unknown mode" || exit 1
-
-    # Convert date argument to seconds
-    if [[ $since ]]; then
-	since="$(date -d "$since" +%s)" || exit 1
-    fi
-    
-    # Debug JSON
-    # (do this before any other things get done)
-    if ((json)); then
-	main_url="https://mediator.jw.org/v1/categories/$lang/${categories%%,*}?detailed=1"
-	download_file "$main_url" | unsquash_file | less
-	exit
-    fi
-
-    # Check dir
-    [[ -d $dir ]] || msg "$dir: directory does not exist" || exit 1
-    # Make path absolute
-    dir="$(realpath "$dir")"
-    # Add a subdir
-    dir="$dir/jwb-$lang"
-    # Cleaning
-    ((clean)) && clean_dir "$dir"
-    # History only needed when "recursing"
-    if ((norecursive)); then
-	export history=/dev/null
-    else
-	# Create history file
-	export history
-	history="$(mktemp /tmp/jwb-index-XXXXXX.tmp)" || crash "failed to create temp file"
-	# Remove the history file when we exit
-	trap '[[ -f $history ]] && rm "$history"' EXIT
-    fi
-fi
+jwb.parse(output)
 
 
-
-### MAIN LOOP
-
-# Split categories list where commas are
-for main_category in "${categories//,/ }"; do
-    
-    main_url="https://mediator.jw.org/v1/categories/$lang/${main_category}?detailed=1"
-    
-    # Write to the history file
-    # and show a message with our progress
-    [[ $history ]] || crash "history: variable empty, this should not happen"
-    echo "$main_category" >> "$history" || crash "$history: failed to write to temp file"
-    ((quiet)) || echo "$main_category" 1>&2
-
-    # Download and parse the JSON file
-    download_file "$main_url" \
-    	| unsquash_file status key name title progressiveDownloadURL parentCategory checksum filesize firstPublished subtitled label \
-	| parse_lines
-
-done
-
+if jwb.mode == 'downloader':
+    # Sort media with newest videos first
+    sorted_queue = sorted(output.queue, key=lambda x: x.date, reverse=True)
+    # Turn on downloading and checking
+    jwb.dry_run = False
+    # Download all media and output to stdout
+    for media_obj in sorted_queue:
+        file = jwb.download_media(media_obj, jwb.work_dir)
+        if file or True:
+            print(file)

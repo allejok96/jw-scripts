@@ -1,316 +1,74 @@
-#!/bin/bash
-#
-# nwt-index
-# Index sound recordings of publications at jw.org
-#
+#!/usr/bin/env python3
+import argparse
 
-load_shared_code()
-{
-    for code in "$SHARED" ./shared-functions /usr/local/lib/jw-scripts/shared-functions; do
-	if [[ -f $code ]]; then
-	    if source "$code"; then
-		return 0
-	    else
-		echo "Failed to load shared functions" 1>&2
-		exit 1
-	    fi
-	fi
-    done
-
-    echo "Cannot find shared functions file" 1>&2
-    echo "You can set the default path with the variable SHARED" 1>&2
-    exit 1
-}
-
-load_shared_code
-
-show_help()
-{
-    cat<<EOF
-Usage: nwt-index [OPTIONS] [DIRECTORY]
-Index sound recordings at jw.org
-
-Options:
-  --book NUM            Bible book to download
-  --checksum            Verify file integrity
-  --clean               Clean out all old files exept downloaded recordings
-  --config FILE         Custom configuration file
-  --download            Make recordings available offline
-  --json                Don't parse the JSON file, just show it (debug)
-  --lang CODE           Set language
-  --limit-rate RATE     Download rate for recordings
-  --list-langs          Show a list of available language codes
-  --mode MODE           Output mode, see "Modes"
-  --no-timestamp        Don't change timestamps on files
-  --pub CODE            Use the publication CODE, instead of the Bible
-  --silver              Use the 2013 edition of the NWT
-  --timestamp           Change timestamps on files
-  DIRECTORY             Directory to save the playlists or recordings in
-
-Modes:
-  filesystem            Create a directory tree with symlinks. Compatible with Plex.
-  html			Generate a set of HTML pages with links to the media.
-  m3u                   Create a "browsable" m3u playlist. Compatible with Kodi.
-  m3ucompat             Create multiple m3u playlists. Should work with most players.
-  urllist               Output a list of URLs or files to stdout (default).
-
-EOF
-    exit
-}
-
-save()
-{
-    # If there is a title an URL, save them
-    if [[ $title && $url ]]; then
-	write_media "$title" "$url" "$dir" "${main_book:-$pub$issue}" "$name" "$checksum" "$filesize" "$time" || err || return 1
-	# Unset variables so they don't get repeated                                                                           
-	unset title url checksum filesize time savenextsum savenextsize savenextdate
-    fi
-}
-
-# GIGANT CAVEATS:
-# - Fist there must be a "pubName". This will give us the name
-#     of the playlist to write to, and clean it.
-# - "title" must be followed by "booknum" or by "url".
-#    "booknum" is a sub-book and will be downloaded and parsed.
-#    "url" is a media link and will be saved to a playlist,
-#     and alternativly downloaded.
-#
-parse_lines()
-{
-    # Read stdin
-    # Use -r because we want to keep the backslashes for a while longer
-    while read -r input; do
-        # Unescape
-        input="$(printf '%b' "$input")"
-        # Remove backslashes
-        input="${input//\\/}"
-
-        case "$input" in
-
-	    # Name of playlist, reset the file
-            pubName:*)
-                name="${input#*:}"
-                # Message, so we can see progress
-                echo "$name" 1>&2
-
-		# Empty out playlist
-		write_empty "$dir" "${main_book:-$pub$issue}" "$name" || err
-		;;
-
-	    # Title of link
-            title:*)
-		save
-		
-                title="${input#*:}"
-                ;;
-
-	    # A bible book, parse it
-            booknum:*)
-		save
-
-		# Ignore null
-		[[ $input = *null ]] && continue
-		
-		# This section only applies to bibles
-		[[ ! $pub =~ bi12|nwt ]] && continue
-		
-		# No sub-sub-dirs
-		((child)) && continue
-
-		# Pad book number to 2 digits, so it sorts better
-		# $(( 10#n )) makes sure that numbers starting with
-		# 0 isn't interpreted as octal
-                book="$(printf '%02d' "$(( 10#${input#*:} ))")"
-
-		# Don't add self as a subdir
-		[[ $book = "$main_book" ]] && continue
-
-		# A quick fix:
-		# Add number to books in filesystem mode, so they get sorted
-		[[ $mode = filesystem ]] && title="$book - $title"
-	
-                write_subdir "$title" "$book" "$dir" "$main_book" "$name" || err || continue
-
-		("$0" --child --book "$book" "$dir")
-
-		case $? in
-		    1) err "child process failed" ;;
-		    2) msg "child process killed"; exit 2 ;;
-		esac
-                ;;
-
-	    # URL to the media
-            url:*.mp3)
-                url="${input#*:}"
-		savenextsum=1
-		savenextsize=1
-		savenextdate=1
-                ;;
-
-	    checksum:*)
-		((checksums)) || continue
-		((savenextsum)) && savenextsum=0 && checksum="${input#*:}"
-		;;
-
-	    filesize:*)
-		((savenextsize)) && savenextsize=0 && filesize="${input#*:}"
-		;;
-
-	    modifiedDatetime:*)
-		((timestamps)) || continue
-		((savenextdate)) && savenextdate=0 && time="${input#*:}"
-		;;
-        esac
-    done
-
-    # Save last one
-    save
-}
-
-check_lang()
-{
-    [[ $1 ]] || err || return 1
-    
-    [[ $1 = E ]] && return 0
-
-    local url="https://apps.jw.org/GETPUBMEDIALINKS?output=json&pub=$pub&fileformat=MP3&alllangs=1&langwritten=E&txtCMSLang=E${main_book:+&booknum=$main_book}${issue:+&issue=$issue}"
-    
-    # Try to find the language code in the text
-    if download_file "$url" | grep -q "\"$1\":{\"name\":" ; then
-	return 0
-    else
-	# Download the language list and make it readable
-	# CAVEATS: "name" must be the first variable in each language
-	# 1. Download the list
-	# 2. Replace commas with newlines
-	# 3. Replace "CODE":{"name":"LANG" with CODE:LANG
-	# 4. Sort, columns, pager ...
-	download_file "$url" \
-            | sed 's/,/\n/g' \
-            | sed -n 's/.*"\([^"]*\)":{"name":"\([^"]*\)"/\1:\2/p' \
-            | sort \
-            | column -t -s : \
-	    | less --quit-if-one-screen
-	
-	return 1
-    fi
-}
+import jwlib.parse
+import jwlib.output
 
 
-trap 'echo "aborted (PID $$)" 1>&2; exit 2' SIGTERM SIGINT SIGHUP
+parser = argparse.ArgumentParser(prog='jwb-index.py',
+                                 usage='%(prog)s [options] [DIR]',
+                                 description='Index or download media from tv.jw.org')
+
+# TODO
+# parser.add_argument('--config')
+parser.add_argument('--clean',
+                    action='store_true')
+parser.add_argument('--quiet',
+                    action='count')
+parser.add_argument('--mode',
+                    default='stdout',
+                    choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
+                    help='output mode')
+parser.add_argument('--lang',
+                    nargs='?',
+                    default='E',
+                    help='language code')
+parser.add_argument('--pub',
+                    metavar='CODE')
+parser.add_argument('--book',
+                    type=int,
+                    metavar='NUM')
+parser.add_argument('--silver',
+                    action='store_const',
+                    const='nwt',
+                    dest='pub')
+parser.add_argument('--download',
+                    action='store_true',
+                    help='download media')
+parser.add_argument('--limit-rate',
+                    default='1M',
+                    dest='rate_limit')
+parser.add_argument('work_dir',
+                    nargs='?',
+                    default=None,
+                    metavar='DIR',
+                    help='directory to save data in')
+
+jw = jwlib.parse.JWPubMedia()
+parser.parse_args(namespace=jw)
+
+# jwb.mode and jwb.work_dir gets set by argparse
+wd = jw.work_dir
+sd = jw.pub + '-' + jw.lang
+
+if jw.mode == 'stdout':
+    output = jwlib.output.OutputStdout(wd)
+
+elif jw.mode == 'm3u':
+    output = jwlib.output.OutputM3U(wd, sd)
+
+elif jw.mode == 'm3ucompat':
+    output = jwlib.output.OutputM3UCompat(wd, sd)
+
+elif jw.mode == 'filesystem':
+    output = jwlib.output.OutputFilesystem(wd, sd)
+    output.clean_symlinks()
+
+elif jw.mode == 'html':
+    output = jwlib.output.OutputHTML(wd, sd)
+
+# Note:
+# output cannot be anything else, argparse takes care of that
 
 
-
-### LOAD SETTINGS AND PARSE ARGUMENTS
-
-unset child clean json
-export checksums download mode timestamps pub
-
-read_arguments --help:show_help \
-               --book=main_book \
-	       --checksum:checksums=1 \
-	       --child:child=1 \
-	       --clean:clean=1 \
-	       --config=conf \
-               --download:download=1 \
-               --filesystem:mode=filesystem \
-               --json:json=1 \
-               --lang=lang \
-	       --limit-rate=limit_rate \
-               --list-langs:lang=none \
-	       --mode=mode \
-	       --no-timestamp:timestamps=0 \
-	       --pub=pub \
-               --silver:pub=nwt \
-               -- "$@" || exit 1
-
-[[ ${#arguments[@]} -gt 1 ]] && msg "too many arguments" && exit 1 # $arguments gets set by read_arguments()
-dir="${arguments[0]}"
-
-
-
-### CHECKS AND PREPARATIONS
-
-# Things that only the parent may do
-# or that's only needed once
-if ! ((child)); then
-
-    requirement_check sed curl realpath
-    
-    load_settings nwt-index "$conf" \
-		  checksums=0 \
-		  dir=. \
-		  download=0 \
-		  lang=E \
-		  limit_rate= \
-		  mode=urllist \
-		  pub=bi12 \
-		  timestamps=1 \
-	|| exit 1
-    
-    # Split up watchtower/awake names in pub/issue
-    if [[ $pub =~ ^(w|wp|g)[0-9]{6,8} ]]; then
-	issue="${pub:1}"
-	pub="${pub:0:1}"
-    elif [[ $pub =~ ^(w|wp|g)[0-9] ]]; then
-	msg "please use the format w20130215 or g201604"
-	exit 1
-    fi
-    
-    # Books are only for the bible
-    if [[ $pub =~ nwt|bi12 ]]; then
-	# Default bible book (0 = index)
-	# Note to future self:
-	# Having no booknum= in the URL may seem to return all chapters,
-	# but in reality they stop somewhere after Mark.
-	# So, yes, all this --book and --child stuff are needed.
-	[[ $main_book ]] || main_book=0
-    else
-	[[ $main_book ]] && msg "--book only applies the Bible"
-    fi
-
-    # Check that lang is valid
-    # Note: this must be done after we have book/pub/issue
-    # and before anything else is done so that we can display list
-    # of available languages
-    check_lang "$lang" || exit 1
-
-    # Valid modes
-    [[ $mode =~ ^(m3u|m3ucompat|filesystem|urllist|html)$ ]] || msg "$mode: unknown mode" || exit 1
-    
-    # Check data dir
-    [[ -d $dir ]] || msg "$dir: directory does not exist" || exit 1
-    
-    # Make path absolute
-    dir="$(realpath "$dir")" || crash
-    
-    # Add a subdir
-    dir="$dir/$pub$issue-$lang"
-    
-    # Cleaning
-    ((clean)) && clean_dir "$dir"
-
-fi
-
-# Pad book number to 2 digits, so it sorts better
-# 10#n makes sure that numbers starting with 0 doesn't become octal
-[[ $main_book ]] && main_book="$(printf '%02d' "$(( 10#$main_book ))")"
-
-# The API URL, now that we have pub, issue and book
-main_url="https://apps.jw.org/GETPUBMEDIALINKS?output=json&pub=$pub&fileformat=MP3&alllangs=0&langwritten=$lang&txtCMSLang=$lang${main_book:+&booknum=$main_book}${issue:+&issue=$issue}"
-
-# Debug JSON before anything is done
-if ((json)); then
-    download_file "$main_url" | unsquash_file | less
-    exit
-fi
-
-
-
-### MAIN
-
-# Download and parse the JSON file
-download_file "$main_url" \
-    | unsquash_file pubName title booknum url checksum filesize modifiedDatetime \
-    | parse_lines
+jw.parse(output)
