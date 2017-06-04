@@ -10,11 +10,13 @@ With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) v
 
 ## Get started
 
+Fisrt make sure to install `python-setuptools` or `python3-setuptools` depending on your distro.
+
 Install the scripts
 
     git clone https://github.com/allejok96/jw-scripts.git
     cd jw-scripts
-    sudo python setup.py install
+    sudo python3 setup.py install
 
 Next, click on one of the scripts below for more info (the info there can be wrong as the scripts been ported to Python)
 
