@@ -7,6 +7,6 @@ setup(
     url='https://github.com/allejok96/jw-scripts',
     license='GPL',
     packages=['jwlib'],
-    install_requires=['urllib3', 'simplejson'],
+    install_requires=['urllib3'],
     scripts=['jwb-index', 'jwb-stream', 'nwt-index']
 )
