@@ -87,7 +87,7 @@ class JWBroadcasting:
             url = url.format(s=section, l=self.lang, c=cat, o=self.utc_offset)
 
             with urllib.request.urlopen(url) as response:
-                response = json.load(response.read().decode())
+                response = json.loads(response.read().decode())
 
                 if 'status' in response and response['status'] == '404':
                     raise ValueError('No such category or language')
@@ -278,7 +278,7 @@ class JWPubMedia(JWBroadcasting):
                 codename = format(bookid, '02')
 
             with urllib.request.urlopen(url) as response:
-                response = json.load(response.read().decode())
+                response = json.loads(response.read().decode())
 
                 # Initialize the publication or book (setting output destination)
                 name = response['pubName']
