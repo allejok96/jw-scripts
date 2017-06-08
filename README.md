@@ -10,6 +10,8 @@ With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) v
 
 ## Get started
 
+*For Windows 10 instructions, click [here](https://github.com/allejok96/jw-scripts/wiki/Installation#installation-on-windows-10).*
+
 Fisrt make sure to install `python-setuptools` or `python3-setuptools` depending on your distro.
 
 Install the scripts
