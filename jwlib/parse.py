@@ -187,11 +187,6 @@ class JWBroadcasting:
         base = os.path.basename(base)
         file = os.path.join(directory, base)
 
-        # Since the same files can occur in multiple categories
-        # only check each file once
-        if file in self._checked_files:
-            return file
-
         # Only try resuming and downloading once
         resumed = False
         downloaded = False
@@ -204,48 +199,63 @@ class JWBroadcasting:
                 if media.date:
                     os.utime(file, (media.date, media.date))
 
-                fsize = os.path.getsize(file)
+                # Since the same files can occur in multiple categories
+                # only check each file once
+                if file in self._checked_files:
+                    return file
 
-                if not media.size:
-                    break
-
-                # File size is OK, check MD5
-                elif fsize == media.size:
-                    if not self.checksums or not media.md5:
-                        break
-                    elif _md5(file) == media.md5:
-                        break
-                    else:
+                elif os.path.getsize(file) == media.size or not media.size:
+                    # File size is OK or unknown - Validate checksum
+                    if self.checksums and media.md5 and _md5(file) != media.md5:
+                        # Checksum is bad - Remove
                         print('deleting: {}, checksum mismatch'.format(base), file=stderr)
                         os.remove(file)
-
-                # File is smaller, try to resume download once
-                elif fsize < media.size and not resumed and self.download:
-                    resumed = True
-                    if self.quiet <= 1:
-                        print('resuming: {} ({})'.format(base, media.name), file=stderr)
-                    _curl(media.url, file, resume=True, rate_limit=self.rate_limit)
-                    continue
-
-                # File size is wrong, delete it
+                    else:
+                        # Checksum is correct or unknown - Move
+                        self._checked_files.add(file)
+                        return file
                 else:
-                    print('deleting: {}, size mismatch'.format(base), file=stderr)
+                    # File size is bad - Delete
+                    print('deleting: {}, size mismatch'.format(base + '.part'), file=stderr)
                     os.remove(file)
 
-            # Download whole file once
-            if not downloaded and self.download:
-                downloaded = True
-                if self.quiet <= 1:
-                    print('downloading: {} ({})'.format(base, media.name), file=stderr)
-                _curl(media.url, file, rate_limit=self.rate_limit)
-                continue
+            elif os.path.exists(file + '.part'):
 
-            # Already tried to download and didn't pass tests
-            return None
+                fsize = os.path.getsize(file + '.part')
 
-        # Tests were successful
-        self._checked_files.add(file)
-        return file
+                if fsize == media.size or not media.size:
+                    # File size is OK - Validate checksum
+                    if self.checksums and media.md5 and _md5(file + '.part') != media.md5:
+                        # Checksum is bad - Remove
+                        print('deleting: {}, checksum mismatch'.format(base + '.part'), file=stderr)
+                        os.remove(file + '.part')
+                    else:
+                        # Checksum is correct or unknown - Move and approve
+                        self._checked_files.add(file)
+                        os.rename(file + '.part', file)
+                elif fsize < media.size and not resumed and self.download:
+                    # File is smaller - Resume download once
+                    resumed = True
+                    if self.quiet <= 1:
+                        print('resuming: {} ({})'.format(base + '.part', media.name), file=stderr)
+                    _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit)
+                else:
+                    # File size is bad - Remove
+                    print('deleting: {}, size mismatch'.format(base + '.part'), file=stderr)
+                    os.remove(file + '.part')
+
+            else:
+                # Download whole file once
+                if not downloaded and self.download:
+                    downloaded = True
+                    if self.quiet <= 1:
+                        print('downloading: {} ({})'.format(base, media.name), file=stderr)
+                    _curl(media.url, file + '.part', rate_limit=self.rate_limit)
+                else:
+                    # If we get here, all tests have failed.
+                    # Resume and regular download too.
+                    # There is nothing left to do.
+                    return None
 
 
 class JWPubMedia(JWBroadcasting):
