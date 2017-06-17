@@ -9,7 +9,7 @@ parser = argparse.ArgumentParser(prog='jwb-index.py',
                                  usage='%(prog)s [options] [DIR]',
                                  description='Index or download media from tv.jw.org')
 # TODO
-parser.add_argument('--config')
+#parser.add_argument('--config')
 parser.add_argument('--clean',
                     action='store_true')
 parser.add_argument('--quiet',
@@ -51,6 +51,7 @@ parser.add_argument('--since',
                     metavar='YYYY-MM-DD')
 parser.add_argument('--checksum',
                     action='store_true',
+                    dest='checksums',
                     help='check md5 checksum')
 parser.add_argument('--no-checksum',
                     action='store_false',
@@ -106,5 +107,5 @@ if jwb.mode == 'downloader':
     # Download all media and output to stdout
     for media_obj in sorted_queue:
         file = jwb.download_media(media_obj, jwb.work_dir)
-        if file or True:
+        if file:
             print(file)
