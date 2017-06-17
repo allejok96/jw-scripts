@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser(prog='jwb-stream.py',
                                  usage='%(prog)s [options] COMMAND [ARGUMENTS]',
                                  description='Stream media from tv.jw.org')
 # TODO
-parser.add_argument('--config')
+#parser.add_argument('--config')
 parser.add_argument('--lang',
                     nargs='?',
                     default='E',
