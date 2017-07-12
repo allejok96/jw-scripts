@@ -24,10 +24,9 @@ class JWBroadcasting:
         self.category = 'VideoOnDemand'
         self.rate_limit = '1M'
         self.utc_offset = 0
-        # Don't download or check files
-        self.dry_run = False
         # Used by download_media()
         self._checked_files = set()
+        self._bad_files = set()
 
     @property
     def lang(self):
@@ -145,7 +144,7 @@ class JWBroadcasting:
                                     continue
 
                         # [Download and] check local file (not when streaming, of course)
-                        if not self.streaming and not self.dry_run:
+                        if not self.streaming:
                             m.file = self.download_media(m, output.media_dir)
 
                         output.save_media(m)
@@ -195,29 +194,45 @@ class JWBroadcasting:
 
             if os.path.exists(file):
 
-                # Set timestamp to date of publishing
-                if media.date:
-                    os.utime(file, (media.date, media.date))
-
                 # Since the same files can occur in multiple categories
                 # only check each file once
                 if file in self._checked_files:
                     return file
+                elif file in self._bad_files:
+                    return None
 
-                elif os.path.getsize(file) == media.size or not media.size:
+                # Set timestamp to date of publishing
+                if media.date:
+                    os.utime(file, (media.date, media.date))
+
+                if os.path.getsize(file) == media.size or not media.size:
                     # File size is OK or unknown - Validate checksum
                     if self.checksums and media.md5 and _md5(file) != media.md5:
                         # Checksum is bad - Remove
-                        print('deleting: {}, checksum mismatch'.format(base), file=stderr)
-                        os.remove(file)
+                        if self.download:
+                            print('deleting: {}, checksum mismatch'.format(base), file=stderr)
+                            os.remove(file)
+                        else:
+                            print('ignoring: {}, checksum mismatch'.format(base), file=stderr)
+                            self._bad_files.add(file)
+                            return None
                     else:
-                        # Checksum is correct or unknown - Move
+                        # Checksum is correct or unknown
                         self._checked_files.add(file)
                         return file
                 else:
                     # File size is bad - Delete
-                    print('deleting: {}, size mismatch'.format(base + '.part'), file=stderr)
-                    os.remove(file)
+                    if self.download:
+                        print('deleting: {}, size mismatch'.format(base + '.part'), file=stderr)
+                        os.remove(file)
+                    else:
+                        print('ignoring: {}, size mismatch'.format(base + '.part'), file=stderr)
+                        self._bad_files.add(file)
+                        return None
+
+            elif not self.download:
+                # The rest of this method is only applicable in download mode
+                return None
 
             elif os.path.exists(file + '.part'):
 
