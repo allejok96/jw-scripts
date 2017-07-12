@@ -14,7 +14,7 @@ jwlib.arguments.add_arguments(parser, ['--quiet',
                                        '--lang',
                                        '--download',
                                        '--limit-rate',
-                                       '_work_dir'])
+                                       'work_dir'])
 # TODO
 # parser.add_argument('--config')
 parser.add_argument('--book',
@@ -34,23 +34,23 @@ jw = jwlib.parse.JWPubMedia()
 parser.parse_args(namespace=jw)
 
 # jwb.mode and jwb.work_dir gets set by argparse
-wd = jw._work_dir
+wd = jw.work_dir
 sd = jw.pub + '-' + jw.lang
 
-if jw._mode == 'stdout':
+if jw.mode == 'stdout':
     output = jwlib.output.OutputStdout(wd)
 
-elif jw._mode == 'm3u':
+elif jw.mode == 'm3u':
     output = jwlib.output.OutputM3U(wd, sd)
 
-elif jw._mode == 'm3ucompat':
+elif jw.mode == 'm3ucompat':
     output = jwlib.output.OutputM3UCompat(wd, sd)
 
-elif jw._mode == 'filesystem':
+elif jw.mode == 'filesystem':
     output = jwlib.output.OutputFilesystem(wd, sd)
     output.clean_symlinks()
 
-elif jw._mode == 'html':
+elif jw.mode == 'html':
     output = jwlib.output.OutputHTML(wd, sd)
 
 # Note:

@@ -19,7 +19,7 @@ jwlib.arguments.add_arguments(parser, ['--lang',
 #parser.add_argument('--config')
 parser.add_argument('--channel',
                     default='OurStudio',
-                    dest='_channel',
+                    dest='channel',
                     choices=['OurStudio', 'Children', 'Teenagers', 'Family', 'ProgramEvents', 'OurActivities',
                              'Ministry', 'OurOrganization', 'Bible', 'Movies', 'MusicVideo', 'IntExp'],
                     help='channel to stream')
@@ -36,13 +36,13 @@ jwb.quiet = 1
 jwb.utc_offset = (-time.altzone // 60)
 
 parser.parse_args(namespace=jwb)
-jwb.category = 'Streaming' + jwb._channel  # set by argparse
+jwb.category = 'Streaming' + jwb.channel  # set by argparse
 
-if not jwb._cmd:
+if not jwb.cmd:
     raise RuntimeError("Not enough arguments")
 
 # Replace the occurrences of `{}` with `0` in the command
-cmd = [arg.replace('{}', '0') for arg in jwb._cmd]
+cmd = [arg.replace('{}', '0') for arg in jwb.cmd]
 
 first = True
 while True:
@@ -51,7 +51,7 @@ while True:
 
     if first:
         # Replace {} with starting position in command
-        cmd_first = [arg.replace('{}', str(output.pos)) for arg in jwb._cmd]
+        cmd_first = [arg.replace('{}', str(output.pos)) for arg in jwb.cmd]
         # Run command with first URL as argument
         subprocess.run(cmd_first + [output.queue.pop(0)], check=True)
         first = False

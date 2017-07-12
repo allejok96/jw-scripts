@@ -46,7 +46,7 @@ valid_args = {
         'help': 'check md5 checksum'},
     '--no-checksum': {
         'action': 'store_false'},
-    '_work_dir': {
+    'work_dir': {
         'nargs': '?',
         'default': '.',
         'metavar': 'DIR',

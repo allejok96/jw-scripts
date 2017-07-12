@@ -22,7 +22,7 @@ jwlib.arguments.add_arguments(parser, ['--quiet',
                                        '--checksum',
                                        '--since',
                                        '--no-checksum',
-                                       '_work_dir'])
+                                       'work_dir'])
 # TODO
 #parser.add_argument('--config')
 
@@ -30,23 +30,23 @@ jwb = jwlib.parse.JWBroadcasting()
 parser.parse_args(namespace=jwb)
 
 # jwb.mode and jwb.work_dir gets set by argparse
-wd = jwb._work_dir
+wd = jwb.work_dir
 sd = 'jwb-' + jwb.lang
 
-if jwb._mode == 'stdout':
+if jwb.mode == 'stdout':
     output = jwlib.output.OutputStdout(wd)
 
-elif jwb._mode == 'm3u':
+elif jwb.mode == 'm3u':
     output = jwlib.output.OutputM3U(wd, sd)
 
-elif jwb._mode == 'm3ucompat':
+elif jwb.mode == 'm3ucompat':
     output = jwlib.output.OutputM3UCompat(wd, sd)
 
-elif jwb._mode == 'filesystem':
+elif jwb.mode == 'filesystem':
     output = jwlib.output.OutputFilesystem(wd, sd)
     output.clean_symlinks()
 
-elif jwb._mode == 'html':
+elif jwb.mode == 'html':
     output = jwlib.output.OutputHTML(wd, sd)
 
 
