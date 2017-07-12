@@ -85,12 +85,6 @@ elif jwb.mode == 'filesystem':
 elif jwb.mode == 'html':
     output = jwlib.output.OutputHTML(wd, sd)
 
-elif jwb.mode == 'downloader':
-    output = jwlib.output.OutputQueue(wd)
-    jwb.download = True
-    # Turn of downloading and checking for now
-    jwb.dry_run = True
-
 
 # Note:
 # output cannot be anything else, argparse takes care of that
@@ -98,14 +92,3 @@ elif jwb.mode == 'downloader':
 
 jwb.parse(output)
 
-
-if jwb.mode == 'downloader':
-    # Sort media with newest videos first
-    sorted_queue = sorted(output.queue, key=lambda x: x.date, reverse=True)
-    # Turn on downloading and checking
-    jwb.dry_run = False
-    # Download all media and output to stdout
-    for media_obj in sorted_queue:
-        file = jwb.download_media(media_obj, jwb.work_dir)
-        if file:
-            print(file)
