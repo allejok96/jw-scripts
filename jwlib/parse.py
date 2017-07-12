@@ -26,7 +26,6 @@ class JWBroadcasting:
         self.utc_offset = 0
         # Used by download_media()
         self._checked_files = set()
-        self._bad_files = set()
 
     @property
     def lang(self):
@@ -198,8 +197,6 @@ class JWBroadcasting:
                 # only check each file once
                 if file in self._checked_files:
                     return file
-                elif file in self._bad_files:
-                    return None
 
                 # Set timestamp to date of publishing
                 if media.date:
@@ -209,26 +206,16 @@ class JWBroadcasting:
                     # File size is OK or unknown - Validate checksum
                     if self.checksums and media.md5 and _md5(file) != media.md5:
                         # Checksum is bad - Remove
-                        if self.download:
-                            print('deleting: {}, checksum mismatch'.format(base), file=stderr)
-                            os.remove(file)
-                        else:
-                            print('ignoring: {}, checksum mismatch'.format(base), file=stderr)
-                            self._bad_files.add(file)
-                            return None
+                        print('checksum mismatch, deleting: {}'.format(base), file=stderr)
+                        os.remove(file)
                     else:
                         # Checksum is correct or unknown
                         self._checked_files.add(file)
                         return file
                 else:
                     # File size is bad - Delete
-                    if self.download:
-                        print('deleting: {}, size mismatch'.format(base + '.part'), file=stderr)
-                        os.remove(file)
-                    else:
-                        print('ignoring: {}, size mismatch'.format(base + '.part'), file=stderr)
-                        self._bad_files.add(file)
-                        return None
+                    print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
+                    os.remove(file)
 
             elif not self.download:
                 # The rest of this method is only applicable in download mode
@@ -242,13 +229,13 @@ class JWBroadcasting:
                     # File size is OK - Validate checksum
                     if self.checksums and media.md5 and _md5(file + '.part') != media.md5:
                         # Checksum is bad - Remove
-                        print('deleting: {}, checksum mismatch'.format(base + '.part'), file=stderr)
+                        print('checksum mismatch, deleting: {}'.format(base + '.part'), file=stderr)
                         os.remove(file + '.part')
                     else:
                         # Checksum is correct or unknown - Move and approve
                         self._checked_files.add(file)
                         os.rename(file + '.part', file)
-                elif fsize < media.size and not resumed and self.download:
+                elif fsize < media.size and not resumed:
                     # File is smaller - Resume download once
                     resumed = True
                     if self.quiet <= 1:
@@ -256,12 +243,12 @@ class JWBroadcasting:
                     _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit)
                 else:
                     # File size is bad - Remove
-                    print('deleting: {}, size mismatch'.format(base + '.part'), file=stderr)
+                    print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
                     os.remove(file + '.part')
 
             else:
                 # Download whole file once
-                if not downloaded and self.download:
+                if not downloaded:
                     downloaded = True
                     if self.quiet <= 1:
                         print('downloading: {} ({})'.format(base, media.name), file=stderr)
@@ -376,6 +363,3 @@ class Media:
         self.time = None
         self.size = None
         self.file = None
-
-
-
