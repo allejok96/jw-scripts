@@ -193,14 +193,16 @@ class JWBroadcasting:
 
             if os.path.exists(file):
 
+                # Set timestamp to date of publishing
+                # NOTE: Do this before checking _checked_files since
+                # this is not done for newly renamed .part files!
+                if media.date:
+                    os.utime(file, (media.date, media.date))
+
                 # Since the same files can occur in multiple categories
                 # only check each file once
                 if file in self._checked_files:
                     return file
-
-                # Set timestamp to date of publishing
-                if media.date:
-                    os.utime(file, (media.date, media.date))
 
                 if os.path.getsize(file) == media.size or not media.size:
                     # File size is OK or unknown - Validate checksum
@@ -360,6 +362,6 @@ class Media:
         self.url = None
         self.name = None
         self.md5 = None
-        self.time = None
+        self.date = None
         self.size = None
         self.file = None
