@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+import os
+import sys
+import shutil
+import argparse
+import urllib.parse
+import jwlib.parse
+import jwlib.output
+import jwlib.arguments
+
+
+def disk_usage_info():
+    """Display information about disk usage and maybe a warning"""
+    free = shutil.disk_usage(wdir).free
+    print('free space: {:} MB, minimum limit: {:} MB'.format(free//1000**2, keep_free//1000**2),
+          file=sys.stderr)
+
+    if keep_free > free and jwb.warn:
+        msg = '\nWarning:\n' \
+              'The disk usage currently exceeds the limit by {} MB.\n' \
+              'If the limit was set too high, many or ALL videos may get deleted.\n' \
+              'Press Enter to proceed or Ctrl+D to abort... '
+        print(msg.format((keep_free-free) // 1000**2), file=sys.stderr)
+        try:
+            input()
+        except EOFError:
+            exit(1)
+
+
+def delete_oldest(upcoming_time):
+    """Delete the oldest .mp4 file in the work_dir
+
+    Args: TIME
+    Exit if oldest video is newer than or equal to TIME.
+    TIME is seconds since epoch.
+    """
+    videos = []
+    for f in os.listdir(wdir):
+        f = os.path.join(wdir, f)
+        if f.endswith('.mp4') and os.path.isfile(f):
+            videos.append((f, os.stat(f).st_mtime))
+    if len(videos) == 0:
+        raise(RuntimeError('cannot free any disk space, no videos found'))
+    videos = sorted(videos, key=lambda x: x[1])
+    oldest_file, oldest_time = videos[0]
+
+    if upcoming_time and upcoming_time <= oldest_time:
+        print('disk limit reached, all videos up to date', file=sys.stderr)
+        quit(0)
+
+    print('removing {}'.format(oldest_file), file=sys.stderr)
+    os.remove(oldest_file)
+    # Add a "deleted" marker
+    with open(oldest_file + '.deleted', 'w') as f:
+        f.write('')
+
+
+parser = argparse.ArgumentParser(prog='jwb-index.py',
+                                 usage='%(prog)s [options] [DIR]',
+                                 description='Index or download media from tv.jw.org')
+
+jwlib.arguments.add_arguments(parser, ['--quiet',
+                                       '--lang',
+                                       '--quality',
+                                       '--category',
+                                       '--subtitles',
+                                       '--no-subtitles',
+                                       '--limit-rate',
+                                       '--checksum',
+                                       '--since',
+                                       '--no-checksum',
+                                       'work_dir'])
+parser.add_argument('--free',
+                    type=int,
+                    metavar='MB',
+                    dest='keep_free',
+                    default=100,
+                    help='disk space in MB to keep free')
+parser.add_argument('--no-warning',
+                    dest='warn',
+                    action='store_false',
+                    help='do not warn when space limit seems wrong')
+
+jwb = jwlib.parse.JWBroadcasting()
+jwb.category = 'LatestVideos'  # change default value
+parser.parse_args(namespace=jwb)
+keep_free = jwb.keep_free * 1000**2
+wdir = jwb.work_dir
+output = jwlib.output.OutputQueue(wdir)
+
+# Just some nice info, as bytes can be confusing
+disk_usage_info()
+
+# Fetch list of videos, sorted with newest first
+jwb.download = False
+jwb.parse(output)
+sorted_queue = sorted(output.queue, key=lambda x: x.date, reverse=True)
+jwb.download = True
+
+for media_obj in sorted_queue:
+
+    # Skip OK files
+    if media_obj.file:
+        continue
+
+    # Skip previously deleted files
+    f = urllib.parse.urlparse(media_obj.url).path
+    f = os.path.basename(f)
+    f = os.path.join(wdir, f + '.deleted')
+    if os.path.exists(f):
+        continue
+
+    # Clean up until there is enough space
+    while True:
+        space = shutil.disk_usage(wdir).free
+        needed = media_obj.size + keep_free
+        if space > needed:
+            break
+        print('free space: {:} MB, needed: {:} MB'.format(space//1000**2, needed//1000**2), file=sys.stderr)
+        delete_oldest(media_obj.date)
+
+    # Download the video
+    file = jwb.download_media(media_obj, wdir)
