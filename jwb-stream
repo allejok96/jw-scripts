@@ -23,9 +23,10 @@ parser.add_argument('--channel',
                     choices=['OurStudio', 'Children', 'Teenagers', 'Family', 'ProgramEvents', 'OurActivities',
                              'Ministry', 'OurOrganization', 'Bible', 'Movies', 'MusicVideo', 'IntExp'],
                     help='channel to stream')
-parser.add_argument('cmd',
+parser.add_argument('_cmd',
                     nargs=argparse.REMAINDER,
-                    dest='_cmd')
+                    metavar='COMMAND',
+                    help='video player command, "{}" gets replaced by starting position in secs')
 
 jwb = jwlib.parse.JWBroadcasting()
 output = jwlib.output.OutputStreaming()

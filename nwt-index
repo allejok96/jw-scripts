@@ -10,21 +10,25 @@ parser = argparse.ArgumentParser(prog='nwt-index.py',
                                  description='Index or download sound recordings from jw.org')
 
 jwlib.arguments.add_arguments(parser, ['--quiet',
+                                       '--mode',
                                        '--lang',
                                        '--download',
                                        '--limit-rate',
                                        '_work_dir'])
 # TODO
 # parser.add_argument('--config')
-parser.add_argument('--pub',
-                    metavar='CODE')
 parser.add_argument('--book',
                     type=int,
-                    metavar='NUM')
+                    metavar='NUM',
+                    help='bible book to index')
+parser.add_argument('--pub',
+                    metavar='CODE',
+                    help='publication to index')
 parser.add_argument('--silver',
                     action='store_const',
                     const='nwt',
-                    dest='pub')
+                    dest='pub',
+                    help='index the 2013 revised NWT')
 
 jw = jwlib.parse.JWPubMedia()
 parser.parse_args(namespace=jw)
