@@ -9,8 +9,7 @@ parser = argparse.ArgumentParser(prog='nwt-index.py',
                                  usage='%(prog)s [options] [DIR]',
                                  description='Index or download sound recordings from jw.org')
 
-jwlib.arguments.add_arguments(parser, ['--clean',
-                                       '--quiet',
+jwlib.arguments.add_arguments(parser, ['--quiet',
                                        '--lang',
                                        '--download',
                                        '--limit-rate',

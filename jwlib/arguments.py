@@ -1,5 +1,4 @@
 valid_args = {
-    '--clean': {'action': 'store_true'},
     '--quiet': {'action': 'count'},
     '--mode': {
         'default': 'stdout',

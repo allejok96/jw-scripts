@@ -10,7 +10,6 @@ parser = argparse.ArgumentParser(prog='jwb-index.py',
                                  description='Index or download media from tv.jw.org')
 
 jwlib.arguments.add_arguments(parser, ['--quiet',
-                                       '--clean',
                                        '--mode',
                                        '--lang',
                                        '--quality',
