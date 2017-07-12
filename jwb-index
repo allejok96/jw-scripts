@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-
+import jwlib.arguments
 import jwlib.parse
 import jwlib.output
 
@@ -8,81 +8,46 @@ import jwlib.output
 parser = argparse.ArgumentParser(prog='jwb-index.py',
                                  usage='%(prog)s [options] [DIR]',
                                  description='Index or download media from tv.jw.org')
+
+jwlib.arguments.add_arguments(parser, ['--quiet',
+                                       '--clean',
+                                       '--mode',
+                                       '--lang',
+                                       '--quality',
+                                       '--category',
+                                       '--latest',
+                                       '--subtitles',
+                                       '--no-subtitles',
+                                       '--download',
+                                       '--limit-rate',
+                                       '--checksum',
+                                       '--since',
+                                       '--no-checksum',
+                                       '_work_dir'])
 # TODO
 #parser.add_argument('--config')
-parser.add_argument('--clean',
-                    action='store_true')
-parser.add_argument('--quiet',
-                    action='count')
-parser.add_argument('--mode',
-                    default='stdout',
-                    choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html', 'downloader'],
-                    help='output mode')
-parser.add_argument('--lang',
-                    nargs='?',
-                    default='E',
-                    help='language code')
-parser.add_argument('--category',
-                    default='VideoOnDemand',
-                    dest='category',
-                    help='category/section to index')
-parser.add_argument('--latest',
-                    action='store_const',
-                    const='LatestVideos',
-                    dest='category')
-parser.add_argument('--quality',
-                    default=720,
-                    type=int,
-                    choices=[240, 360, 480, 720],
-                    help='maximum video quality')
-parser.add_argument('--subtitles',
-                    action='store_true')
-parser.add_argument('--no-subtitles',
-                    action='store_false',
-                    dest='subtitles',
-                    help='prefer un-subtitled videos')
-parser.add_argument('--download',
-                    action='store_true',
-                    help='download media')
-parser.add_argument('--limit-rate',
-                    default='1M',
-                    dest='rate_limit')
-parser.add_argument('--since',
-                    metavar='YYYY-MM-DD')
-parser.add_argument('--checksum',
-                    action='store_true',
-                    dest='checksums',
-                    help='check md5 checksum')
-parser.add_argument('--no-checksum',
-                    action='store_false',
-                    help='check md5 checksum')
-parser.add_argument('work_dir',
-                    nargs='?',
-                    default=None,
-                    metavar='DIR',
-                    help='directory to save data in')
 
 jwb = jwlib.parse.JWBroadcasting()
 parser.parse_args(namespace=jwb)
 
 # jwb.mode and jwb.work_dir gets set by argparse
-wd = jwb.work_dir
+wd = jwb._work_dir
 sd = 'jwb-' + jwb.lang
 
-if jwb.mode == 'stdout':
+if jwb._mode == 'stdout':
     output = jwlib.output.OutputStdout(wd)
 
-elif jwb.mode == 'm3u':
+elif jwb._mode == 'm3u':
     output = jwlib.output.OutputM3U(wd, sd)
 
-elif jwb.mode == 'm3ucompat':
+elif jwb._mode == 'm3ucompat':
     output = jwlib.output.OutputM3UCompat(wd, sd)
 
-elif jwb.mode == 'filesystem':
+elif jwb._mode == 'filesystem':
     output = jwlib.output.OutputFilesystem(wd, sd)
     output.clean_symlinks()
 
-elif jwb.mode == 'html':
+elif jwb._mode == 'html':
     output = jwlib.output.OutputHTML(wd, sd)
 
 

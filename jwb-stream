@@ -2,7 +2,7 @@
 import time
 import subprocess
 import argparse
-
+import jwlib.arguments
 import jwlib.parse
 import jwlib.output
 
@@ -10,32 +10,22 @@ import jwlib.output
 parser = argparse.ArgumentParser(prog='jwb-stream.py',
                                  usage='%(prog)s [options] COMMAND [ARGUMENTS]',
                                  description='Stream media from tv.jw.org')
+
+jwlib.arguments.add_arguments(parser, ['--lang',
+                                       '--quality',
+                                       '--subtitles',
+                                       '--no-subtitles'])
 # TODO
 #parser.add_argument('--config')
-parser.add_argument('--lang',
-                    nargs='?',
-                    default='E',
-                    help='language code')
 parser.add_argument('--channel',
                     default='OurStudio',
-                    dest='channel',
+                    dest='_channel',
                     choices=['OurStudio', 'Children', 'Teenagers', 'Family', 'ProgramEvents', 'OurActivities',
                              'Ministry', 'OurOrganization', 'Bible', 'Movies', 'MusicVideo', 'IntExp'],
                     help='channel to stream')
-parser.add_argument('--quality',
-                    default=720,
-                    type=int,
-                    choices=[240, 360, 480, 720],
-                    help='maximum video quality')
-parser.add_argument('--subtitles',
-                    action='store_true')
-parser.add_argument('--no-subtitles',
-                    action='store_false',
-                    dest='subtitles',
-                    help='prefer un-subtitled videos')
 parser.add_argument('cmd',
-                    nargs=argparse.REMAINDER)
-
+                    nargs=argparse.REMAINDER,
+                    dest='_cmd')
 
 jwb = jwlib.parse.JWBroadcasting()
 output = jwlib.output.OutputStreaming()
@@ -45,13 +35,13 @@ jwb.quiet = 1
 jwb.utc_offset = (-time.altzone // 60)
 
 parser.parse_args(namespace=jwb)
-jwb.category = 'Streaming' + jwb.channel  # set by argparse
+jwb.category = 'Streaming' + jwb._channel  # set by argparse
 
-if not jwb.cmd:
+if not jwb._cmd:
     raise RuntimeError("Not enough arguments")
 
 # Replace the occurrences of `{}` with `0` in the command
-cmd = [arg.replace('{}', '0') for arg in jwb.cmd]
+cmd = [arg.replace('{}', '0') for arg in jwb._cmd]
 
 first = True
 while True:
@@ -60,7 +50,7 @@ while True:
 
     if first:
         # Replace {} with starting position in command
-        cmd_first = [arg.replace('{}', str(output.pos)) for arg in jwb.cmd]
+        cmd_first = [arg.replace('{}', str(output.pos)) for arg in jwb._cmd]
         # Run command with first URL as argument
         subprocess.run(cmd_first + [output.queue.pop(0)], check=True)
         first = False
