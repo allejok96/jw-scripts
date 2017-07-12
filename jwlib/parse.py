@@ -77,7 +77,7 @@ class JWBroadcasting:
         else:
             section = 'categories'
 
-        queue = [self.category]
+        queue = [self.category.split(',')]
 
         for cat in queue:
 
