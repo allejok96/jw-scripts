@@ -5,9 +5,9 @@ import jwlib.parse
 import jwlib.output
 
 
-parser = argparse.ArgumentParser(prog='jwb-index.py',
+parser = argparse.ArgumentParser(prog='nwt-index.py',
                                  usage='%(prog)s [options] [DIR]',
-                                 description='Index or download media from tv.jw.org')
+                                 description='Index or download sound recordings from jw.org')
 
 # TODO
 # parser.add_argument('--config')
