@@ -30,8 +30,6 @@ class JWBroadcasting:
         # Will get set by parse()
         # list containing Media objects
         self.result = []
-        # Seconds (only used when streaming = True)
-        self.position = 0
 
         # Used by download_media()
         self._checked_files = set()
@@ -113,7 +111,7 @@ class JWBroadcasting:
                 if self.streaming:
                     # Save starting position
                     if 'position' in response['category']:
-                        self.position = response['category']['position']['time']
+                        cat.position = response['category']['position']['time']
 
                 else:
                     if 'subcategories' in response['category']:
@@ -451,6 +449,8 @@ class Media:
             self.content = []
             # Whether or not this is a "starting point"
             self.home = False
+            # Seconds (only used for streaming)
+            self.position = 0
         else:
             self.url = None
             self.name = None
