@@ -1,10 +1,10 @@
 valid_args = {
     '--quiet': {'action': 'count'},
     '--mode': {
-        'default': 'stdout',
+        'default': None,
         'choices': ['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
         'help': 'output mode',
-        'dest': '_mode'},
+        'dest': 'mode'},
     '--lang': {
         'nargs': '?',
         'default': 'E',
@@ -16,16 +16,6 @@ valid_args = {
         'default': '1M',
         'dest': 'rate_limit',
         'help': 'maximum download rate, passed to curl'},
-    '--category': {
-        'default': 'VideoOnDemand',
-        'dest': 'category',
-        'help': 'category/section to index',
-        'metavar': 'CODE'},
-    '--latest': {
-        'action': 'store_const',
-        'const': 'LatestVideos',
-        'dest': 'category',
-        'help': 'index the "Latest Videos" section'},
     '--quality': {
         'default': 720,
         'type': int,
@@ -37,9 +27,6 @@ valid_args = {
     '--no-subtitles': {
         'action': 'store_false',
         'dest': 'subtitles'},
-    '--since': {
-        'metavar': 'YYYY-MM-DD',
-        'help': 'only index media newer than this date'},
     '--checksum': {
         'action': 'store_true',
         'dest': 'checksums',
@@ -54,6 +41,11 @@ valid_args = {
 
 
 def add_arguments(parser, selected_args=None):
+    """Add preset arguments to an argument parser
+
+    :param parser: an instance of argparse.ArgumentParser
+    :param selected_args: a list of keys from valid_args
+    """
     if not selected_args:
         selected_args = valid_args.keys()
 

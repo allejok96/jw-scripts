@@ -3,6 +3,7 @@ import os
 import time
 import re
 import subprocess
+import shutil
 
 import json
 import hashlib
@@ -21,9 +22,17 @@ class JWBroadcasting:
         self.streaming = False
         self.quiet = 0
         self.checksums = False
-        self.category = 'VideoOnDemand'
+        self.index_category = 'VideoOnDemand'
         self.rate_limit = '1M'
         self.utc_offset = 0
+        self.keep_free = None
+
+        # Will get set by parse()
+        # list containing Media objects
+        self.result = []
+        # Seconds (only used when streaming = True)
+        self.position = 0
+
         # Used by download_media()
         self._checked_files = set()
 
@@ -70,19 +79,20 @@ class JWBroadcasting:
         except ValueError:
             raise ValueError('wrong date format')
 
-    def parse(self, output):
-        """Download JSON, create Media objects and send them to the Output object."""
+    def parse(self):
+        """Download JSON, and return a list of populated a Category objects."""
         if self.streaming:
             section = 'schedules'
         else:
             section = 'categories'
 
-        queue = self.category.split(',')
+        # Load the queue with the requested (keynames of) categories
+        queue = self.index_category.split(',')
 
-        for cat in queue:
+        for key in queue:
 
             url = 'https://mediator.jw.org/v1/{s}/{l}/{c}?detailed=1&utcOffset={o}'
-            url = url.format(s=section, l=self.lang, c=cat, o=self.utc_offset)
+            url = url.format(s=section, l=self.lang, c=key, o=self.utc_offset)
 
             with urllib.request.urlopen(url) as response:
                 response = json.loads(response.read().decode())
@@ -90,27 +100,33 @@ class JWBroadcasting:
                 if 'status' in response and response['status'] == '404':
                     raise ValueError('No such category or language')
 
-                # Initialize the cateogory (setting output destination)
-                cat = response['category']['key']
-                name = response['category']['name']
-                output.set_cat(cat, name)
+                # Add new category to the result, or re-use old one
+                cat = Media(iscategory=True)
+                self.result.append(cat)
+                cat.key = response['category']['key']
+                cat.name = response['category']['name']
+                cat.home = cat.key in self.index_category.split(',')
+
                 if self.quiet == 0:
-                    print('{} ({})'.format(cat, name), file=stderr)
+                    print('{} ({})'.format(cat.key, cat.name), file=stderr)
 
                 if self.streaming:
                     # Save starting position
                     if 'position' in response['category']:
-                        output.pos = response['category']['position']['time']
+                        self.position = response['category']['position']['time']
 
                 else:
-                    # Add subcategories to the queue
                     if 'subcategories' in response['category']:
-                        for s in response['category']['subcategories']:
-                            output.save_subcat(s['key'], s['name'])
-                            if s['key'] not in queue:
-                                queue.append(s['key'])
+                        for subcat in response['category']['subcategories']:
+                            # Add subcategory to current category
+                            s = Media(iscategory=True)
+                            s.key = subcat['key']
+                            s.name = subcat['name']
+                            cat.content.append(s)
+                            # Add subcategory to queue for parsing later
+                            if s.key not in queue:
+                                queue.append(s.key)
 
-                # Output media data to current destination
                 if 'media' in response['category']:
                     for media in response['category']['media']:
                         # Skip videos marked as hidden
@@ -142,11 +158,9 @@ class JWBroadcasting:
                                 if self.mindate and d < self.mindate:
                                     continue
 
-                        # [Download and] check local file (not when streaming, of course)
-                        if not self.streaming:
-                            m.file = self.download_media(m, output.media_dir)
+                        cat.content.append(m)
 
-                        output.save_media(m)
+        return self.result
 
     def _get_best_video(self, video_list: list):
         """Take a list of media files and metadata and return the best one"""
@@ -173,12 +187,14 @@ class JWBroadcasting:
         """Download media file and check it.
 
         Download file, check MD5 sum and size, delete file if it missmatches.
-        Return the filename, or None if unsucessfull.
 
-        Arguments:
-        media - A Media instance
-        directory - Dir to save the files to
-        """        
+        :param media: A Media instance
+        :param directory: Dir to save the files to
+        :return: filename, or None if unsuccessful
+        """
+        if not os.path.exists(directory) and not self.download:
+            return None
+
         os.makedirs(directory, exist_ok=True)
 
         base = urllib.parse.urlparse(media.url).path
@@ -261,6 +277,34 @@ class JWBroadcasting:
                     # There is nothing left to do.
                     return None
 
+    def download_all(self, wd):
+        """Download/check media files
+
+        :param wd: directory where files will be saved
+        """
+        media_list = [x for cat in self.result for x in cat.content if not x.iscategory]
+        media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
+
+        for media in media_list:
+            # Skip previously deleted files
+            f = urllib.parse.urlparse(media.url).path
+            f = os.path.basename(f)
+            f = os.path.join(wd, f + '.deleted')
+            if os.path.exists(f):
+                continue
+
+            # Clean up until there is enough space
+            while self.keep_free:
+                space = shutil.disk_usage(wd).free
+                needed = media.size + self.keep_free
+                if space > needed:
+                    break
+                print('free space: {:} MB, needed: {:} MB'.format(space // 1000 ** 2, needed // 1000 ** 2), file=stderr)
+                _delete_oldest(wd, media.date)
+
+            # Download the video
+            media.file = self.download_media(media, wd)
+
 
 class JWPubMedia(JWBroadcasting):
 
@@ -274,42 +318,56 @@ class JWPubMedia(JWBroadcasting):
     # @lang.setter
     # def lang(self, code=None):
 
-    def parse(self, output):
+    def parse(self):
         """Download JSON, create Media objects and send them to the Output object."""
-        queue = [self.book]
+        url_template = 'https://apps.jw.org/GETPUBMEDIALINKS' \
+                       '?output=json&fileformat=MP3&alllangs=0&langwritten={l}&txtCMSLang={l}&pub={p}'
 
-        for bookid in queue:
-            url = 'https://apps.jw.org/GETPUBMEDIALINKS' \
-                  '?output=json&fileformat=MP3&alllangs=0&langwritten={l}&txtCMSLang={l}&pub={p}&{n}={i}'
+        # Watchtower/Awake reference is split up into pub and issue
+        magazine_match = re.match('(wp?|g)([0-9]+)', self.pub)
+        if magazine_match:
+            url_template = url_template + '&issue={i}'
+            self.pub = magazine_match.group(1)
+            queue = [magazine_match.group(2)]
+        else:
+            url_template = url_template + '&booknum={i}'
+            queue = [self.book]
 
-            # Watchtower/Awake reference is split up into pub and issue
-            match = re.match('(wp?|g)([0-9]+)', self.pub)
-            if match:
-                url = url.format(l=self.lang, p=match.group(1), n='issue', i=match.group(2))
-                codename = self.pub
+        for key in queue:
+            url = url_template.format(l=self.lang, p=self.pub, i=key)
+
+            book = Media(iscategory=True)
+            self.result.append(book)
+
+            if self.pub == 'bi12' or self.pub == 'nwt':
+                book.key = format(int(key), '02')
+                # This is the starting point if the value in the queue
+                # is the same as the one the user specified
+                book.home = key == self.book
             else:
-                url = url.format(l=self.lang, p=self.pub, n='booknum', i=bookid)
-                codename = format(bookid, '02')
+                book.key = self.pub
+                book.home = True
 
             with urllib.request.urlopen(url) as response:
                 response = json.loads(response.read().decode())
-
-                # Initialize the publication or book (setting output destination)
-                name = response['pubName']
-                output.set_cat(codename, name)
+                book.name = response['pubName']
 
                 if self.quiet == 0:
-                    print('{} ({})'.format(codename, name), file=stderr)
+                    print('{} ({})'.format(book.key, book.name), file=stderr)
 
                 # For the Bible's index page
                 # Add all books to the queue
-                if bookid == 0 and (self.pub == 'bi12' or self.pub == 'nwt'):
-                    for book in response['files'][self.lang]['MP3']:
-                        output.save_subcat(format(book['booknum'], '02'), book['title'])
-                        if book['booknum'] not in queue:
-                            queue.append(book['booknum'])
+                if key == 0 and (self.pub == 'bi12' or self.pub == 'nwt'):
+                    for sub_book in response['files'][self.lang]['MP3']:
+
+                        s = Media(iscategory=True)
+                        s.key = format(sub_book['booknum'], '02')
+                        s.name = sub_book['title']
+                        book.content.append(s)
+
+                        if s.key not in queue:
+                            queue.append(s.key)
                 else:
-                    # Output media data to current destination
                     for chptr in response['files'][self.lang]['MP3']:
                         # Skip the ZIP
                         if chptr['mimetype'] != 'audio/mpeg':
@@ -320,8 +378,10 @@ class JWPubMedia(JWBroadcasting):
                         m.name = chptr['title']
                         if 'filesize' in chptr['file']:
                             m.size = chptr['file']['filesize']
-                        m.file = self.download_media(m, output.media_dir)
-                        output.save_media(m)
+
+                        book.content.append(m)
+
+        return self.result
 
 
 def _md5(file):
@@ -336,13 +396,10 @@ def _md5(file):
 def _curl(url, file, resume=False, rate_limit='0'):
     """Throttled file download by calling the curl command.
 
-    Arguments:
-    url - URL to be downloaded
-    file - File to write to
-
-    Keyword arguments:
-    resume - Resume download of file (default False)
-    rate_limit - Rate to pass to curl --limit-rate
+    :param url: URL to be downloaded
+    :param file: File to write to
+    :param resume: Resume download of file
+    :param rate_limit: Rate to pass to curl --limit-rate
     """
     proc = ['curl', url, '--silent', '-o', file]
     if resume:
@@ -355,13 +412,49 @@ def _curl(url, file, resume=False, rate_limit='0'):
     subprocess.run(proc, stderr=stderr)
 
 
-class Media:
-    """Object to put media info in."""
+def _delete_oldest(wd, upcoming_time):
+    """Delete the oldest .mp4 file in the work_dir
 
-    def __init__(self):
-        self.url = None
-        self.name = None
-        self.md5 = None
-        self.date = None
-        self.size = None
-        self.file = None
+    Exit if oldest video is newer than or equal to upcoming_time.
+
+    :param wd: Directory to look for videos
+    :param upcoming_time: Seconds since epoch
+    """
+    videos = []
+    for f in os.listdir(wd):
+        f = os.path.join(wd, f)
+        if f.endswith('.mp4') and os.path.isfile(f):
+            videos.append((f, os.stat(f).st_mtime))
+    if len(videos) == 0:
+        raise(RuntimeError('cannot free any disk space, no videos found'))
+    videos = sorted(videos, key=lambda x: x[1])
+    oldest_file, oldest_time = videos[0]
+
+    if upcoming_time and upcoming_time <= oldest_time:
+        print('disk limit reached, all videos up to date', file=stderr)
+        quit(0)
+
+    print('removing {}'.format(oldest_file), file=stderr)
+    os.remove(oldest_file)
+    # Add a "deleted" marker
+    with open(oldest_file + '.deleted', 'w') as f:
+        f.write('')
+
+
+class Media:
+    """Object to put media or category info in."""
+    def __init__(self, iscategory=False):
+        self.iscategory = iscategory
+        if iscategory:
+            self.key = None
+            self.name = None
+            self.content = []
+            # Whether or not this is a "starting point"
+            self.home = False
+        else:
+            self.url = None
+            self.name = None
+            self.md5 = None
+            self.date = None
+            self.size = None
+            self.file = None

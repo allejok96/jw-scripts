@@ -16,7 +16,7 @@ jwlib.arguments.add_arguments(parser, ['--lang',
                                        '--subtitles',
                                        '--no-subtitles'])
 # TODO
-#parser.add_argument('--config')
+# parser.add_argument('--config')
 parser.add_argument('--channel',
                     default='OurStudio',
                     dest='channel',
@@ -29,32 +29,32 @@ parser.add_argument('_cmd',
                     help='video player command, "{}" gets replaced by starting position in secs')
 
 jwb = jwlib.parse.JWBroadcasting()
-output = jwlib.output.OutputStreaming()
+parser.parse_args(namespace=jwb)
 
 jwb.streaming = True
 jwb.quiet = 1
 jwb.utc_offset = (-time.altzone // 60)
-
-parser.parse_args(namespace=jwb)
 jwb.category = 'Streaming' + jwb.channel  # set by argparse
+cmd = jwb.cmd
 
-if not jwb.cmd:
+if not cmd:
     raise RuntimeError("Not enough arguments")
 
 # Replace the occurrences of `{}` with `0` in the command
-cmd = [arg.replace('{}', '0') for arg in jwb.cmd]
+cmd = [arg.replace('{}', '0') for arg in cmd]
 
 first = True
 while True:
 
-    jwb.parse(output)
+    result = jwb.parse()
+    queue = [item.url for cat in result for item in cat if not item.iscategory]
 
     if first:
         # Replace {} with starting position in command
-        cmd_first = [arg.replace('{}', str(output.pos)) for arg in jwb.cmd]
+        cmd_first = [arg.replace('{}', str(jwb.position)) for arg in cmd]
         # Run command with first URL as argument
-        subprocess.run(cmd_first + [output.queue.pop(0)], check=True)
+        subprocess.run(cmd_first + [queue.pop(0)], check=True)
         first = False
 
     # Run command with all URLs as arguments
-    subprocess.run(cmd + output.queue, check=True)
+    subprocess.run(cmd + queue, check=True)

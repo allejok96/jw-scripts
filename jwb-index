@@ -1,8 +1,30 @@
 #!/usr/bin/env python3
 import argparse
+import os
+import shutil
+from sys import stderr
+
 import jwlib.arguments
 import jwlib.parse
-import jwlib.output
+import jwlib.output as jo
+
+
+def disk_usage_info(wd, keep_free, warn=True, quiet=0):
+    """Display information about disk usage and maybe a warning"""
+    free = shutil.disk_usage(wd).free
+    if quiet == 0:
+        print('free space: {:} MB, minimum limit: {:} MB'.format(free//1000**2, keep_free//1000**2), file=stderr)
+
+    if warn and free < keep_free:
+        msg = '\nWarning:\n' \
+              'The disk usage currently exceeds the limit by {} MB.\n' \
+              'If the limit was set too high, many or ALL videos may get deleted.\n' \
+              'Press Enter to proceed or Ctrl+D to abort... '
+        print(msg.format((keep_free-free) // 1000**2), file=stderr)
+        try:
+            input()
+        except EOFError:
+            exit(1)
 
 
 parser = argparse.ArgumentParser(prog='jwb-index.py',
@@ -13,46 +35,70 @@ jwlib.arguments.add_arguments(parser, ['--quiet',
                                        '--mode',
                                        '--lang',
                                        '--quality',
-                                       '--category',
-                                       '--latest',
                                        '--subtitles',
                                        '--no-subtitles',
                                        '--download',
                                        '--limit-rate',
                                        '--checksum',
-                                       '--since',
                                        '--no-checksum',
                                        'work_dir'])
 # TODO
-#parser.add_argument('--config')
+# parser.add_argument('--config')
+parser.add_argument('--category',
+                    default='VideoOnDemand',
+                    dest='index_category',
+                    help='category/section to index',
+                    metavar='CODE')
+parser.add_argument('--free',
+                    type=int,
+                    metavar='MB',
+                    dest='keep_free',
+                    default=100,
+                    help='disk space in MB to keep free')
+parser.add_argument('--no-warning',
+                    dest='warn',
+                    action='store_false',
+                    help='do not warn when space limit seems wrong')
+parser.add_argument('--latest',
+                    action='store_const',
+                    const='LatestVideos',
+                    dest='index_category',
+                    help='index the "Latest Videos" section')
+parser.add_argument('--since',
+                    metavar='YYYY-MM-DD',
+                    help='only index media newer than this date')
 
 jwb = jwlib.parse.JWBroadcasting()
 parser.parse_args(namespace=jwb)
 
-# jwb.mode and jwb.work_dir gets set by argparse
 wd = jwb.work_dir
-sd = 'jwb-' + jwb.lang
+subdir = 'jwb-' + jwb.lang
+mode = jwb.mode
 
-if jwb.mode == 'stdout':
-    output = jwlib.output.OutputStdout(wd)
+if not mode and not jwb.download:
+    print('please use --mode or --download', file=stderr)
+    exit(1)
 
-elif jwb.mode == 'm3u':
-    output = jwlib.output.OutputM3U(wd, sd)
+if not mode or mode == 'stdout':
+    subdir = ''
 
-elif jwb.mode == 'm3ucompat':
-    output = jwlib.output.OutputM3UCompat(wd, sd)
+if jwb.keep_free and jwb.keep_free > 0:
+    jwb.keep_free = jwb.keep_free * 1000 ** 2  # MB to B
+    disk_usage_info(wd, jwb.keep_free, warn=jwb.warn, quiet=jwb.quiet)
 
-elif jwb.mode == 'filesystem':
-    output = jwlib.output.OutputFilesystem(wd, sd)
-    output.clean_symlinks()
+r = jwb.parse()
+jwb.download_all(os.path.join(wd, subdir))
 
-elif jwb.mode == 'html':
-    output = jwlib.output.OutputHTML(wd, sd)
-
-
-# Note:
-# output cannot be anything else, argparse takes care of that
-
-
-jwb.parse(output)
-
+if not mode:
+    pass
+elif mode == 'stdout':
+    jo.output_stdout(r, wd, uniq=True)
+elif mode == 'm3u':
+    jo.output_m3u(r, wd, subdir)
+elif mode == 'm3ucompat':
+    jo.output_m3u(r, wd, subdir, flat=True)
+elif mode == 'filesystem':
+    jo.clean_symlinks(os.path.join(wd, subdir))
+    jo.output_filesystem(r, wd, subdir)
+elif mode == 'html':
+    jo.output_html(r, wd, subdir)
