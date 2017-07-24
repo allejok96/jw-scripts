@@ -101,6 +101,7 @@ parser = argparse.ArgumentParser(prog='jwb-rpi',
                                  usage='%(prog)s [DIR] [COMMAND]',
                                  description='Shuffle and play videos in DIR')
 parser.add_argument('dir',
+                    nargs='?',
                     metavar='DIR',
                     default='.')
 parser.add_argument('cmd',
