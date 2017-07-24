@@ -1,12 +1,13 @@
 # JW scripts
 
-### 2017-05-23: HUGE UPDATE! This is ported to Python now (still beta)
+#### 2017-07-24: Chronological download + disk space limit + `jwb-rpi`
+#### 2017-05-23: Ported to Python 3!
 
 ---
 
 ### JW Broadcasting and sound recordings anywhere
 
-With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of [publications at JW.ORG](https://www.jw.org/en/publications/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine by playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline (work in progress).
+With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of [publications at JW.ORG](https://www.jw.org/en/publications/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine by playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline.
 
 ## Get started
 
@@ -20,11 +21,12 @@ Install the scripts
     cd jw-scripts
     sudo python3 setup.py install
 
-Next, click on one of the scripts below for more info (the info there can be wrong as the scripts been ported to Python)
+Next, click on one of the scripts below for more info.
 
 * [jwb-index](https://github.com/allejok96/jw-scripts/wiki/jwb-index) - Download videos from JW Broadcasting, or make playlists. Can be used together with **Plex** or **Kodi**.
 * [jwb-stream](https://github.com/allejok96/jw-scripts/wiki/jwb-stream) - Stream from JW Broadcasting in your media player of choice, like **VLC**.
 * [nwt-index](https://github.com/allejok96/jw-scripts/wiki/nwt-index) - Download Bible or publication recordings from JW.ORG, or make playlists.
+* [jwb-rpi](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi) - Play downloaded videos in random order (and some more nice things).
 
 ## Questions
 
