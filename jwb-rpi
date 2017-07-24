@@ -22,6 +22,7 @@ class VideoManager:
         self.dump_file = os.path.join(wd, 'dump.json')
         self.wd = wd
         self.cmd = ['omxplayer', '--pos', '{}']
+        self.errors = 0
 
     def write_dump(self):
         """Dump data to JSON file"""
@@ -55,7 +56,6 @@ class VideoManager:
                 continue
             self.video = vid
             self.pos = 0
-            self.start_time = time.time()
             return True
         return False
 
@@ -75,7 +75,16 @@ class VideoManager:
         self.write_dump()
         print('playing ' + self.video)
         cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [os.path.join(self.wd, self.video)]
+        self.start_time = time.time()
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        if self.calculate_pos() == 0:
+            self.errors = self.errors + 1
+        else:
+            self.errors = 0
+        if self.errors > 10:
+            raise RuntimeError('video player restarting too quickly')
+            
         self.add_to_history(self.video)
         self.video = None
 
