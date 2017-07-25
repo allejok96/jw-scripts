@@ -407,7 +407,7 @@ def _curl(url, file, resume=False, rate_limit='0'):
         proc.append('--limit-rate')
         proc.append(rate_limit)
 
-    subprocess.run(proc, stderr=stderr)
+    subprocess.call(proc, stderr=stderr)
 
 
 def _delete_oldest(wd, upcoming_time):
