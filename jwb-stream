@@ -2,19 +2,19 @@
 import time
 import subprocess
 import argparse
-import jwlib.arguments
-import jwlib.parse
-import jwlib.output
+
+from jwlib.arguments import add_arguments
+from jwlib.parse import JWBroadcasting
 
 
 parser = argparse.ArgumentParser(prog='jwb-stream',
                                  usage='%(prog)s [options] COMMAND [ARGUMENTS]',
                                  description='Stream media from tv.jw.org')
 
-jwlib.arguments.add_arguments(parser, ['--lang',
-                                       '--quality',
-                                       '--subtitles',
-                                       '--no-subtitles'])
+add_arguments(parser, ['--lang',
+                       '--quality',
+                       '--subtitles',
+                       '--no-subtitles'])
 # TODO
 # parser.add_argument('--config')
 parser.add_argument('--channel',
@@ -27,7 +27,7 @@ parser.add_argument('cmd',
                     metavar='COMMAND',
                     help='video player command, "{}" gets replaced by starting position in secs')
 
-jwb = jwlib.parse.JWBroadcasting()
+jwb = JWBroadcasting()
 # Default values, not set by JWBroadcasting
 jwb.channel = 'OurStudio'
 jwb.cmd = []

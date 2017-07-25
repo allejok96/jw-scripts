@@ -3,21 +3,20 @@ import argparse
 import os
 from sys import stderr
 
-import jwlib.arguments
-import jwlib.parse
+from jwlib.arguments import add_arguments
+from jwlib.parse import JWPubMedia
 import jwlib.output as jo
 
 
 parser = argparse.ArgumentParser(prog='nwt-index',
                                  usage='%(prog)s [options] [DIR]',
                                  description='Index or download sound recordings from jw.org')
-
-jwlib.arguments.add_arguments(parser, ['--quiet',
-                                       '--mode',
-                                       '--lang',
-                                       '--download',
-                                       '--limit-rate',
-                                       'work_dir'])
+add_arguments(parser, ['--quiet',
+                       '--mode',
+                       '--lang',
+                       '--download',
+                       '--limit-rate',
+                       'work_dir'])
 # TODO
 # parser.add_argument('--config')
 parser.add_argument('--book',
@@ -32,7 +31,7 @@ parser.add_argument('--silver',
                     dest='pub',
                     help='index the 2013 revised NWT')
 
-jw = jwlib.parse.JWPubMedia()
+jw = JWPubMedia()
 # Default values, not set by JWPubMedia
 jw.work_dir = '.'
 jw.mode = None
