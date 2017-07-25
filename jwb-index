@@ -64,7 +64,7 @@ if not mode or mode == 'stdout':
     subdir = ''
 
 if jwb.keep_free and jwb.keep_free > 0:
-    jwb.keep_free = jwb.keep_free * 1000 ** 2  # MB to B
+    jwb.keep_free = jwb.keep_free * 1024 ** 2  # MiB to B
     disk_usage_info(wd, jwb.keep_free, warn=jwb.warn, quiet=jwb.quiet)
 
 r = jwb.parse()

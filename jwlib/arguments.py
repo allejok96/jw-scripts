@@ -35,9 +35,9 @@ valid_args = {
         'action': 'store_false'},
     '--free': {
         'type': int,
-        'metavar': 'MB',
+        'metavar': 'MiB',
         'dest': 'keep_free',
-        'help': 'disk space in MB to keep free (deletes older MP4 files)'},
+        'help': 'disk space in MiB to keep free (deletes older MP4 files)'},
     '--no-warning': {
         'dest': 'warn',
         'action': 'store_false',
@@ -75,14 +75,14 @@ def disk_usage_info(wd, keep_free: int, warn=True, quiet=0):
     """
     free = shutil.disk_usage(wd).free
     if quiet == 0:
-        print('free space: {:} MB, minimum limit: {:} MB'.format(free//1000**2, keep_free//1000**2), file=stderr)
+        print('free space: {:} MiB, minimum limit: {:} MiB'.format(free//1024**2, keep_free//1024**2), file=stderr)
 
     if warn and free < keep_free:
         msg = '\nWarning:\n' \
-              'The disk usage currently exceeds the limit by {} MB.\n' \
+              'The disk usage currently exceeds the limit by {} MiB.\n' \
               'If the limit was set too high, many or ALL videos may get deleted.\n' \
               'Press Enter to proceed or Ctrl+D to abort... '
-        print(msg.format((keep_free-free) // 1000**2), file=stderr)
+        print(msg.format((keep_free-free) // 1024**2), file=stderr)
         try:
             input()
         except EOFError:

@@ -303,7 +303,7 @@ class JWBroadcasting:
                 if space > needed:
                     break
                 if self.quiet == 0:
-                    print('free space: {:} MB, needed: {:} MB'.format(space//1000**2, needed//1000**2), file=stderr)
+                    print('free space: {:} MiB, needed: {:} MiB'.format(space//1024**2, needed//1024**2), file=stderr)
                 delete_oldest(wd, media.date)
 
             # Download the video
