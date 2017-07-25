@@ -27,7 +27,7 @@ def disk_usage_info(wd, keep_free, warn=True, quiet=0):
             exit(1)
 
 
-parser = argparse.ArgumentParser(prog='jwb-index.py',
+parser = argparse.ArgumentParser(prog='jwb-index',
                                  usage='%(prog)s [options] [DIR]',
                                  description='Index or download media from tv.jw.org')
 
@@ -69,6 +69,9 @@ parser.add_argument('--since',
                     help='only index media newer than this date')
 
 jwb = jwlib.parse.JWBroadcasting()
+jwb.work_dir = '.'                   # This is just to calm down PyCharm
+jwb.mode = None                      # as they will get set by parse_args()
+jwb.warn = False                     #
 parser.parse_args(namespace=jwb)
 
 wd = jwb.work_dir

@@ -76,7 +76,7 @@ class VideoManager:
         print('playing ' + self.video)
         cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [os.path.join(self.wd, self.video)]
         self.start_time = time.time()
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if self.calculate_pos() == 0:
             self.errors = self.errors + 1
@@ -123,9 +123,15 @@ m = VideoManager(args.dir)
 if len(args.cmd) > 0:
     m.cmd = args.cmd
 
+# JSONDecodeError was added to Python 3.5
+if hasattr(json, 'JSONDecodeError'):
+    JSONDecodeError = json.JSONDecodeError
+else:
+    JSONDecodeError = ValueError
+
 try:
     m.read_dump()
-except json.decoder.JSONDecodeError:
+except JSONDecodeError:
     pass
 
 showmsg = True

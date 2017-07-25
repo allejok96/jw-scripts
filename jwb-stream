@@ -7,7 +7,7 @@ import jwlib.parse
 import jwlib.output
 
 
-parser = argparse.ArgumentParser(prog='jwb-stream.py',
+parser = argparse.ArgumentParser(prog='jwb-stream',
                                  usage='%(prog)s [options] COMMAND [ARGUMENTS]',
                                  description='Stream media from tv.jw.org')
 
@@ -29,12 +29,14 @@ parser.add_argument('cmd',
                     help='video player command, "{}" gets replaced by starting position in secs')
 
 jwb = jwlib.parse.JWBroadcasting()
+jwb.channel = 'OurStudio'             # This is just to calm down PyCharm
+jwb.cmd = None                        # as they will get set by parse_args()
 parser.parse_args(namespace=jwb)
 
 jwb.streaming = True
 jwb.quiet = 1
 jwb.utc_offset = (-time.altzone // 60)
-jwb.index_category = 'Streaming' + jwb.channel  # set by argparse
+jwb.index_category = 'Streaming' + jwb.channel
 cmd = jwb.cmd
 
 if not cmd:
@@ -55,8 +57,8 @@ while True:
         # Replace {} with starting position in command
         cmd_first = [arg.replace('{}', str(position)) for arg in cmd]
         # Run command with first URL as argument
-        subprocess.run(cmd_first + [queue.pop(0)], check=True)
+        subprocess.check_call(cmd_first + [queue.pop(0)])
         first = False
 
     # Run command with all URLs as arguments
-    subprocess.run(cmd_second + queue, check=True)
+    subprocess.check_call(cmd_second + queue)

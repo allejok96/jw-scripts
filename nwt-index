@@ -8,7 +8,7 @@ import jwlib.parse
 import jwlib.output as jo
 
 
-parser = argparse.ArgumentParser(prog='nwt-index.py',
+parser = argparse.ArgumentParser(prog='nwt-index',
                                  usage='%(prog)s [options] [DIR]',
                                  description='Index or download sound recordings from jw.org')
 
@@ -33,6 +33,8 @@ parser.add_argument('--silver',
                     help='index the 2013 revised NWT')
 
 jw = jwlib.parse.JWPubMedia()
+jw.work_dir = '.'                # This is just to calm down PyCharm
+jw.mode = None                   # as they will get set by parse_args()
 parser.parse_args(namespace=jw)
 
 wd = jw.work_dir
