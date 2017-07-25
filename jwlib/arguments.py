@@ -1,23 +1,28 @@
 import shutil
 from sys import stderr
+from argparse import SUPPRESS
 
 
 valid_args = {
-    '--quiet': {'action': 'count'},
+    '--quiet': {'action': 'count',
+                'default': 0},
     '--mode': {
         'choices': ['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
         'help': 'output mode',
         'dest': 'mode'},
     '--lang': {
+        'default': 'E',
         'nargs': '?',
         'help': 'language code'},
     '--download': {
         'action': 'store_true',
         'help': 'download media files'},
     '--limit-rate': {
+        'default': '1M',
         'dest': 'rate_limit',
         'help': 'maximum download rate, passed to curl'},
     '--quality': {
+        'default': 720,
         'type': int,
         'choices': [240, 360, 480, 720],
         'help': 'maximum video quality'},
@@ -34,6 +39,7 @@ valid_args = {
     '--no-checksum': {
         'action': 'store_false'},
     '--free': {
+        'default': 0,
         'type': int,
         'metavar': 'MiB',
         'dest': 'keep_free',
@@ -43,10 +49,9 @@ valid_args = {
         'action': 'store_false',
         'help': 'do not warn when space limit seems wrong'},
     'work_dir': {
-        # "default" must be set here, or work_dir will be set to None.
-        # Setting work_dir before calling parse_args() has no effect,
-        # other than making PyCharm satisfied.
-        'default': '.',
+        # When nargs=? and the argument is left out, it stores None
+        # We put SUPPRESS here so that it doesn't overwrite the previous value in that case
+        'default': SUPPRESS,
         'nargs': '?',
         'metavar': 'DIR',
         'help': 'directory to save data in'}}
