@@ -75,7 +75,6 @@ jwb = jwlib.parse.JWBroadcasting()
 jwb.work_dir = '.'
 jwb.mode = None
 jwb.warn = False
-jwb.keep_free = 100
 jwb.exclude_category = 'VODSJJMeetings'
 parser.parse_args(namespace=jwb)
 
