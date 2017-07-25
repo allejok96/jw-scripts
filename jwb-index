@@ -22,8 +22,8 @@ add_arguments(parser, ['--quiet',
                        '--limit-rate',
                        '--checksum',
                        '--no-checksum',
-                       '--no-warning'
-                       '--free'
+                       '--no-warning',
+                       '--free',
                        'work_dir'])
 # TODO
 # parser.add_argument('--config')
