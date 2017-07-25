@@ -170,7 +170,7 @@ def clean_symlinks(d, clean_all=False):
     for sd in os.listdir(d):
         sd = pj(d, sd)
         if os.path.isdir(sd):
-            for L in os.listdir(sd):
-                L = pj(sd, L)
-                if clean_all or os.path.lexists(L):
-                    os.remove(L)
+            for f in os.listdir(sd):
+                f = pj(sd, f)
+                if clean_all or os.path.lexists(f):
+                    os.remove(f)

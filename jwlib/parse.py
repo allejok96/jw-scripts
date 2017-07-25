@@ -282,7 +282,10 @@ class JWBroadcasting:
         :param wd: directory where files will be saved
         """
         exclude = self.exclude_category.split(',')
-        media_list = [x for cat in self.result if cat.key not in exclude or cat.home for x in cat.content if not x.iscategory]
+        media_list = [x for cat in self.result
+                      if cat.key not in exclude or cat.home
+                      for x in cat.content
+                      if not x.iscategory]
         media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
 
         for media in media_list:
@@ -299,8 +302,9 @@ class JWBroadcasting:
                 needed = media.size + self.keep_free
                 if space > needed:
                     break
-                print('free space: {:} MB, needed: {:} MB'.format(space // 1000 ** 2, needed // 1000 ** 2), file=stderr)
-                _delete_oldest(wd, media.date)
+                if self.quiet == 0:
+                    print('free space: {:} MB, needed: {:} MB'.format(space//1000**2, needed//1000**2), file=stderr)
+                delete_oldest(wd, media.date)
 
             # Download the video
             media.file = self.download_media(media, wd)
@@ -412,7 +416,7 @@ def _curl(url, file, resume=False, rate_limit='0'):
     subprocess.call(proc, stderr=stderr)
 
 
-def _delete_oldest(wd, upcoming_time):
+def delete_oldest(wd, upcoming_time):
     """Delete the oldest .mp4 file in the work_dir
 
     Exit if oldest video is newer than or equal to upcoming_time.
@@ -423,7 +427,7 @@ def _delete_oldest(wd, upcoming_time):
     videos = []
     for f in os.listdir(wd):
         f = os.path.join(wd, f)
-        if f.endswith('.mp4') and os.path.isfile(f):
+        if f.lower().endswith('.mp4') and os.path.isfile(f):
             videos.append((f, os.stat(f).st_mtime))
     if len(videos) == 0:
         raise(RuntimeError('cannot free any disk space, no videos found'))
