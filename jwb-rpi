@@ -96,7 +96,7 @@ class VideoManager:
 
     def list_videos(self):
         """Return a list of all MP4 files in working dir"""
-        v = [f for f in os.listdir(self.wd) if f.endswith('.mp4') if os.path.isfile(os.path.join(self.wd, f))]
+        v = [f for f in os.listdir(self.wd) if f.lower().endswith('.mp4') if os.path.isfile(os.path.join(self.wd, f))]
         return v
 
 
