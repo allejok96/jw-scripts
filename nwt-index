@@ -33,8 +33,9 @@ parser.add_argument('--silver',
                     help='index the 2013 revised NWT')
 
 jw = jwlib.parse.JWPubMedia()
-jw.work_dir = '.'                # This is just to calm down PyCharm
-jw.mode = None                   # as they will get set by parse_args()
+# Default values, not set by JWPubMedia
+jw.work_dir = '.'
+jw.mode = None
 parser.parse_args(namespace=jw)
 
 wd = jw.work_dir

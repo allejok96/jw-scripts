@@ -25,7 +25,8 @@ class JWBroadcasting:
         self.index_category = 'VideoOnDemand'
         self.rate_limit = '1M'
         self.utc_offset = 0
-        self.keep_free = None
+        self.keep_free = 0
+        self.exclude_category = ''
 
         # Will get set by parse()
         # list containing Media objects
@@ -280,7 +281,8 @@ class JWBroadcasting:
 
         :param wd: directory where files will be saved
         """
-        media_list = [x for cat in self.result for x in cat.content if not x.iscategory]
+        exclude = self.exclude_category.split(',')
+        media_list = [x for cat in self.result if cat.key not in exclude for x in cat.content if not x.iscategory]
         media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
 
         for media in media_list:
@@ -292,7 +294,7 @@ class JWBroadcasting:
                 continue
 
             # Clean up until there is enough space
-            while self.keep_free:
+            while self.keep_free > 0:
                 space = shutil.disk_usage(wd).free
                 needed = media.size + self.keep_free
                 if space > needed:

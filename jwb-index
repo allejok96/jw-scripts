@@ -45,15 +45,17 @@ jwlib.arguments.add_arguments(parser, ['--quiet',
 # TODO
 # parser.add_argument('--config')
 parser.add_argument('--category',
-                    default='VideoOnDemand',
                     dest='index_category',
-                    help='category/section to index',
+                    help='comma separated list of categories to index',
                     metavar='CODE')
+parser.add_argument('--exclude',
+                    dest='exclude_category',
+                    metavar='CODE',
+                    help='comma separated list of categories to exclude from download')
 parser.add_argument('--free',
                     type=int,
                     metavar='MB',
                     dest='keep_free',
-                    default=100,
                     help='disk space in MB to keep free')
 parser.add_argument('--no-warning',
                     dest='warn',
@@ -69,9 +71,12 @@ parser.add_argument('--since',
                     help='only index media newer than this date')
 
 jwb = jwlib.parse.JWBroadcasting()
-jwb.work_dir = '.'                   # This is just to calm down PyCharm
-jwb.mode = None                      # as they will get set by parse_args()
-jwb.warn = False                     #
+# Default values, not set by JWBroadcasting
+jwb.work_dir = '.'
+jwb.mode = None
+jwb.warn = False
+jwb.keep_free = 100
+jwb.exclude_category = 'VODSJJMeetings'
 parser.parse_args(namespace=jwb)
 
 wd = jwb.work_dir

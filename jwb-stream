@@ -18,7 +18,6 @@ jwlib.arguments.add_arguments(parser, ['--lang',
 # TODO
 # parser.add_argument('--config')
 parser.add_argument('--channel',
-                    default='OurStudio',
                     dest='channel',
                     choices=['OurStudio', 'Children', 'Teenagers', 'Family', 'ProgramEvents', 'OurActivities',
                              'Ministry', 'OurOrganization', 'Bible', 'Movies', 'MusicVideo', 'IntExp'],
@@ -29,8 +28,9 @@ parser.add_argument('cmd',
                     help='video player command, "{}" gets replaced by starting position in secs')
 
 jwb = jwlib.parse.JWBroadcasting()
-jwb.channel = 'OurStudio'             # This is just to calm down PyCharm
-jwb.cmd = None                        # as they will get set by parse_args()
+# Default values, not set by JWBroadcasting
+jwb.channel = 'OurStudio'
+jwb.cmd = []
 parser.parse_args(namespace=jwb)
 
 jwb.streaming = True
@@ -39,7 +39,7 @@ jwb.utc_offset = (-time.altzone // 60)
 jwb.index_category = 'Streaming' + jwb.channel
 cmd = jwb.cmd
 
-if not cmd:
+if len(cmd) == 0:
     raise RuntimeError("Not enough arguments")
 
 # Replace the occurrences of `{}` with `0` in the command

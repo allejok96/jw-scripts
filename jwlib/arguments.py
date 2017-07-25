@@ -1,23 +1,19 @@
 valid_args = {
     '--quiet': {'action': 'count'},
     '--mode': {
-        'default': None,
         'choices': ['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
         'help': 'output mode',
         'dest': 'mode'},
     '--lang': {
         'nargs': '?',
-        'default': 'E',
         'help': 'language code'},
     '--download': {
         'action': 'store_true',
         'help': 'download media files'},
     '--limit-rate': {
-        'default': '1M',
         'dest': 'rate_limit',
         'help': 'maximum download rate, passed to curl'},
     '--quality': {
-        'default': 720,
         'type': int,
         'choices': [240, 360, 480, 720],
         'help': 'maximum video quality'},
@@ -35,7 +31,6 @@ valid_args = {
         'action': 'store_false'},
     'work_dir': {
         'nargs': '?',
-        'default': '.',
         'metavar': 'DIR',
         'help': 'directory to save data in'}}
 
