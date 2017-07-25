@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+import argparse
+import os
+import shutil
+from sys import stderr
+
+from jwlib.arguments import disk_usage_info, add_arguments
+from jwlib.parse import delete_oldest
+
+parser = argparse.ArgumentParser(prog='jwb-import',
+                                 usage='%(prog)s SOURCE DEST ',
+                                 description='Import new videos from SOURCE')
+add_arguments(parser, ['--free', '--no-warning', '--quiet'])
+parser.add_argument('source',
+                    metavar='SOURCE',
+                    help='source directory')
+parser.add_argument('dest',
+                    metavar='DEST',
+                    help='destination directory')
+args = parser.parse_args()
+
+source = args.source
+dest = args.dest
+
+if args.keep_free:
+    keep_free = args.keep_free * 1024 ** 2  # MiB to B
+else:
+    keep_free = 0
+
+if keep_free > 0:
+    disk_usage_info(dest, keep_free, args.warn, args.quiet)
+
+if not os.path.isdir(dest):
+    os.makedirs(dest)
+
+# Create a list with files sorted by newest first
+files = [(f, os.stat(os.path.join(source, f)).st_mtime) for f in os.listdir(source)]
+files = sorted(files, key=lambda x: x[1], reverse=True)
+files = [f[0] for f in files]
+
+for file in files:
+    sourcef = os.path.join(source, file)
+    destf = os.path.join(dest, file)
+
+    # Only mp4 files
+    if not file.lower().endswith('.mp4') or not os.path.isfile(sourcef):
+        continue
+
+    # Skip deleted
+    if os.path.exists(destf + '.deleted'):
+        continue
+
+    # Skip identical
+    if os.path.exists(destf) and os.stat(destf).st_size == os.stat(sourcef).st_size:
+        continue
+
+    # Clean up until there is enough space
+    while keep_free > 0:
+        space = shutil.disk_usage(dest).free
+        needed = os.stat(sourcef).st_size + keep_free
+        if space > needed:
+            break
+        if args.quiet < 1:
+            print('free space: {:} MiB, needed: {:} MiB'.format(space // 1024 ** 2, needed // 1024 ** 2), file=stderr)
+        delete_oldest(dest, os.stat(sourcef).st_mtime)
+
+    if args.quiet < 1:
+        print('copying: ' + file, file=stderr)
+    shutil.copy2(sourcef, destf)
+
+if args.quiet < 1:
+    print('done', file=stderr)
