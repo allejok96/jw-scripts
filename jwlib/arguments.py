@@ -30,6 +30,10 @@ valid_args = {
     '--no-checksum': {
         'action': 'store_false'},
     'work_dir': {
+        # "default" must be set here, or work_dir will be set to None.
+        # Setting work_dir before calling parse_args() has no effect,
+        # other than making PyCharm satisfied.
+        'default': '.',
         'nargs': '?',
         'metavar': 'DIR',
         'help': 'directory to save data in'}}
