@@ -282,7 +282,7 @@ class JWBroadcasting:
         :param wd: directory where files will be saved
         """
         exclude = self.exclude_category.split(',')
-        media_list = [x for cat in self.result if cat.key not in exclude for x in cat.content if not x.iscategory]
+        media_list = [x for cat in self.result if cat.key not in exclude or cat.home for x in cat.content if not x.iscategory]
         media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
 
         for media in media_list:
