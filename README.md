@@ -1,5 +1,6 @@
 # JW scripts
 
+#### 2017-07-27: ver 1.0: `jwb-import` + lot of overall improvements
 #### 2017-07-24: Chronological download + disk space limit + `jwb-rpi`
 #### 2017-05-23: Ported to Python 3!
 
@@ -27,6 +28,7 @@ Next, click on one of the scripts below for more info.
 * [jwb-stream](https://github.com/allejok96/jw-scripts/wiki/jwb-stream) - Stream from JW Broadcasting in your media player of choice, like **VLC**.
 * [nwt-index](https://github.com/allejok96/jw-scripts/wiki/nwt-index) - Download Bible or publication recordings from JW.ORG, or make playlists.
 * [jwb-rpi](https://github.com/allejok96/jw-scripts/wiki/jwb-rpi) - Play downloaded videos in random order (and some more nice things).
+* [jwb-import](https://github.com/allejok96/jw-scripts/wiki/jwb-import) - Import videos from e.g. USB to use with jwb-rpi.
 
 ## Questions
 
