@@ -12,39 +12,42 @@ import urllib.parse
 
 
 class JWBroadcasting:
+    """
+    Class for parsing and downloading videos from JW Broadcasting
+
+    Tweak the variables, and run :method:`parse` and then :method:`download_all`
+    """
+    __lang = 'E'
+    __mindate = None
+    quality = 720
+    subtitles = False
+    download = False
+    streaming = False
+    quiet = 0
+    checksums = False
+    index_category = 'VideoOnDemand'
+    rate_limit = '1M'
+    keep_free = 0
+    exclude_category = ''
+    # Used if streaming is True
+    utc_offset = 0
 
     def __init__(self):
-        self.__lang = 'E'
-        self.__mindate = None
-        self.quality = 720
-        self.subtitles = False
-        self.download = False
-        self.streaming = False
-        self.quiet = 0
-        self.checksums = False
-        self.index_category = 'VideoOnDemand'
-        self.rate_limit = '1M'
-        self.utc_offset = 0
-        self.keep_free = 0
-        self.exclude_category = ''
-
-        # Will get set by parse()
-        # list containing Media objects
+        # Will populated with Media objects by parse()
         self.result = []
-
         # Used by download_media()
         self._checked_files = set()
 
     @property
     def lang(self):
+        """Language code
+
+        If the code is None, print out a list and exit. If code is invalid, raise ValueError.
+        """
         return self.__lang
 
     @lang.setter
     def lang(self, code=None):
-        """Set language code.
-        
-        If valid the code is invalid, print out a list and exit.
-        """
         url = 'https://mediator.jw.org/v1/languages/E/web'
 
         with urllib.request.urlopen(url) as response:
@@ -55,6 +58,7 @@ class JWBroadcasting:
                 print('language codes:', file=stderr)
                 for lang in sorted(response['languages'], key=lambda x: x['name']):
                     print('{:>3}  {:<}'.format(lang['code'], lang['name']), file=stderr)
+                exit()
             else:
                 # Check if the code is valid
                 for lang in response['languages']:
@@ -64,22 +68,26 @@ class JWBroadcasting:
 
                 raise ValueError(code + ': invalid language code')
 
-            exit()
-
     @property
     def mindate(self):
+        """Minimum date of media
+
+        Set to 'YYYY-MM-DD'. It will be stored as seconds since epoch.
+        """
         return self.__mindate
 
     @mindate.setter
     def mindate(self, date):
-        """Convert human readable date to seconds since epoch."""
         try:
             self.__mindate = time.mktime(time.strptime(date, '%Y-%m-%d'))
         except ValueError:
             raise ValueError('wrong date format')
 
     def parse(self):
-        """Download JSON, and return a list of populated a Category objects."""
+        """Index JW Broadcasting categories recursively
+
+        :return: A list containing Category and Media objects
+        """
         if self.streaming:
             section = 'schedules'
         else:
@@ -100,13 +108,13 @@ class JWBroadcasting:
                     raise ValueError('No such category or language')
 
                 # Add new category to the result, or re-use old one
-                cat = Media(iscategory=True)
+                cat = Category()
                 self.result.append(cat)
                 cat.key = response['category']['key']
                 cat.name = response['category']['name']
                 cat.home = cat.key in self.index_category.split(',')
 
-                if self.quiet == 0:
+                if self.quiet < 1:
                     print('{} ({})'.format(cat.key, cat.name), file=stderr)
 
                 if self.streaming:
@@ -118,10 +126,10 @@ class JWBroadcasting:
                     if 'subcategories' in response['category']:
                         for subcat in response['category']['subcategories']:
                             # Add subcategory to current category
-                            s = Media(iscategory=True)
+                            s = Category()
                             s.key = subcat['key']
                             s.name = subcat['name']
-                            cat.content.append(s)
+                            cat.add(s)
                             # Add subcategory to queue for parsing later
                             if s.key not in queue:
                                 queue.append(s.key)
@@ -157,7 +165,7 @@ class JWBroadcasting:
                                 if self.mindate and d < self.mindate:
                                     continue
 
-                        cat.content.append(m)
+                        cat.add(m)
 
         return self.result
 
@@ -187,8 +195,8 @@ class JWBroadcasting:
 
         Download file, check MD5 sum and size, delete file if it missmatches.
 
-        :param media: A Media instance
-        :param directory: Dir to save the files to
+        :param media: a Media instance
+        :param directory: dir to save the files to
         :return: filename, or None if unsuccessful
         """
         if not os.path.exists(directory) and not self.download:
@@ -255,7 +263,7 @@ class JWBroadcasting:
                 elif fsize < media.size and not resumed:
                     # File is smaller - Resume download once
                     resumed = True
-                    if self.quiet <= 1:
+                    if self.quiet < 2:
                         print('resuming: {} ({})'.format(base + '.part', media.name), file=stderr)
                     _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit)
                 else:
@@ -267,7 +275,7 @@ class JWBroadcasting:
                 # Download whole file once
                 if not downloaded:
                     downloaded = True
-                    if self.quiet <= 1:
+                    if self.quiet < 2:
                         print('downloading: {} ({})'.format(base, media.name), file=stderr)
                     _curl(media.url, file + '.part', rate_limit=self.rate_limit)
                 else:
@@ -302,20 +310,17 @@ class JWBroadcasting:
                 needed = media.size + self.keep_free
                 if space > needed:
                     break
-                if self.quiet == 0:
+                if self.quiet < 1:
                     print('free space: {:} MiB, needed: {:} MiB'.format(space//1024**2, needed//1024**2), file=stderr)
-                delete_oldest(wd, media.date)
+                delete_oldest(wd, media.date, self.quiet)
 
             # Download the video
             media.file = self.download_media(media, wd)
 
 
 class JWPubMedia(JWBroadcasting):
-
-    def __init__(self):
-        super().__init__()
-        self.pub = 'bi12'
-        self.book = 0
+    pub = 'bi12'
+    book = 0
 
     # TODO
     # Make the language validation pull from JW org
@@ -323,7 +328,10 @@ class JWPubMedia(JWBroadcasting):
     # def lang(self, code=None):
 
     def parse(self):
-        """Download JSON, create Media objects and send them to the Output object."""
+        """Index JW org sound recordings
+
+        :return: a list containing Category and Media objects
+        """
         url_template = 'https://apps.jw.org/GETPUBMEDIALINKS' \
                        '?output=json&fileformat=MP3&alllangs=0&langwritten={l}&txtCMSLang={l}&pub={p}'
 
@@ -340,7 +348,7 @@ class JWPubMedia(JWBroadcasting):
         for key in queue:
             url = url_template.format(l=self.lang, p=self.pub, i=key)
 
-            book = Media(iscategory=True)
+            book = Category()
             self.result.append(book)
 
             if self.pub == 'bi12' or self.pub == 'nwt':
@@ -356,7 +364,7 @@ class JWPubMedia(JWBroadcasting):
                 response = json.loads(response.read().decode())
                 book.name = response['pubName']
 
-                if self.quiet == 0:
+                if self.quiet < 1:
                     print('{} ({})'.format(book.key, book.name), file=stderr)
 
                 # For the Bible's index page
@@ -364,10 +372,10 @@ class JWPubMedia(JWBroadcasting):
                 if key == 0 and (self.pub == 'bi12' or self.pub == 'nwt'):
                     for sub_book in response['files'][self.lang]['MP3']:
 
-                        s = Media(iscategory=True)
+                        s = Category()
                         s.key = format(sub_book['booknum'], '02')
                         s.name = sub_book['title']
-                        book.content.append(s)
+                        book.add(s)
 
                         if s.key not in queue:
                             queue.append(s.key)
@@ -383,7 +391,7 @@ class JWPubMedia(JWBroadcasting):
                         if 'filesize' in chptr['file']:
                             m.size = chptr['file']['filesize']
 
-                        book.content.append(m)
+                        book.add(m)
 
         return self.result
 
@@ -398,31 +406,26 @@ def _md5(file):
 
 
 def _curl(url, file, resume=False, rate_limit='0'):
-    """Throttled file download by calling the curl command.
-
-    :param url: URL to be downloaded
-    :param file: File to write to
-    :param resume: Resume download of file
-    :param rate_limit: Rate to pass to curl --limit-rate
-    """
+    """Throttled file download by calling the curl command."""
     proc = ['curl', url, '--silent', '-o', file]
     if resume:
         proc.append('--continue-at')
         proc.append('-')
-    if rate_limit != 0:
+    if rate_limit != '0':
         proc.append('--limit-rate')
         proc.append(rate_limit)
 
     subprocess.call(proc, stderr=stderr)
 
 
-def delete_oldest(wd, upcoming_time):
+def delete_oldest(wd, upcoming_time, quiet=0):
     """Delete the oldest .mp4 file in the work_dir
 
-    Exit if oldest video is newer than or equal to upcoming_time.
+    Exit if oldest video is newer than or equal to :param:`upcoming_time`.
 
-    :param wd: Directory to look for videos
-    :param upcoming_time: Seconds since epoch
+    :param wd: directory to look for videos
+    :param upcoming_time: seconds since epoch
+    :param quiet: info level, 0 = all, 1 = only deleted, 2 = nothing
     """
     videos = []
     for f in os.listdir(wd):
@@ -435,32 +438,45 @@ def delete_oldest(wd, upcoming_time):
     oldest_file, oldest_time = videos[0]
 
     if upcoming_time and upcoming_time <= oldest_time:
-        print('disk limit reached, all videos up to date', file=stderr)
+        if quiet < 1:
+            print('disk limit reached, all videos up to date', file=stderr)
         quit(0)
 
-    print('removing {}'.format(oldest_file), file=stderr)
+    if quiet < 2:
+        print('removing {}'.format(oldest_file), file=stderr)
     os.remove(oldest_file)
     # Add a "deleted" marker
     with open(oldest_file + '.deleted', 'w') as f:
         f.write('')
 
 
+class Category:
+    """Object to put category info in."""
+    iscategory = True
+    key = None
+    name = None
+    # Whether or not this is a "starting point"
+    home = False
+    # Used for streaming
+    position = 0
+
+    def __init__(self):
+        self.content = []
+
+    def add(self, obj):
+        """Add an object to :var:`self.content`
+
+        :param obj: an instance of :class:`Category` for :class:`Media`
+        """
+        self.content.append(obj)
+
+
 class Media:
-    """Object to put media or category info in."""
-    def __init__(self, iscategory=False):
-        self.iscategory = iscategory
-        if iscategory:
-            self.key = None
-            self.name = None
-            self.content = []
-            # Whether or not this is a "starting point"
-            self.home = False
-            # Seconds (only used for streaming)
-            self.position = 0
-        else:
-            self.url = None
-            self.name = None
-            self.md5 = None
-            self.date = None
-            self.size = None
-            self.file = None
+    """Object to put media info in."""
+    iscategory = False
+    url = None
+    name = None
+    md5 = None
+    date = None
+    size = None
+    file = None
