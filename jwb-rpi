@@ -10,19 +10,21 @@ from random import shuffle
 
 
 class VideoManager:
+    """Play video files, keep track of history"""
+    video = None
+    start_time = None
+    pos = 0
+    errors = 0
+    cmd = ('omxplayer', '--pos', '{}')
+
     def __init__(self, wd):
-        """
+        """Initialize self.
 
         :param wd: Working directory
         """
-        self.video = None
-        self.start_time = None
-        self.pos = 0
-        self.history = []
-        self.dump_file = os.path.join(wd, 'dump.json')
         self.wd = wd
-        self.cmd = ['omxplayer', '--pos', '{}']
-        self.errors = 0
+        self.dump_file = os.path.join(wd, 'dump.json')
+        self.history = []
 
     def write_dump(self):
         """Dump data to JSON file"""
