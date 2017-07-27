@@ -15,7 +15,7 @@ class VideoManager:
     start_time = None
     pos = 0
     errors = 0
-    cmd = ('omxplayer', '--pos', '{}')
+    cmd = ('omxplayer', '--pos', '{}', '--no-osd')
 
     def __init__(self, wd):
         """Initialize self.
