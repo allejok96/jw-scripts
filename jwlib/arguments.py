@@ -4,8 +4,11 @@ from argparse import SUPPRESS
 
 
 valid_args = {
-    '--quiet': {'action': 'count',
-                'default': 0},
+    '--quiet': {
+        'alternatives': ['-q'],
+        'action': 'count',
+        'default': 0,
+        'help': 'Less info, can be used multiple times'},
     '--mode': {
         'choices': ['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
         'help': 'output mode',
@@ -66,8 +69,13 @@ def add_arguments(parser, selected_args=None):
     if not selected_args:
         selected_args = valid_args.keys()
 
-    for arg in sorted(selected_args):
-        parser.add_argument(arg, **valid_args[arg])
+    for flag in sorted(selected_args):
+        flags = [flag]
+        # Add alternative flags as positional arguments to add_argument()
+        # Example: add_argument('--quiet', '-q', action=count ...)
+        if 'alternatives' in valid_args[flag]:
+            flags = flags + valid_args[flag].pop('alternatives')
+        parser.add_argument(*flags, **valid_args[flag])
 
 
 def disk_usage_info(wd, keep_free: int, warn=True, quiet=0):
