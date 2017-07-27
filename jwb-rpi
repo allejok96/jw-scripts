@@ -2,6 +2,7 @@
 
 import time
 import os
+from sys import stderr
 import argparse
 import signal
 import subprocess
@@ -75,7 +76,7 @@ class VideoManager:
     def play_video(self):
         """Play a video"""
         self.write_dump()
-        print('playing ' + self.video)
+        print('playing: ' + self.video, file=stderr)
         cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [os.path.join(self.wd, self.video)]
         self.start_time = time.time()
         subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -144,10 +145,10 @@ try:
             showmsg = True
         else:
             if showmsg:
-                print('no videos to play yet')
+                print('no videos to play yet', file=stderr)
                 showmsg = False
             time.sleep(10)
             continue
 except KeyboardInterrupt:
-    print('aborted')
+    print('aborted', file=stderr)
     m.write_dump()

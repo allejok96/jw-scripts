@@ -49,7 +49,6 @@ first = True
 while True:
 
     result = jwb.parse()
-    print(result)
     queue = [item.url for item in result[0].content]
     position = result[0].position
 

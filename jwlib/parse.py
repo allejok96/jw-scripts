@@ -231,7 +231,8 @@ class JWBroadcasting:
                     # File size is OK or unknown - Validate checksum
                     if self.checksums and media.md5 and _md5(file) != media.md5:
                         # Checksum is bad - Remove
-                        print('checksum mismatch, deleting: {}'.format(base), file=stderr)
+                        if self.quiet < 2:
+                            print('checksum mismatch, deleting: {}'.format(base), file=stderr)
                         os.remove(file)
                     else:
                         # Checksum is correct or unknown
@@ -239,7 +240,8 @@ class JWBroadcasting:
                         return file
                 else:
                     # File size is bad - Delete
-                    print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
+                    if self.quiet < 2:
+                        print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
                     os.remove(file)
 
             elif not self.download:
@@ -254,7 +256,8 @@ class JWBroadcasting:
                     # File size is OK - Validate checksum
                     if self.checksums and media.md5 and _md5(file + '.part') != media.md5:
                         # Checksum is bad - Remove
-                        print('checksum mismatch, deleting: {}'.format(base + '.part'), file=stderr)
+                        if self.quiet < 2:
+                            print('checksum mismatch, deleting: {}'.format(base + '.part'), file=stderr)
                         os.remove(file + '.part')
                     else:
                         # Checksum is correct or unknown - Move and approve
@@ -268,7 +271,8 @@ class JWBroadcasting:
                     _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit)
                 else:
                     # File size is bad - Remove
-                    print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
+                    if self.quiet < 2:
+                        print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
                     os.remove(file + '.part')
 
             else:
