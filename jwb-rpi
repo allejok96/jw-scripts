@@ -10,6 +10,10 @@ import json
 from random import shuffle
 
 
+def msg(s):
+    print(s, file=stderr, flush=True)
+
+
 class VideoManager:
     """Play video files, keep track of history"""
     video = None
@@ -76,7 +80,7 @@ class VideoManager:
     def play_video(self):
         """Play a video"""
         self.write_dump()
-        print('playing: ' + self.video, file=stderr)
+        msg('playing: ' + self.video)
         cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [os.path.join(self.wd, self.video)]
         self.start_time = time.time()
         subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -145,10 +149,10 @@ try:
             showmsg = True
         else:
             if showmsg:
-                print('no videos to play yet', file=stderr)
+                msg('no videos to play yet')
                 showmsg = False
             time.sleep(10)
             continue
 except KeyboardInterrupt:
-    print('aborted', file=stderr)
+    msg('aborted')
     m.write_dump()

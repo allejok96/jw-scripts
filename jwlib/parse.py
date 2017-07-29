@@ -11,6 +11,10 @@ import urllib.request
 import urllib.parse
 
 
+def msg(s):
+    print(s, file=stderr, flush=True)
+
+
 class JWBroadcasting:
     """
     Class for parsing and downloading videos from JW Broadcasting
@@ -55,9 +59,9 @@ class JWBroadcasting:
 
             if not code:
                 # Print table of language codes
-                print('language codes:', file=stderr)
+                msg('language codes:')
                 for lang in sorted(response['languages'], key=lambda x: x['name']):
-                    print('{:>3}  {:<}'.format(lang['code'], lang['name']), file=stderr)
+                    msg('{:>3}  {:<}'.format(lang['code'], lang['name']))
                 exit()
             else:
                 # Check if the code is valid
@@ -115,7 +119,7 @@ class JWBroadcasting:
                 cat.home = cat.key in self.index_category.split(',')
 
                 if self.quiet < 1:
-                    print('{} ({})'.format(cat.key, cat.name), file=stderr)
+                    msg('{} ({})'.format(cat.key, cat.name))
 
                 if self.streaming:
                     # Save starting position
@@ -232,7 +236,7 @@ class JWBroadcasting:
                     if self.checksums and media.md5 and _md5(file) != media.md5:
                         # Checksum is bad - Remove
                         if self.quiet < 2:
-                            print('checksum mismatch, deleting: {}'.format(base), file=stderr)
+                            msg('checksum mismatch, deleting: {}'.format(base))
                         os.remove(file)
                     else:
                         # Checksum is correct or unknown
@@ -241,7 +245,7 @@ class JWBroadcasting:
                 else:
                     # File size is bad - Delete
                     if self.quiet < 2:
-                        print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
+                        msg('size mismatch, deleting: {}'.format(base + '.part'))
                     os.remove(file)
 
             elif not self.download:
@@ -257,7 +261,7 @@ class JWBroadcasting:
                     if self.checksums and media.md5 and _md5(file + '.part') != media.md5:
                         # Checksum is bad - Remove
                         if self.quiet < 2:
-                            print('checksum mismatch, deleting: {}'.format(base + '.part'), file=stderr)
+                            msg('checksum mismatch, deleting: {}'.format(base + '.part'))
                         os.remove(file + '.part')
                     else:
                         # Checksum is correct or unknown - Move and approve
@@ -267,12 +271,12 @@ class JWBroadcasting:
                     # File is smaller - Resume download once
                     resumed = True
                     if self.quiet < 2:
-                        print('resuming: {} ({})'.format(base + '.part', media.name), file=stderr)
+                        msg('resuming: {} ({})'.format(base + '.part', media.name))
                     _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit)
                 else:
                     # File size is bad - Remove
                     if self.quiet < 2:
-                        print('size mismatch, deleting: {}'.format(base + '.part'), file=stderr)
+                        msg('size mismatch, deleting: {}'.format(base + '.part'))
                     os.remove(file + '.part')
 
             else:
@@ -280,7 +284,7 @@ class JWBroadcasting:
                 if not downloaded:
                     downloaded = True
                     if self.quiet < 2:
-                        print('downloading: {} ({})'.format(base, media.name), file=stderr)
+                        msg('downloading: {} ({})'.format(base, media.name))
                     _curl(media.url, file + '.part', rate_limit=self.rate_limit)
                 else:
                     # If we get here, all tests have failed.
@@ -315,7 +319,7 @@ class JWBroadcasting:
                 if space > needed:
                     break
                 if self.quiet < 1:
-                    print('free space: {:} MiB, needed: {:} MiB'.format(space//1024**2, needed//1024**2), file=stderr)
+                    msg('free space: {:} MiB, needed: {:} MiB'.format(space//1024**2, needed//1024**2))
                 delete_oldest(wd, media.date, self.quiet)
 
             # Download the video
@@ -369,7 +373,7 @@ class JWPubMedia(JWBroadcasting):
                 book.name = response['pubName']
 
                 if self.quiet < 1:
-                    print('{} ({})'.format(book.key, book.name), file=stderr)
+                    msg('{} ({})'.format(book.key, book.name))
 
                 # For the Bible's index page
                 # Add all books to the queue
@@ -443,11 +447,11 @@ def delete_oldest(wd, upcoming_time, quiet=0):
 
     if upcoming_time and upcoming_time <= oldest_time:
         if quiet < 1:
-            print('disk limit reached, all videos up to date', file=stderr)
+            msg('disk limit reached, all videos up to date')
         quit(0)
 
     if quiet < 2:
-        print('removing {}'.format(oldest_file), file=stderr)
+        msg('removing {}'.format(oldest_file))
     os.remove(oldest_file)
     # Add a "deleted" marker
     with open(oldest_file + '.deleted', 'w') as f:

@@ -8,6 +8,10 @@ from jwlib.arguments import disk_usage_info, add_arguments
 from jwlib.parse import delete_oldest
 
 
+def msg(s):
+    print(s, file=stderr, flush=True)
+
+
 class File:
     def __init__(self, source, dest):
         self.source = source
@@ -62,7 +66,7 @@ total = len(files)
 for f in files:
     i = files.index(f)
     if args.percent:
-        print(i*100//total)
+        print(i*100//total, flush=True)
 
     # Clean up until there is enough space
     while args.keep_free > 0:
@@ -71,15 +75,15 @@ for f in files:
         if space > needed:
             break
         if args.quiet < 1:
-            print('free space: {:} MiB, needed: {:} MiB'.format(space // 1024**2, needed // 1024**2), file=stderr)
+            msg('free space: {:} MiB, needed: {:} MiB'.format(space // 1024**2, needed // 1024**2))
         delete_oldest(args.dest, f.time, args.quiet)
 
     # Copy file
     if args.quiet < 1:
-        print('copying [{}/{}]: {}'.format(i+1, total, os.path.basename(f.source)), file=stderr)
+        msg('copying [{}/{}]: {}'.format(i+1, total, os.path.basename(f.source)))
     shutil.copy2(f.source, f.dest)
 
 if args.percent:
-    print(100)
+    print(100, flush=True)
 if args.quiet < 1:
-    print('done', file=stderr)
+    msg('done')
