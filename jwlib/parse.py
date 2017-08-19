@@ -31,6 +31,7 @@ class JWBroadcasting:
     checksums = False
     index_category = 'VideoOnDemand'
     rate_limit = '1M'
+    curl_path = 'curl'
     keep_free = 0
     exclude_category = ''
     # Used if streaming is True
@@ -272,7 +273,7 @@ class JWBroadcasting:
                     resumed = True
                     if self.quiet < 2:
                         msg('resuming: {} ({})'.format(base + '.part', media.name))
-                    _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit)
+                    _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit, curl_path=self.curl_path)
                 else:
                     # File size is bad - Remove
                     if self.quiet < 2:
@@ -285,7 +286,7 @@ class JWBroadcasting:
                     downloaded = True
                     if self.quiet < 2:
                         msg('downloading: {} ({})'.format(base, media.name))
-                    _curl(media.url, file + '.part', rate_limit=self.rate_limit)
+                    _curl(media.url, file + '.part', rate_limit=self.rate_limit, curl_path=self.curl_path)
                 else:
                     # If we get here, all tests have failed.
                     # Resume and regular download too.
@@ -413,17 +414,31 @@ def _md5(file):
     return hash_md5.hexdigest()
 
 
-def _curl(url, file, resume=False, rate_limit='0'):
+def _curl(url, file, resume=False, rate_limit='0', curl_path='curl'):
     """Throttled file download by calling the curl command."""
-    proc = ['curl', url, '--silent', '-o', file]
-    if resume:
-        proc.append('--continue-at')
-        proc.append('-')
     if rate_limit != '0':
-        proc.append('--limit-rate')
-        proc.append(rate_limit)
+        proc = [curl_path, '--silent', url, '--limit-rate', rate_limit, '-o', file]
 
-    subprocess.call(proc, stderr=stderr)
+        if resume:
+            # Download what is missing at the end of the file
+            proc.append('--continue-at')
+            proc.append('-')
+
+        subprocess.call(proc, stderr=stderr)
+
+    else:
+        # If there is no rate limit, use urllib (for compatibility)
+        request = urllib.request.Request(url)
+        file_mode = 'wb'
+
+        if resume:
+            # Ask server to skip the first N bytes
+            request.add_header('Range', 'bytes={}-'.format(os.stat(file).st_size))
+            # Append data to file, instead of overwriting
+            file_mode = 'ab'
+
+        with open(file, file_mode) as f:
+            f.write(urllib.request.urlopen(url).read())
 
 
 def delete_oldest(wd, upcoming_time, quiet=0):
