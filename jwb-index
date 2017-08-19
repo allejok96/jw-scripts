@@ -48,6 +48,7 @@ parser.add_argument('--limit-rate',
                     help='maximum download rate, passed to curl (0 = no limit and no curl)')
 parser.add_argument('--curl-path',
                     default='curl',
+                    metavar='PATH',
                     help='path to the curl binary')
 
 jwb = JWBroadcasting()

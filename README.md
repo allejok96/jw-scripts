@@ -1,8 +1,9 @@
 # JW scripts
 
-#### 2017-07-27: ver 1.0: `jwb-import` + lot of overall improvements
-#### 2017-07-24: Chronological download + disk space limit + `jwb-rpi`
-#### 2017-05-23: Ported to Python 3!
+##### 2017-08-19: ver 1.1: easier to get working on Windows
+##### 2017-07-27: ver 1.0: `jwb-import` + lot of overall improvements
+##### 2017-07-24: Chronological download + disk space limit + `jwb-rpi`
+##### 2017-05-23: Ported to Python 3!
 
 ---
 
