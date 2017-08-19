@@ -20,13 +20,6 @@ valid_args = {
     '--download': {
         'action': 'store_true',
         'help': 'download media files'},
-    '--limit-rate': {
-        'default': '1M',
-        'dest': 'rate_limit',
-        'help': 'maximum download rate, passed to curl (0 = no limit and no curl)'},
-    '--curl-path': {
-        'default': 'curl',
-        'help': 'path to the curl binary'},
     '--quality': {
         'default': 720,
         'type': int,

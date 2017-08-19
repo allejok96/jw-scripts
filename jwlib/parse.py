@@ -330,6 +330,8 @@ class JWBroadcasting:
 class JWPubMedia(JWBroadcasting):
     pub = 'bi12'
     book = 0
+    # Disable rate limit completely
+    rate_limit = '0'
 
     # TODO
     # Make the language validation pull from JW org
@@ -397,8 +399,8 @@ class JWPubMedia(JWBroadcasting):
                         m = Media()
                         m.url = chptr['file']['url']
                         m.name = chptr['title']
-                        if 'filesize' in chptr['file']:
-                            m.size = chptr['file']['filesize']
+                        if 'filesize' in chptr:
+                            m.size = chptr['filesize']
 
                         book.add(m)
 
@@ -437,8 +439,15 @@ def _curl(url, file, resume=False, rate_limit='0', curl_path='curl'):
             # Append data to file, instead of overwriting
             file_mode = 'ab'
 
+        response = urllib.request.urlopen(request)
+
+        # Write out 1MB at a time, so whole file is not lost if interrupted
         with open(file, file_mode) as f:
-            f.write(urllib.request.urlopen(url).read())
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                f.write(chunk)
 
 
 def delete_oldest(wd, upcoming_time, quiet=0):

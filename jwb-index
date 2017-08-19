@@ -19,7 +19,6 @@ add_arguments(parser, ['--quiet',
                        '--subtitles',
                        '--no-subtitles',
                        '--download',
-                       '--limit-rate',
                        '--checksum',
                        '--no-checksum',
                        '--no-warning',
@@ -43,6 +42,13 @@ parser.add_argument('--latest',
 parser.add_argument('--since',
                     metavar='YYYY-MM-DD',
                     help='only index media newer than this date')
+parser.add_argument('--limit-rate',
+                    default='1M',
+                    dest='rate_limit',
+                    help='maximum download rate, passed to curl (0 = no limit and no curl)')
+parser.add_argument('--curl-path',
+                    default='curl',
+                    help='path to the curl binary')
 
 jwb = JWBroadcasting()
 # Default values, not set by JWBroadcasting

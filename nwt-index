@@ -15,7 +15,6 @@ add_arguments(parser, ['--quiet',
                        '--mode',
                        '--lang',
                        '--download',
-                       '--limit-rate',
                        'work_dir'])
 # TODO
 # parser.add_argument('--config')
