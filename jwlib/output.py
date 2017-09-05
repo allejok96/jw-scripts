@@ -124,10 +124,9 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
         if category.home:
             link = pj(wd, category.name)
             if not os.path.lexists(link):
-                dir_fd = os.open(output_dir, os.O_RDONLY)
                 # Note: the source will be relative
                 source = pj(subdir, category.key)
-                os.symlink(source, link, dir_fd=dir_fd)
+                os.symlink(source, link)
 
         for item in category.content:
             if item.iscategory:
@@ -142,8 +141,7 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
                     link = pj(output_dir, item.name)
 
                 if not os.path.lexists(link):
-                    dir_fd = os.open(output_dir, os.O_RDONLY)
-                    os.symlink(source, link, dir_fd=dir_fd)
+                    os.symlink(source, link)
             
             else:
                 if not item.file:
@@ -154,8 +152,7 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
                 link = pj(output_dir, item.name + ext)
 
                 if not os.path.exists(link):
-                    dir_fd = os.open(output_dir, os.O_RDONLY)
-                    os.symlink(source, link, dir_fd=dir_fd)
+                    os.symlink(source, link)
 
 
 def clean_symlinks(d, clean_all=False):
