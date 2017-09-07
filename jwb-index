@@ -41,6 +41,7 @@ parser.add_argument('--latest',
                     help='index the "Latest Videos" section')
 parser.add_argument('--since',
                     metavar='YYYY-MM-DD',
+                    dest='mindate',
                     help='only index media newer than this date')
 parser.add_argument('--limit-rate',
                     default='1M',
