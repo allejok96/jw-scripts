@@ -31,13 +31,16 @@ valid_args = {
         'help': 'prefer subtitled videos'},
     '--no-subtitles': {
         'action': 'store_false',
-        'dest': 'subtitles'},
+        'dest': 'subtitles',
+        'help': 'prefer un-subtitled videos'},
     '--checksum': {
         'action': 'store_true',
         'dest': 'checksums',
         'help': 'check md5 checksum'},
     '--no-checksum': {
-        'action': 'store_false'},
+        'action': 'store_false',
+        'dest': 'checksums',
+        'help': 'don\'t check md5 checksum'},
     '--free': {
         'default': 0,
         'type': int,
@@ -88,7 +91,7 @@ def disk_usage_info(wd, keep_free: int, warn=True, quiet=0):
     makedirs(wd,exist_ok=True)
     free = disk_usage(wd).free
 
-    if quiet == 0:
+    if quiet < 1:
         print('free space: {:} MiB, minimum limit: {:} MiB'.format(free//1024**2, keep_free//1024**2), file=stderr)
 
     if warn and free < keep_free:

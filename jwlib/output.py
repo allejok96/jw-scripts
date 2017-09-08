@@ -169,23 +169,24 @@ def clean_symlinks(d, clean_all=False, quiet=0):
 
     :param d: Path to directory to clean
     :param clean_all: Remove non-broken symlinks too
+    :param quiet: Log level (int)
     """
-    try:
-        for subdir in os.listdir(d):
+    if not os.path.isdir(d):
+        return
+
+    for subdir in os.listdir(d):
             subdir = pj(d, subdir)
+            if not os.path.isdir(subdir):
+                continue
+
             for file in os.listdir(subdir):
                 file = pj(subdir, file)
-                # If file is not a symlink it will raise OSError
-                try:
-                    source = pj(subdir, os.readlink(file))
-                except OSError:
+                if not os.path.islink(file):
                     continue
 
-                # Remove broken links
+                source = pj(subdir, os.readlink(file))
+
                 if clean_all or not os.path.exists(source):
                     if quiet < 2:
-                        print('removing broken link: ' + os.path.basename(file), file=stderr)
+                        print('removing link: ' + os.path.basename(file), file=stderr)
                     os.remove(file)
-
-    except (NotADirectoryError, FileNotFoundError):
-        pass

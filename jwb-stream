@@ -14,7 +14,8 @@ parser = argparse.ArgumentParser(prog='jwb-stream',
 add_arguments(parser, ['--lang',
                        '--quality',
                        '--subtitles',
-                       '--no-subtitles'])
+                       #'--no-subtitles'
+                       ])
 # TODO
 # parser.add_argument('--config')
 parser.add_argument('--channel',

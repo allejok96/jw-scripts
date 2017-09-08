@@ -12,14 +12,15 @@ parser = argparse.ArgumentParser(prog='jwb-index',
                                  usage='%(prog)s [options] [DIR]',
                                  description='Index or download media from tv.jw.org')
 
+# The commented out options would only be valid with a --config file
 add_arguments(parser, ['--quiet',
                        '--mode',
                        '--lang',
                        '--quality',
                        '--subtitles',
-                       '--no-subtitles',
+                       #'--no-subtitles',
                        '--download',
-                       '--checksum',
+                       #'--checksum',
                        '--no-checksum',
                        '--no-warning',
                        '--free',
@@ -51,12 +52,17 @@ parser.add_argument('--curl-path',
                     default='curl',
                     metavar='PATH',
                     help='path to the curl binary')
+parser.add_argument('--clean-symlinks',
+                    dest='clean',
+                    action='store_true',
+                    help='remove all old symlinks (only valid with --mode=filesystem)')
 
 jwb = JWBroadcasting()
 # Default values, not set by JWBroadcasting
 jwb.work_dir = '.'
 jwb.mode = None
 jwb.warn = False
+jwb.clean = False
 jwb.exclude_category = 'VODSJJMeetings'
 parser.parse_args(namespace=jwb)
 
@@ -87,7 +93,7 @@ elif mode == 'm3u':
 elif mode == 'm3ucompat':
     jo.output_m3u(r, wd, subdir, flat=True)
 elif mode == 'filesystem':
-    jo.clean_symlinks(os.path.join(wd, subdir), quiet=jwb.quiet)
+    jo.clean_symlinks(os.path.join(wd, subdir), quiet=jwb.quiet, clean_all=jwb.clean)
     jo.output_filesystem(r, wd, subdir)
 elif mode == 'html':
     jo.output_html(r, wd, subdir)
