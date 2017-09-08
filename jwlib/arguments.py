@@ -1,4 +1,5 @@
-import shutil
+from os import makedirs
+from shutil import disk_usage
 from sys import stderr
 from argparse import SUPPRESS
 
@@ -82,7 +83,11 @@ def disk_usage_info(wd, keep_free: int, warn=True, quiet=0):
     :param warn: Show warning when keep_free seems too low
     :param quiet: Show disk usage information
     """
-    free = shutil.disk_usage(wd).free
+    # We create a directory here to prevent FileNotFoundError
+    # if someone specified --free without --download they are dumb
+    makedirs(wd,exist_ok=True)
+    free = disk_usage(wd).free
+
     if quiet == 0:
         print('free space: {:} MiB, minimum limit: {:} MiB'.format(free//1024**2, keep_free//1024**2), file=stderr)
 
