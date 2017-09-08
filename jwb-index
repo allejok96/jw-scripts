@@ -87,7 +87,7 @@ elif mode == 'm3u':
 elif mode == 'm3ucompat':
     jo.output_m3u(r, wd, subdir, flat=True)
 elif mode == 'filesystem':
-    jo.clean_symlinks(os.path.join(wd, subdir))
+    jo.clean_symlinks(os.path.join(wd, subdir), quiet=jwb.quiet)
     jo.output_filesystem(r, wd, subdir)
 elif mode == 'html':
     jo.output_html(r, wd, subdir)

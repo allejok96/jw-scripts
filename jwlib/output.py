@@ -1,4 +1,5 @@
 import os
+from sys import stderr
 
 pj = os.path.join
 
@@ -6,12 +7,14 @@ pj = os.path.join
 def _truncate_file(file, string=''):
     """Create a file and the parent directories."""
     d = os.path.dirname(file)
-    if not os.path.exists(d):
-        os.makedirs(d, exist_ok=True)
+    os.makedirs(d, exist_ok=True)
 
     # Don't truncate non-empty files
-    if os.path.exists(file) and os.stat(file).st_size != 0:
-        return
+    try:
+        if os.stat(file).st_size != 0:
+            return
+    except FileNotFoundError:
+        pass
 
     with open(file, 'w') as f:
         f.write(string)
@@ -75,8 +78,10 @@ def output_m3u(categories, wd, subdir, writer=_write_to_m3u, flat=False, file_en
             output_file = pj(wd, subdir, category.key + file_ending)
 
         # Since we want to start on a clean file, remove the old one
-        if os.path.exists(output_file):
+        try:
             os.remove(output_file)
+        except FileNotFoundError:
+            pass
 
         for item in category.content:
             if item.iscategory:
@@ -117,22 +122,22 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
         
         # Create the directory
         output_dir = pj(wd, subdir, category.key)
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
             link = pj(wd, category.name)
-            if not os.path.lexists(link):
-                # Note: the source will be relative
-                source = pj(subdir, category.key)
+            # Note: the source will be relative
+            source = pj(subdir, category.key)
+            try:
                 os.symlink(source, link)
+            except FileExistsError:
+                pass
 
         for item in category.content:
             if item.iscategory:
                 d = pj(wd, subdir, item.key)
-                if not os.path.exists(d):
-                    os.makedirs(d)
+                os.makedirs(d, exist_ok=True)
 
                 source = pj('..', item.key)
                 if include_keyname:
@@ -140,8 +145,10 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
                 else:
                     link = pj(output_dir, item.name)
 
-                if not os.path.lexists(link):
+                try:
                     os.symlink(source, link)
+                except FileExistsError:
+                    pass
             
             else:
                 if not item.file:
@@ -151,23 +158,34 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
                 ext = os.path.splitext(item.file)[1]
                 link = pj(output_dir, item.name + ext)
 
-                if not os.path.exists(link):
+                try:
                     os.symlink(source, link)
+                except FileExistsError:
+                    pass
 
 
-def clean_symlinks(d, clean_all=False):
+def clean_symlinks(d, clean_all=False, quiet=0):
     """Clean out broken symlinks from dir
 
     :param d: Path to directory to clean
     :param clean_all: Remove non-broken symlinks too
     """
-    if not os.path.exists(d):
-        return
+    try:
+        for subdir in os.listdir(d):
+            subdir = pj(d, subdir)
+            for file in os.listdir(subdir):
+                file = pj(subdir, file)
+                # If file is not a symlink it will raise OSError
+                try:
+                    source = pj(subdir, os.readlink(file))
+                except OSError:
+                    continue
 
-    for sd in os.listdir(d):
-        sd = pj(d, sd)
-        if os.path.isdir(sd):
-            for f in os.listdir(sd):
-                f = pj(sd, f)
-                if clean_all or os.path.lexists(f):
-                    os.remove(f)
+                # Remove broken links
+                if clean_all or not os.path.exists(source):
+                    if quiet < 2:
+                        print('removing broken link: ' + os.path.basename(file), file=stderr)
+                    os.remove(file)
+
+    except (NotADirectoryError, FileNotFoundError):
+        pass
