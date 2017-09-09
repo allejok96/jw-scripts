@@ -1,12 +1,5 @@
 # JW scripts
 
-##### 2017-08-19: ver 1.1: easier to get working on Windows
-##### 2017-07-27: ver 1.0: `jwb-import` + lot of overall improvements
-##### 2017-07-24: Chronological download + disk space limit + `jwb-rpi`
-##### 2017-05-23: Ported to Python 3!
-
----
-
 ### JW Broadcasting and sound recordings anywhere
 
 With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of [publications at JW.ORG](https://www.jw.org/en/publications/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine by playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline.
