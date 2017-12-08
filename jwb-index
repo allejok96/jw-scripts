@@ -47,11 +47,16 @@ parser.add_argument('--since',
 parser.add_argument('--limit-rate',
                     default='1M',
                     dest='rate_limit',
-                    help='maximum download rate, passed to curl (0 = no limit and no curl)')
+                    help='maximum download rate, passed to curl (0 = no limit)')
 parser.add_argument('--curl-path',
                     default='curl',
                     metavar='PATH',
                     help='path to the curl binary')
+parser.add_argument('--no-curl',
+                    action='store_const',
+                    const=None,
+                    dest='curl_path',
+                    help='use urllib instead of external curl (compatibility)')
 parser.add_argument('--clean-symlinks',
                     dest='clean',
                     action='store_true',

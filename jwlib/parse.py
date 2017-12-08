@@ -354,6 +354,10 @@ class JWPubMedia(JWBroadcasting):
     book = 0
     # Disable rate limit completely
     rate_limit = '0'
+    # Disable curl
+    # Since downloads of sound is so small it seems more worth
+    # to stay compatible (urllib) than fancy (curl with progress bar)
+    curl_path = None
 
     # TODO
     # Make the language validation pull from JW org
@@ -440,14 +444,16 @@ def _md5(file):
 
 def _curl(url, file, resume=False, rate_limit='0', curl_path='curl', progress=False):
     """Throttled file download by calling the curl command."""
-    if rate_limit != '0':
-        proc = [curl_path, url, '--limit-rate', rate_limit, '-o', file]
+    if curl_path:
+        proc = [curl_path, url, '-o', file]
 
+        if rate_limit != '0':
+            proc.append('--limit-rate')
+            proc.append(rate_limit)
         if progress:
             proc.append('--progress-bar')
         else:
             proc.append('--silent')
-
         if resume:
             # Download what is missing at the end of the file
             proc.append('--continue-at')
