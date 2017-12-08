@@ -195,13 +195,14 @@ class JWBroadcasting:
         videos = sorted(videos, reverse=True, key=lambda v: v['subtitled'] == self.subtitles)
         return videos[0]
 
-    def download_media(self, media, directory):
+    def download_media(self, media, directory, check_only=False):
         """Download media file and check it.
 
         Download file, check MD5 sum and size, delete file if it missmatches.
 
         :param media: a Media instance
         :param directory: dir to save the files to
+        :param check_only: bool, True means no downloading
         :return: filename, or None if unsuccessful
         """
         if not os.path.exists(directory) and not self.download:
@@ -249,7 +250,7 @@ class JWBroadcasting:
                         msg('size mismatch, deleting: {}'.format(base + '.part'))
                     os.remove(file)
 
-            elif not self.download:
+            elif check_only:
                 # The rest of this method is only applicable in download mode
                 return None
 
@@ -273,7 +274,7 @@ class JWBroadcasting:
                     resumed = True
                     if self.quiet < 2:
                         msg('resuming: {} ({})'.format(base + '.part', media.name))
-                    _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit, curl_path=self.curl_path)
+                    _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit, curl_path=self.curl_path, progress=self.quiet < 1)
                 else:
                     # File size is bad - Remove
                     if self.quiet < 2:
@@ -286,11 +287,13 @@ class JWBroadcasting:
                     downloaded = True
                     if self.quiet < 2:
                         msg('downloading: {} ({})'.format(base, media.name))
-                    _curl(media.url, file + '.part', rate_limit=self.rate_limit, curl_path=self.curl_path)
+                    _curl(media.url, file + '.part', rate_limit=self.rate_limit, curl_path=self.curl_path, progress=self.quiet < 1)
                 else:
                     # If we get here, all tests have failed.
                     # Resume and regular download too.
                     # There is nothing left to do.
+                    if self.quiet < 2:
+                        msg('failed to download: {} ({})'.format(base, media.name))
                     return None
 
     def download_all(self, wd):
@@ -305,6 +308,8 @@ class JWBroadcasting:
                       if not x.iscategory]
         media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
 
+        # Trim down the list of files that need to be downloaded
+        download_list = []
         for media in media_list:
             # Skip previously deleted files
             f = urllib.parse.urlparse(media.url).path
@@ -312,6 +317,21 @@ class JWBroadcasting:
             f = os.path.join(wd, f + '.deleted')
             if os.path.exists(f):
                 continue
+
+            # Delete broken files
+            media.file = self.download_media(media, wd, check_only=True)
+
+            # Skip correct files
+            if media.file:
+                continue
+
+            download_list.append(media)
+
+        if not self.download:
+            return
+
+        # Download all files
+        for media in download_list:
 
             # Clean up until there is enough space
             while self.keep_free > 0:
@@ -324,6 +344,8 @@ class JWBroadcasting:
                 delete_oldest(wd, media.date, self.quiet)
 
             # Download the video
+            if self.quiet < 2:
+                print('[{}/{}]'.format(download_list.index(media) + 1, len(download_list)), end=' ', file=stderr)
             media.file = self.download_media(media, wd)
 
 
@@ -416,10 +438,15 @@ def _md5(file):
     return hash_md5.hexdigest()
 
 
-def _curl(url, file, resume=False, rate_limit='0', curl_path='curl'):
+def _curl(url, file, resume=False, rate_limit='0', curl_path='curl', progress=False):
     """Throttled file download by calling the curl command."""
     if rate_limit != '0':
-        proc = [curl_path, '--silent', url, '--limit-rate', rate_limit, '-o', file]
+        proc = [curl_path, url, '--limit-rate', rate_limit, '-o', file]
+
+        if progress:
+            proc.append('--progress-bar')
+        else:
+            proc.append('--silent')
 
         if resume:
             # Download what is missing at the end of the file
