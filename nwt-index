@@ -44,7 +44,7 @@ if not mode and not jw.download:
     print('please use --mode or --download', file=stderr)
     exit(1)
 
-if mode == 'stdout' or mode == 'none':
+if not mode or mode == 'stdout':
     subdir = ''
 
 r = jw.parse()
