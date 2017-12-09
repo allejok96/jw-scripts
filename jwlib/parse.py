@@ -52,8 +52,8 @@ class JWBroadcasting:
         return self.__lang
 
     @lang.setter
-    def lang(self, code=None):
-        url = 'https://mediator.jw.org/v1/languages/E/web'
+    def lang(self, code):
+        url = 'https://data.jw-api.org/mediator/v1/languages/E/web?clientType=tvjworg'
 
         with urllib.request.urlopen(url) as response:
             response = json.loads(response.read().decode())
@@ -103,8 +103,8 @@ class JWBroadcasting:
 
         for key in queue:
 
-            url = 'https://mediator.jw.org/v1/{s}/{l}/{c}?detailed=1&utcOffset={o}'
-            url = url.format(s=section, l=self.lang, c=key, o=self.utc_offset)
+            url = 'https://data.jw-api.org/mediator/v1/{s}/{L}/{c}?detailed=1&clientType=tvjworg&utcOffset={o}'
+            url = url.format(s=section, L=self.lang, c=key, o=self.utc_offset)
 
             with urllib.request.urlopen(url) as response:
                 response = json.loads(response.read().decode())
@@ -274,7 +274,12 @@ class JWBroadcasting:
                     resumed = True
                     if self.quiet < 2:
                         msg('resuming: {} ({})'.format(base + '.part', media.name))
-                    _curl(media.url, file + '.part', resume=True, rate_limit=self.rate_limit, curl_path=self.curl_path, progress=self.quiet < 1)
+                    _curl(media.url,
+                          file + '.part',
+                          resume=True,
+                          rate_limit=self.rate_limit,
+                          curl_path=self.curl_path,
+                          progress=self.quiet < 1)
                 else:
                     # File size is bad - Remove
                     if self.quiet < 2:
@@ -287,7 +292,11 @@ class JWBroadcasting:
                     downloaded = True
                     if self.quiet < 2:
                         msg('downloading: {} ({})'.format(base, media.name))
-                    _curl(media.url, file + '.part', rate_limit=self.rate_limit, curl_path=self.curl_path, progress=self.quiet < 1)
+                    _curl(media.url,
+                          file + '.part',
+                          rate_limit=self.rate_limit,
+                          curl_path=self.curl_path,
+                          progress=self.quiet < 1)
                 else:
                     # If we get here, all tests have failed.
                     # Resume and regular download too.
@@ -358,11 +367,9 @@ class JWPubMedia(JWBroadcasting):
     # Since downloads of sound is so small it seems more worth
     # to stay compatible (urllib) than fancy (curl with progress bar)
     curl_path = None
-
-    # TODO
-    # Make the language validation pull from JW org
-    # @lang.setter
-    # def lang(self, code=None):
+    # This creates a local name for lang, and overwrites the setter/getter
+    # property inherited from JWBroadcasting
+    lang = 'E'
 
     def parse(self):
         """Index JW org sound recordings
@@ -370,7 +377,7 @@ class JWPubMedia(JWBroadcasting):
         :return: a list containing Category and Media objects
         """
         url_template = 'https://apps.jw.org/GETPUBMEDIALINKS' \
-                       '?output=json&fileformat=MP3&alllangs=0&langwritten={l}&txtCMSLang={l}&pub={p}'
+                       '?output=json&fileformat=MP3&alllangs={a}&langwritten={L}&txtCMSLang={L}&pub={p}'
 
         # Watchtower/Awake reference is split up into pub and issue
         magazine_match = re.match('(wp?|g)([0-9]+)', self.pub)
@@ -382,8 +389,28 @@ class JWPubMedia(JWBroadcasting):
             url_template = url_template + '&booknum={i}'
             queue = [self.book]
 
+        # Check language code
+        # This must be done after the magazine stuff
+        # We want the languages for THAT publication only, or else the list gets SOO long
+        # The language is checked on the first pub in the queue
+        url = url_template.format(L='E', p=self.pub, i=queue[0], a='1')
+
+        with urllib.request.urlopen(url) as response:
+            response = json.loads(response.read().decode())
+
+            if not self.lang:
+                # Print table of language codes
+                msg('language codes:')
+                for lang in sorted(response['languages'], key=lambda x: response['languages'][x]['name']):
+                    msg('{:>3}  {:<}'.format(lang, response['languages'][lang]['name']))
+                exit()
+            else:
+                # Check if the code is valid
+                if self.lang not in response['languages']:
+                    raise ValueError(self.lang + ': invalid language code')
+
         for key in queue:
-            url = url_template.format(l=self.lang, p=self.pub, i=key)
+            url = url_template.format(L=self.lang, p=self.pub, i=key, a=0)
 
             book = Category()
             self.result.append(book)

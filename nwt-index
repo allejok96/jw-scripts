@@ -35,19 +35,21 @@ jw = JWPubMedia()
 jw.work_dir = '.'
 jw.mode = None
 parser.parse_args(namespace=jw)
-
-wd = jw.work_dir
-subdir = jw.pub + '-' + jw.lang
 mode = jw.mode
 
+r = jw.parse()
+
+# Since the language check is done inside jw.parse() we do it before the rest of the checks
 if not mode and not jw.download:
     print('please use --mode or --download', file=stderr)
     exit(1)
 
+wd = jw.work_dir
+subdir = jw.pub + '-' + jw.lang
+
 if not mode or mode == 'stdout':
     subdir = ''
 
-r = jw.parse()
 jw.download_all(os.path.join(wd, subdir))
 
 if not mode:
