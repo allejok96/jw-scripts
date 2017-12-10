@@ -228,11 +228,6 @@ class JWBroadcasting:
                 if media.date:
                     os.utime(file, (media.date, media.date))
 
-                # Since the same files can occur in multiple categories
-                # only check each file once
-                if file in self._checked_files:
-                    return file
-
                 if os.path.getsize(file) == media.size or not media.size:
                     # File size is OK or unknown - Validate checksum
                     if self.checksums and media.md5 and _md5(file) != media.md5:
@@ -242,7 +237,6 @@ class JWBroadcasting:
                         os.remove(file)
                     else:
                         # Checksum is correct or unknown
-                        self._checked_files.add(file)
                         return file
                 else:
                     # File size is bad - Delete
@@ -267,8 +261,8 @@ class JWBroadcasting:
                         os.remove(file + '.part')
                     else:
                         # Checksum is correct or unknown - Move and approve
-                        self._checked_files.add(file)
                         os.rename(file + '.part', file)
+                        return file
                 elif fsize < media.size and not resumed:
                     # File is smaller - Resume download once
                     resumed = True
@@ -319,7 +313,16 @@ class JWBroadcasting:
 
         # Trim down the list of files that need to be downloaded
         download_list = []
+        checked_files = []
+
         for media in media_list:
+            # Only run this check once per filename
+            base = urllib.parse.urlparse(media.url).path
+            base = os.path.basename(base)
+            if base in checked_files:
+                continue
+            checked_files.append(base)
+
             # Skip previously deleted files
             f = urllib.parse.urlparse(media.url).path
             f = os.path.basename(f)
@@ -327,14 +330,11 @@ class JWBroadcasting:
             if os.path.exists(f):
                 continue
 
-            # Delete broken files
+            # Search for local media and delete broken files
             media.file = self.download_media(media, wd, check_only=True)
 
-            # Skip correct files
-            if media.file:
-                continue
-
-            download_list.append(media)
+            if not media.file:
+                download_list.append(media)
 
         if not self.download:
             return
