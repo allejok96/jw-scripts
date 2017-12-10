@@ -36,7 +36,7 @@ parser.parse_args(namespace=jwb)
 
 jwb.streaming = True
 jwb.quiet = 1
-jwb.utc_offset = (-time.altzone // 60)
+jwb.utc_offset = time.localtime().tm_gmtoff // 60
 jwb.index_category = 'Streaming' + jwb.channel
 cmd = jwb.cmd
 
