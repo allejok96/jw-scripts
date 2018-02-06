@@ -146,15 +146,19 @@ class JWBroadcasting:
                             if 'WebExclude' in response['category']['media']['tags']:
                                 continue
 
-                        video = self._get_best_video(media['files'])
+                        if 'type' in media and media['type'] == 'audio':
+                            # Simply pick first audio stream for the time being...
+                            mediafile = media['files'][0]
+                        else:
+                            mediafile = self._get_best_video(media['files'])
 
                         m = Media()
-                        m.url = video['progressiveDownloadURL']
+                        m.url = mediafile['progressiveDownloadURL']
                         m.name = media['title']
-                        if 'checksum' in video:
-                            m.md5 = video['checksum']
-                        if 'filesize' in video:
-                            m.size = video['filesize']
+                        if 'checksum' in mediafile:
+                            m.md5 = mediafile['checksum']
+                        if 'filesize' in mediafile:
+                            m.size = mediafile['filesize']
 
                         # Save time data (not needed when streaming)
                         if 'firstPublished' in media and not self.streaming:
