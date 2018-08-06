@@ -1,5 +1,13 @@
 # JW scripts
 
+## Please read this first!
+
+**These are _unofficial_ methods of acessing JW Broadcasting and more. While they tecnically may be legal, they are not recommended. Neither by me, nor by the organization. And the organization provides no support whatsoever for them. I can't guarantee that they will work 100% either. Feel free to use them on your own risk, if you find it worth the time and pain, but please read the article below before you make up your mind.**
+
+**https://wol.jw.org/en/wol/d/r1/lp-e/2018364**
+
+Then consider buing a device which supports the official version of the JW Broadcasting app. Like a Roku, Apple TV or Amazon Fire TV...
+
 ### JW Broadcasting and sound recordings anywhere
 
 With these scripts you can get the latest [JW Broadcasting](http://tv.jw.org/) videos automatically downloaded to your Plex library, or painlessly stream sound recordings of [publications at JW.ORG](https://www.jw.org/en/publications/) to your phone, or via Kodi. You can turn a Raspberry Pi into a JW streaming machine by playing the [online stream](http://tv.jw.org/#en/live/StreamingOurStudio), or automatically downloading the latest videos and playing them offline.
@@ -28,7 +36,7 @@ Next, click on one of the scripts below for more info.
 
 #### Isn't there an easier way to watch JW Broadcasting in Kodi?
 
-YES. There is. Please take a look at this [unofficial JW Broadcasting add-on](http://ca0abinary.github.io/plugin.video.jwtv-unofficial/).
+NOPE. The addon has been taken down by the author for good reasons.
 
 #### Why is the video download so slow?
 
