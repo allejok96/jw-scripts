@@ -1,12 +1,6 @@
 # JW scripts
 
-## Please read this first!
-
-**These are _unofficial_ methods of acessing JW Broadcasting and more. While they tecnically may be legal, they are not recommended. Neither by me, nor by the organization. And the organization provides no support whatsoever for them. I can't guarantee that they will work 100% either. Feel free to use them on your own risk, if you find it worth the time and pain, but please read the article below before you make up your mind.**
-
-**https://wol.jw.org/en/wol/d/r1/lp-e/2018364**
-
-Then consider buing a device which supports the official version of the JW Broadcasting app. Like a Roku, Apple TV or Amazon Fire TV...
+*These methods of acessing tv.jw.org are, while legal, not officially supported by the organisation. Use them if you find it worth the time, pain and risk. But first, please take the time to read [w18.04 30-31](https://wol.jw.org/en/wol/d/r1/lp-e/2018364). Then consider buing a device which has official support for JW Broadcasting app. Like a Roku, Apple TV or Amazon Fire TV. It will give you a better and safer experience.*
 
 ### JW Broadcasting and sound recordings anywhere
 
@@ -36,7 +30,7 @@ Next, click on one of the scripts below for more info.
 
 #### Isn't there an easier way to watch JW Broadcasting in Kodi?
 
-NOPE. The addon has been taken down by the author for good reasons.
+Yes, I'm keeping an add-on alive [here](https://github.com/allejok96/plugin.video.jwb-unofficial).
 
 #### Why is the video download so slow?
 
@@ -49,6 +43,8 @@ It seems to be realated to the `--limit-rate` flag ([why?](https://github.com/al
 Yes. The [Terms of Service](http://www.jw.org/en/terms-of-use/) allows:
 
 > distribution of free, non-commercial applications designed to download electronic files (for example, EPUB, PDF, MP3, AAC, MOBI, and MP4 files) from public areas of this site.
+
+I've also been in contact with the Scandinavian branch office, and they have confirmed that using software like this is legal according to the ToS.
 
 #### Why doesn't this do XYZ?
 
