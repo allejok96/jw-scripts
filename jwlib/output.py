@@ -1,7 +1,10 @@
 import os
 from sys import stderr
+import re
 
 pj = os.path.join
+
+SAFE_FILE_NAMES = False
 
 
 def _truncate_file(file, string=''):
@@ -62,14 +65,14 @@ def output_m3u(categories, wd, subdir, writer=_write_to_m3u, flat=False, file_en
 
         if flat:
             # Flat mode, all files in working dir
-            output_file = pj(wd, category.key + ' - ' + category.name + file_ending)
+            output_file = pj(wd, category.key + ' - ' + _filter_filename(category.name) + file_ending)
             source_prepend_dir = subdir
         elif category.home:
             # For home/index/starting categories
             # The current file gets saved outside the subdir
             # Links point inside the subdir
             source_prepend_dir = subdir
-            output_file = pj(wd, category.name + file_ending)
+            output_file = pj(wd, _filter_filename(category.name) + file_ending)
         else:
             # For all other categories
             # Things get saved inside the subdir
@@ -126,7 +129,7 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
-            link = pj(wd, category.name)
+            link = pj(wd, _filter_filename(category.name))
             # Note: the source will be relative
             source = pj(subdir, category.key)
             try:
@@ -135,33 +138,42 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
                 pass
 
         for item in category.content:
+
             if item.iscategory:
                 d = pj(wd, subdir, item.key)
                 os.makedirs(d, exist_ok=True)
-
                 source = pj('..', item.key)
-                if include_keyname:
-                    link = pj(output_dir, item.key + ' - ' + item.name)
-                else:
-                    link = pj(output_dir, item.name)
 
-                try:
-                    os.symlink(source, link)
-                except FileExistsError:
-                    pass
-            
+                if include_keyname:
+                    link = pj(output_dir, item.key + ' - ' + _filter_filename(item.name))
+                else:
+                    link = pj(output_dir, _filter_filename(item.name))
+
             else:
                 if not item.file:
                     continue
 
                 source = pj('..', os.path.basename(item.file))
                 ext = os.path.splitext(item.file)[1]
-                link = pj(output_dir, item.name + ext)
+                link = pj(output_dir, _filter_filename(item.name + ext))
 
-                try:
-                    os.symlink(source, link)
-                except FileExistsError:
-                    pass
+            try:
+                os.symlink(source, link)
+            except FileExistsError:
+                pass
+
+
+def _filter_filename(name):
+    """Remove unsafe characters from file names"""
+
+    if SAFE_FILE_NAMES:
+        # NTFS/FAT forbidden characters
+        regex = '[<>:"|?*/\\\\\0]'
+    else:
+        # Unix forbidden characters
+        regex = '[/\\\\\0]'
+
+    return re.sub(regex, '', name)
 
 
 def clean_symlinks(d, clean_all=False, quiet=0):
