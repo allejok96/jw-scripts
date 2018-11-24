@@ -61,6 +61,10 @@ parser.add_argument('--clean-symlinks',
                     dest='clean',
                     action='store_true',
                     help='remove all old symlinks (only valid with --mode=filesystem)')
+parser.add_argument('--ntfs',
+                    dest='ntfs',
+                    action='store_true',
+                    help='remove special characters from file names (NTFS/FAT compatibility)')
 
 jwb = JWBroadcasting()
 # Default values, not set by JWBroadcasting
@@ -68,6 +72,7 @@ jwb.work_dir = '.'
 jwb.mode = None
 jwb.warn = False
 jwb.clean = False
+jwb.ntfs = False
 jwb.exclude_category = 'VODSJJMeetings'
 parser.parse_args(namespace=jwb)
 
@@ -88,6 +93,9 @@ if jwb.keep_free and jwb.keep_free > 0:
 
 r = jwb.parse()
 jwb.download_all(os.path.join(wd, subdir))
+
+if jwb.ntfs:
+    jo.SAFE_FILE_NAMES = True
 
 if not mode:
     pass
