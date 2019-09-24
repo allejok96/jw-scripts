@@ -104,7 +104,7 @@ def output_m3u(categories, wd, subdir, writer=_write_to_m3u, flat=False, file_en
 def _write_to_html(source, name, file):
     """Write a HTML file with a hyperlink to a media file."""
     _truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>')
-    with open(file, 'a') as f:
+    with open(file, 'a', encoding='utf-8') as f:
         f.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
 
 
