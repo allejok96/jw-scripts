@@ -49,7 +49,7 @@ def _write_to_m3u(source, name, file):
     _truncate_file(file, string='#EXTM3U\n')
     with open(file, 'a') as f:
         f.write('#EXTINF:0,' + name + '\n' + source + '\n')
-        
+
 
 def output_m3u(categories, wd, subdir, writer=_write_to_m3u, flat=False, file_ending='.m3u'):
     """Create a M3U playlist tree.
@@ -104,7 +104,7 @@ def output_m3u(categories, wd, subdir, writer=_write_to_m3u, flat=False, file_en
 def _write_to_html(source, name, file):
     """Write a HTML file with a hyperlink to a media file."""
     _truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>')
-    with open(file, 'a') as f:
+    with open(file, 'a', encoding='utf-8') as f:
         f.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
 
 
@@ -122,7 +122,7 @@ def output_filesystem(categories, wd, subdir, include_keyname=False):
     :param include_keyname: If categories will have keyname prepended
     """
     for category in categories:
-        
+
         # Create the directory
         output_dir = pj(wd, subdir, category.key)
         os.makedirs(output_dir, exist_ok=True)
