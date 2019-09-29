@@ -26,13 +26,17 @@ valid_args = {
         'type': int,
         'choices': [240, 360, 480, 720],
         'help': 'maximum video quality'},
-    '--subtitles': {
-        'action': 'store_true',
-        'help': 'prefer subtitled videos'},
-    '--no-subtitles': {
-        'action': 'store_false',
+    '--subtitles-only': {
         'dest': 'subtitles',
-        'help': 'prefer un-subtitled videos'},
+        'action': 'store_true',
+        'help': 'get only subtitles if available'},
+    '--title': {
+        'action': 'store_true',
+        'help': 'set filename title friendly'},
+    '--burned-subtitles': {
+        'dest': 'burned_subtitles',
+        'action': 'store_true',
+        'help': 'prefer burned subtitles videos'},
     '--checksum': {
         'action': 'store_true',
         'dest': 'checksums',

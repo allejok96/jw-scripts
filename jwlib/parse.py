@@ -25,10 +25,12 @@ class JWBroadcasting:
     __mindate = None
     quality = 720
     subtitles = False
+    burned_subtitles = False
     download = False
     streaming = False
     quiet = 0
     checksums = False
+    title = False
     index_category = 'VideoOnDemand'
     rate_limit = '1M'
     curl_path = 'curl'
@@ -153,12 +155,19 @@ class JWBroadcasting:
                             mediafile = self._get_best_video(media['files'])
 
                         m = Media()
-                        m.url = mediafile['progressiveDownloadURL']
                         m.name = media['title']
-                        if 'checksum' in mediafile:
-                            m.md5 = mediafile['checksum']
-                        if 'filesize' in mediafile:
-                            m.size = mediafile['filesize']
+                        if self.subtitles:
+                            subs = self._get_subs(media['files'])
+                            if 'url' in subs:
+                                m.url = subs['url']
+                            if 'checksum' in subs:
+                                m.md5 = subs['checksum']
+                        else:
+                            m.url = mediafile['progressiveDownloadURL']
+                            if 'checksum' in mediafile:
+                                m.md5 = mediafile['checksum']
+                            if 'filesize' in mediafile:
+                                m.size = mediafile['filesize']
 
                         # Save time data (not needed when streaming)
                         if 'firstPublished' in media and not self.streaming:
@@ -178,6 +187,12 @@ class JWBroadcasting:
 
         return self.result
 
+    def _get_subs(self, video_list: list):
+        for video in video_list:
+            if 'subtitles' in video:
+                return video['subtitles']
+        return {}
+
     def _get_best_video(self, video_list: list):
         """Take a list of media files and metadata and return the best one"""
 
@@ -196,8 +211,9 @@ class JWBroadcasting:
 
         # Sort by quality and subtitle setting
         videos = sorted(videos, reverse=True, key=lambda v: v['label'])
-        videos = sorted(videos, reverse=True, key=lambda v: v['subtitled'] == self.subtitles)
-        return videos[0]
+        videos = sorted(videos, reverse=True, key=lambda v: v['subtitled'] == self.burned_subtitles)
+        best_video = videos[0]
+        return best_video
 
     def download_media(self, media, directory, check_only=False):
         """Download media file and check it.
@@ -215,13 +231,20 @@ class JWBroadcasting:
         os.makedirs(directory, exist_ok=True)
 
         base = urllib.parse.urlparse(media.url).path
-        base = os.path.basename(base)
+        if self.title:
+            file_extension = os.path.splitext(os.path.basename(base))[-1]
+            title = media.name.replace('"', "'").replace(':', '.')
+            base = ''.join(c if c.isalnum() or c in ".-_()¡!¿';, " else '' \
+                           for c in title \
+                           ) + file_extension
+        else:
+            base = os.path.basename(base)
         file = os.path.join(directory, base)
 
         # Only try resuming and downloading once
         resumed = False
         downloaded = False
-
+        progressbar = False if self.subtitles else self.quiet < 1
         while True:
 
             if os.path.exists(file):
@@ -277,7 +300,8 @@ class JWBroadcasting:
                           resume=True,
                           rate_limit=self.rate_limit,
                           curl_path=self.curl_path,
-                          progress=self.quiet < 1)
+                          progress=progressbar,
+                          )
                 else:
                     # File size is bad - Remove
                     if self.quiet < 2:
@@ -287,14 +311,15 @@ class JWBroadcasting:
             else:
                 # Download whole file once
                 if not downloaded:
-                    downloaded = True
                     if self.quiet < 2:
                         msg('downloading: {} ({})'.format(base, media.name))
                     _curl(media.url,
                           file + '.part',
                           rate_limit=self.rate_limit,
                           curl_path=self.curl_path,
-                          progress=self.quiet < 1)
+                          progress=progressbar,
+                          )
+                    downloaded = True
                 else:
                     # If we get here, all tests have failed.
                     # Resume and regular download too.
@@ -320,6 +345,8 @@ class JWBroadcasting:
         checked_files = []
 
         for media in media_list:
+            if not media.url:
+                continue
             # Only run this check once per filename
             base = urllib.parse.urlparse(media.url).path
             base = os.path.basename(base)
