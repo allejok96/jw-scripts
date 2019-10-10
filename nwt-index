@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-import argparse
 import os
 from sys import stderr
 
-from jwlib.arguments import add_arguments
-from jwlib.parse import JWPubMedia
+from jwlib import JWPubMedia, DefaultArgumentParser, JWOutputFactory
 import jwlib.output as jo
 
-
-parser = argparse.ArgumentParser(prog='nwt-index',
-                                 usage='%(prog)s [options] [DIR]',
-                                 description='Index or download sound recordings from jw.org')
-add_arguments(parser, ['--quiet',
-                       '--mode',
-                       '--lang',
-                       '--download',
-                       'work_dir'])
+parser = DefaultArgumentParser(prog='nwt-index',
+                               usage='%(prog)s [options] [DIR]',
+                               description='Index or download sound recordings from jw.org')
+parser.add_default_arguments(['--quiet',
+                              '--mode',
+                              '--lang',
+                              '--download',
+                              'work_dir'])
 # TODO
 # parser.add_argument('--config')
 parser.add_argument('--book',
@@ -37,7 +34,7 @@ jw.mode = None
 parser.parse_args(namespace=jw)
 mode = jw.mode
 
-r = jw.parse()
+data = jw.parse()
 
 # Since the language check is done inside jw.parse() we do it before the rest of the checks
 if not mode and not jw.download:
@@ -52,16 +49,8 @@ if not mode or mode == 'stdout':
 
 jw.download_all(os.path.join(wd, subdir))
 
-if not mode:
-    pass
-elif mode == 'stdout':
-    jo.output_stdout(r, wd)
-elif mode == 'm3u':
-    jo.output_m3u(r, wd, subdir)
-elif mode == 'm3ucompat':
-    jo.output_m3u(r, wd, subdir, flat=True)
-elif mode == 'filesystem':
+if mode == 'filesystem':
     jo.clean_symlinks(os.path.join(wd, subdir), quiet=jw.quiet)
-    jo.output_filesystem(r, wd, subdir, include_keyname=True)
-elif mode == 'html':
-    jo.output_html(r, wd, subdir)
+
+output = JWOutputFactory(data, include_keyname=True)
+output.run(mode, wd, subdir)
