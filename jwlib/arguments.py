@@ -92,7 +92,7 @@ def disk_usage_info(wd, keep_free: int, warn=True, quiet=0):
     """
     # We create a directory here to prevent FileNotFoundError
     # if someone specified --free without --download they are dumb
-    makedirs(wd,exist_ok=True)
+    makedirs(wd, exist_ok=True)
     free = disk_usage(wd).free
 
     if quiet < 1:

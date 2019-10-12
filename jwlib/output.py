@@ -187,18 +187,18 @@ def clean_symlinks(d, clean_all=False, quiet=0):
         return
 
     for subdir in os.listdir(d):
-            subdir = pj(d, subdir)
-            if not os.path.isdir(subdir):
+        subdir = pj(d, subdir)
+        if not os.path.isdir(subdir):
+            continue
+
+        for file in os.listdir(subdir):
+            file = pj(subdir, file)
+            if not os.path.islink(file):
                 continue
 
-            for file in os.listdir(subdir):
-                file = pj(subdir, file)
-                if not os.path.islink(file):
-                    continue
+            source = pj(subdir, os.readlink(file))
 
-                source = pj(subdir, os.readlink(file))
-
-                if clean_all or not os.path.exists(source):
-                    if quiet < 2:
-                        print('removing link: ' + os.path.basename(file), file=stderr)
-                    os.remove(file)
+            if clean_all or not os.path.exists(source):
+                if quiet < 2:
+                    print('removing link: ' + os.path.basename(file), file=stderr)
+                os.remove(file)

@@ -15,6 +15,9 @@ add_arguments(parser, ['--quiet',
                        '--mode',
                        '--lang',
                        '--download',
+                       '--quality',
+                       '--checksum',
+                       '--no-checksum',
                        'work_dir'])
 # TODO
 # parser.add_argument('--config')
@@ -29,6 +32,9 @@ parser.add_argument('--silver',
                     const='nwt',
                     dest='pub',
                     help='index the 2013 revised NWT')
+parser.add_argument('--type',
+                    choices=['video', 'audio', 'pdf', 'zip', 'rtf', 'epub+zip'],
+                    help='mimetype')
 
 jw = JWPubMedia()
 # Default values, not set by JWPubMedia

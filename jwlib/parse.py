@@ -389,96 +389,6 @@ class JWBroadcasting:
             media.file = self.download_media(media, wd)
 
 
-class JWSigns(JWBroadcasting):
-    pub = 'nwt'
-    book = 0
-    # Disable rate limit completely
-    rate_limit = '0'
-    # Disable curl
-    # Since downloads of sound is so small it seems more worth
-    # to stay compatible (urllib) than fancy (curl with progress bar)
-    curl_path = None
-    # This creates a local name for lang, and overwrites the setter/getter
-    # property inherited from JWBroadcasting
-    lang = ''
-
-    def parse(self):
-        """Index JW org video recordings
-
-        :return: a list containing Category and Media objects
-        """
-        url_template = 'https://apps.jw.org/GETPUBMEDIALINKS' \
-                       '?output=json&alllangs={a}' \
-                       '&langwritten={L}&txtCMSLang={L}&pub={p}&booknum={i}'
-        # Check language code
-        # This must be done after the magazine stuff
-        # We want the languages for THAT publication only, or else the list gets SOO long
-        # The language is checked on the first pub in the queue
-        if self.book == 0 and self.pub == 'nwt':
-            queue = range(1, 67)
-        else:
-            queue = [self.book]
-
-        url = url_template.format(L='E', CMSL='E', p=self.pub, i=queue[0], a='1')
-
-        with urllib.request.urlopen(url) as response:
-            response = json.loads(response.read().decode())
-
-            if not self.lang:
-                # Print table of language codes
-                msg('select an available language codes:')
-                for lang in sorted(response['languages'], key=lambda x: response['languages'][x]['name']):
-                    msg('{:>3}  {:<}'.format(lang, response['languages'][lang]['name']))
-                exit()
-            else:
-                # Check if the code is valid
-                if self.lang not in response['languages']:
-                    raise ValueError(self.lang + ': invalid language code')
-
-        for key in queue:
-            url = url_template.format(L=self.lang, p=self.pub, i=key, a=0)
-
-            book = Category()
-            self.result.append(book)
-
-            if self.pub == 'bi12' or self.pub == 'nwt':
-                book.key = format(int(key), '02')
-                # This is the starting point if the value in the queue
-                # is the same as the one the user specified
-                book.home = key == self.book
-            else:
-                book.key = self.pub
-                book.home = True
-
-            with urllib.request.urlopen(url) as response:
-                response = json.loads(response.read().decode())
-                book.name = response['pubName']
-
-                if self.quiet < 1:
-                    msg('{} ({})'.format(book.key, book.name))
-
-                # For the Bible's index page
-                # Add all books to the queue
-                for fileformat in response['files'][self.lang]:
-                    for chptr in response['files'][self.lang][fileformat]:
-                        # Skip the ZIP
-                        if not chptr['mimetype'].startswith('video'):
-                            continue
-
-                        m = Media()
-                        m.url = chptr['file']['url']
-                        m.name = chptr['title']
-                        if 'filesize' in chptr:
-                            m.size = chptr['filesize']
-                        if 'checksum' in chptr['file']:
-                            m.md5 = chptr['file']['checksum']
-                        book.add(m)
-                        print(m.url)
-
-        return self.result
-
-
-
 class JWPubMedia(JWBroadcasting):
     pub = 'bi12'
     book = 0
@@ -487,10 +397,12 @@ class JWPubMedia(JWBroadcasting):
     # Disable curl
     # Since downloads of sound is so small it seems more worth
     # to stay compatible (urllib) than fancy (curl with progress bar)
-    curl_path = None
+    curl_path = 'curl'
     # This creates a local name for lang, and overwrites the setter/getter
     # property inherited from JWBroadcasting
     lang = 'E'
+    type = 'audio'
+    quality = 720
 
     def parse(self):
         """Index JW org sound recordings
@@ -498,8 +410,8 @@ class JWPubMedia(JWBroadcasting):
         :return: a list containing Category and Media objects
         """
         url_template = 'https://apps.jw.org/GETPUBMEDIALINKS' \
-                       '?output=json&fileformat=MP3&alllangs={a}&langwritten={L}&txtCMSLang={L}&pub={p}'
-
+                       '?output=json&alllangs={a}&langwritten={L}&txtCMSLang={L}&pub={p}'
+        rawpub = self.pub
         # Watchtower/Awake reference is split up into pub and issue
         magazine_match = re.match('(wp?|g)([0-9]+)', self.pub)
         if magazine_match:
@@ -515,24 +427,21 @@ class JWPubMedia(JWBroadcasting):
         # We want the languages for THAT publication only, or else the list gets SOO long
         # The language is checked on the first pub in the queue
         url = url_template.format(L='E', p=self.pub, i=queue[0], a='1')
-
+        # print(url)
         with urllib.request.urlopen(url) as response:
             response = json.loads(response.read().decode())
 
-            if not self.lang:
-                # Print table of language codes
+                # Check if the code is valid
+            if self.lang not in response['languages']:
                 msg('language codes:')
                 for lang in sorted(response['languages'], key=lambda x: response['languages'][x]['name']):
                     msg('{:>3}  {:<}'.format(lang, response['languages'][lang]['name']))
+                raise ValueError(self.lang + ': invalid language code')
                 exit()
-            else:
-                # Check if the code is valid
-                if self.lang not in response['languages']:
-                    raise ValueError(self.lang + ': invalid language code')
-
+        bare = True
         for key in queue:
             url = url_template.format(L=self.lang, p=self.pub, i=key, a=0)
-
+            # print('URL:', url)
             book = Category()
             self.result.append(book)
 
@@ -544,40 +453,44 @@ class JWPubMedia(JWBroadcasting):
             else:
                 book.key = self.pub
                 book.home = True
+            try:
+                with urllib.request.urlopen(url) as response:
+                    response = json.loads(response.read().decode())
+                    book.name = response['pubName']
 
-            with urllib.request.urlopen(url) as response:
-                response = json.loads(response.read().decode())
-                book.name = response['pubName']
+                    if self.quiet < 1:
+                        msg('{} ({})'.format(book.key, book.name))
 
-                if self.quiet < 1:
-                    msg('{} ({})'.format(book.key, book.name))
+                    # For the Bible's index page
+                    # Add all books to the queue
+                    if key == 0 and (self.pub == 'bi12' or self.pub == 'nwt'):
+                        for i in range(1, 67):
+                            queue.append(i)
 
-                # For the Bible's index page
-                # Add all books to the queue
-                if key == 0 and (self.pub == 'bi12' or self.pub == 'nwt'):
-                    for sub_book in response['files'][self.lang]['MP3']:
+                    for fileformat in response['files'][self.lang]:
+                        for chptr in response['files'][self.lang][fileformat]:
+                            if self.type == 'video' and \
+                                    int(chptr['label'][:-1]) != self.quality:
+                                # not match quality
+                                continue
+                            # match mimetype
+                            if chptr['mimetype'].startswith(self.type) or \
+                                    chptr['mimetype'].endswith(self.type):
+                                m = Media()
+                                m.url = chptr['file']['url']
+                                m.name = chptr['title']
+                                m.md5 = chptr['file']['checksum']
+                                if 'filesize' in chptr:
+                                    m.size = chptr['filesize']
 
-                        s = Category()
-                        s.key = format(sub_book['booknum'], '02')
-                        s.name = sub_book['title']
-                        book.add(s)
+                                book.add(m)
+                                bare = False
 
-                        if s.key not in queue:
-                            queue.append(s.key)
-                else:
-                    for chptr in response['files'][self.lang]['MP3']:
-                        # Skip the ZIP
-                        if chptr['mimetype'] != 'audio/mpeg':
-                            continue
-
-                        m = Media()
-                        m.url = chptr['file']['url']
-                        m.name = chptr['title']
-                        if 'filesize' in chptr:
-                            m.size = chptr['filesize']
-
-                        book.add(m)
-
+            except urllib.error.HTTPError:
+                pass
+        if bare:
+            msg(f'It seems that there are no {self.type} files in {self.lang} language '
+                f'for {rawpub} publication')
         return self.result
 
 
