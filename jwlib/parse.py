@@ -56,7 +56,7 @@ class JWBroadcasting:
         url = 'https://data.jw-api.org/mediator/v1/languages/E/web?clientType=tvjworg'
 
         with urllib.request.urlopen(url) as response:
-            response = json.loads(response.read().decode())
+            response = json.loads(response.read().decode('utf-8'))
 
             if not code:
                 # Print table of language codes
@@ -107,7 +107,7 @@ class JWBroadcasting:
             url = url.format(s=section, L=self.lang, c=key, o=self.utc_offset)
 
             with urllib.request.urlopen(url) as response:
-                response = json.loads(response.read().decode())
+                response = json.loads(response.read().decode('utf-8'))
 
                 if 'status' in response and response['status'] == '404':
                     raise ValueError('No such category or language')
@@ -400,7 +400,7 @@ class JWPubMedia(JWBroadcasting):
         url = url_template.format(L='E', p=self.pub, i=queue[0], a='1')
 
         with urllib.request.urlopen(url) as response:
-            response = json.loads(response.read().decode())
+            response = json.loads(response.read().decode('utf-8'))
 
             if not self.lang:
                 # Print table of language codes
@@ -429,7 +429,7 @@ class JWPubMedia(JWBroadcasting):
                 book.home = True
 
             with urllib.request.urlopen(url) as response:
-                response = json.loads(response.read().decode())
+                response = json.loads(response.read().decode('utf-8'))
                 book.name = response['pubName']
 
                 if self.quiet < 1:
