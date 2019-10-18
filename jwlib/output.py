@@ -19,7 +19,7 @@ def _truncate_file(file, string=''):
     except FileNotFoundError:
         pass
 
-    with open(file, 'w') as f:
+    with open(file, 'w', encoding='utf-8') as f:
         f.write(string)
 
 
@@ -47,7 +47,7 @@ def output_stdout(categories, wd, uniq=False):
 def _write_to_m3u(source, name, file):
     """Write entry to a M3U playlist file."""
     _truncate_file(file, string='#EXTM3U\n')
-    with open(file, 'a') as f:
+    with open(file, 'a', encoding='utf-8') as f:
         f.write('#EXTINF:0,' + name + '\n' + source + '\n')
         
 
