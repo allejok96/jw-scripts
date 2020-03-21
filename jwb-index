@@ -10,24 +10,19 @@ from jwlib.output import create_output
 
 parser = DefaultArgumentParser(prog='jwb-index',
                                usage='%(prog)s [options] [DIR]',
-                               description='Index or download media from tv.jw.org')
+                               description='Index or download media from jw.org')
 
-# The commented out options would only be valid with a --config file
 parser.add_default_arguments(['--quiet',
                               '--mode',
                               '--lang',
                               '--languages',
                               '--quality',
-                              '--subtitles',
-                              # '--no-subtitles',
-                              '--download',
-                              # '--checksum',
+                              '--hard-subtitles',
                               '--no-checksum',
                               '--no-warning',
                               '--free',
                               'work_dir'])
-# TODO
-# parser.add_argument('--config')
+
 parser.add_argument('--category', '-c',
                     default='VideoOnDemand',
                     action=action_factory(lambda x: tuple(x.split(','))),
@@ -70,11 +65,21 @@ parser.add_argument('--ntfs',
                     action='store_true',
                     dest='safe_filenames',
                     help='remove special characters from file names (NTFS/FAT compatibility)')
+parser.add_argument('--download', '-d',
+                    choices=['media', 'subtitles', 'friendly-subtitles'],
+                    nargs='?',
+                    const='media',
+                    help='download media files or subtitles'),
 settings = parser.parse_args()
 
 if not settings.mode and not settings.download:
     print('please use --mode or --download', file=stderr)
     exit(1)
+
+# Convert download options to bools (what a mess)
+settings.download_subtitles = settings.download in ('subtitles', 'friendly-subtitles')
+settings.friendly_subtitle_filenames = settings.download == 'friendly-subtitles'
+settings.download = settings.download == 'media'
 
 # Warning if disk space is already below limit
 if settings.download and settings.keep_free > 0:
@@ -85,10 +90,11 @@ data = parse_broadcasting(settings)
 if not data:
     exit()
 
+# Put data in a sub dir
 if settings.mode not in (None, 'stdout'):
     settings.sub_dir = 'jwb-' + settings.lang
 
-if settings.download:
+if settings.download or settings.download_subtitles:
     download_all(settings, data)
 
 if settings.mode:

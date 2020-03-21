@@ -5,10 +5,11 @@ import hashlib
 import subprocess
 import urllib.request
 import urllib.parse
-from typing import List
+from typing import List, Optional
 
 from .parse import msg, Category, Media
 from .arguments import JwbSettings
+from .output import format_filename
 
 
 def download_all(s: JwbSettings, data: List[Category]):
@@ -21,6 +22,16 @@ def download_all(s: JwbSettings, data: List[Category]):
                   for x in cat.contents
                   if isinstance(x, Media)]
     media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
+
+    if s.download_subtitles:
+        subtitle_list = [m for m in media_list if m.subtitle_url]
+        for media in subtitle_list:
+            if s.quiet < 2:
+                print('[{}/{}]'.format(subtitle_list.index(media) + 1, len(subtitle_list)), end=' ', file=stderr)
+            download_subtitles(s, media, wd)
+
+    if not s.download:
+        return
 
     # Trim down the list of files that need to be downloaded
     download_list = []
@@ -37,14 +48,10 @@ def download_all(s: JwbSettings, data: List[Category]):
         if os.path.exists(os.path.join(wd, name + '.deleted')):
             continue
 
-        # Search for local media and delete broken files
+        # Search for local media and delete broken files before initiating the download
         media.file = download_media(s, media, wd, check_only=True)
-
         if not media.file:
             download_list.append(media)
-
-    if not s.download:
-        return
 
     # Download all files
     for media in download_list:
@@ -64,6 +71,24 @@ def download_all(s: JwbSettings, data: List[Category]):
         media.file = download_media(s, media, wd)
 
 
+def download_subtitles(s: JwbSettings, media: Media, directory: str):
+    """Download VTT files from Media
+
+    :param s: Global settings
+    :param media: a Media instance
+    :param directory: dir to save the files to
+    """
+    os.makedirs(directory, exist_ok=True)
+
+    basename = _urlbasename(media.subtitle_url)
+    if s.friendly_subtitle_filenames:
+        suffix = os.path.splitext(basename)[1]
+        basename = format_filename(media.name + suffix, safe=s.safe_filenames)
+    if s.quiet < 2:
+        msg('downloading: {}'.format(basename, media.name))
+    _curl(media.subtitle_url, file=os.path.join(directory, basename), curl_path=None)
+
+
 def download_media(s: JwbSettings, media: Media, directory: str, check_only=False):
     """Download media file and check it.
 
@@ -80,7 +105,7 @@ def download_media(s: JwbSettings, media: Media, directory: str, check_only=Fals
     os.makedirs(directory, exist_ok=True)
 
     basename = _urlbasename(media.url)
-    file = os.path.join(directory, _urlbasename(media.url))
+    file = os.path.join(directory, basename)
 
     # Only try resuming and downloading once
     resumed = False
@@ -181,7 +206,7 @@ def _md5(file: str):
     return hash_md5.hexdigest()
 
 
-def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path='curl', progress=False):
+def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional[str] = 'curl', progress=False):
     """Throttled file download by calling the curl command."""
     if curl_path:
         proc = [curl_path, url, '-o', file]

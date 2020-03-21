@@ -18,7 +18,7 @@ class JwbSettings:
     # API parsing stuff
     lang = 'E'
     quality = 1080
-    subtitles = False
+    hard_subtitles = False
     min_date = None  # type: int
     include_categories = ()  # type: Tuple[str]
     exclude_categories = ()  # type: Tuple[str]
@@ -30,6 +30,8 @@ class JwbSettings:
 
     # Download stuff
     download = False
+    download_subtitles = False
+    friendly_subtitle_filenames = False
     curl_path = 'curl'
     rate_limit = '0'
     checksums = True
@@ -125,17 +127,9 @@ class DefaultArgumentParser(argparse.ArgumentParser):
             'type': int,
             'choices': [240, 360, 480, 720],
             'help': 'maximum video quality'},
-        '--subtitles': {
+        '--hard-subtitles': {
             'action': 'store_true',
-            'help': 'prefer subtitled videos'},
-        '--no-subtitles': {
-            'action': 'store_false',
-            'dest': 'subtitles',
-            'help': 'prefer un-subtitled videos'},
-        '--checksum': {
-            'action': 'store_true',
-            'dest': 'checksums',
-            'help': 'check md5 checksum'},
+            'help': 'prefer videos with hard-coded subtitles'},
         '--no-checksum': {
             'action': 'store_false',
             'dest': 'checksum',

@@ -28,6 +28,7 @@ class Media:
     date = None  # type: int
     size = None  # type: int
     file = None  # type: str
+    subtitle_url = None  # type: str
 
 
 def msg(s):
@@ -118,7 +119,7 @@ def parse_broadcasting(s: JwbSettings):
                         j_media_file = j_media['files'][0]
                     else:
                         # Note: empty list will raise IndexError
-                        j_media_file = get_best_video(j_media['files'], quality=s.quality, subtitles=s.subtitles)
+                        j_media_file = get_best_video(j_media['files'], quality=s.quality, subtitles=s.hard_subtitles)
                 except IndexError:
                     continue
 
@@ -127,6 +128,8 @@ def parse_broadcasting(s: JwbSettings):
                 media.name = j_media['title']
                 media.md5 = j_media_file.get('checksum')
                 media.size = j_media_file.get('filesize')
+                if j_media_file.get('subtitles'):
+                    media.subtitle_url = j_media_file['subtitles']['url']
 
                 # Save time data
                 if 'firstPublished' in j_media:
