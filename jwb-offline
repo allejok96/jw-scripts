@@ -122,7 +122,7 @@ def handler(signal, frame):
 signal.signal(signal.SIGTERM, handler)
 
 
-parser = argparse.ArgumentParser(prog='jwb-rpi',
+parser = argparse.ArgumentParser(prog='jwb-offline',
                                  usage='%(prog)s [DIR] [COMMAND]',
                                  description='Shuffle and play videos in DIR')
 parser.add_argument('dir',

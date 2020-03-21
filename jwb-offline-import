@@ -27,7 +27,7 @@ class LocalSettings(Settings):
     dest = None
 
 
-parser = ArgumentParser(prog='jwb-import',
+parser = ArgumentParser(prog='jwb-offline-import',
                         usage='%(prog)s SOURCE DEST ',
                         description='Copy new videos from SOURCE to DEST')
 

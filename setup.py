@@ -10,5 +10,5 @@ setup(
     license='GPL',
     packages=['jwlib'],
     install_requires=['urllib3'],
-    scripts=['jwb-index', 'jwb-stream', 'jwb-rpi', 'jwb-import']
+    scripts=['jwb-index', 'jwb-stream', 'jwb-offline', 'jwb-offline-import']
 )
