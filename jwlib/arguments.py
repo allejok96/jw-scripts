@@ -124,6 +124,7 @@ class ArgumentParser(argparse.ArgumentParser):
                        action=action_factory(verify_language),
                        help='language code')
         add_predefined('--languages',
+                       nargs=0,
                        action=action_factory(print_language),
                        help='display a list of valid language codes')
         add_predefined('--quality', '-Q', type=int,
