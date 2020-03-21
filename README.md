@@ -8,7 +8,7 @@ With these scripts you can get the latest JW Broadcasting videos automatically d
 
 ## Get started
 
-*For Windows 10 instructions, click [here](https://github.com/allejok96/jw-scripts/wiki/Installation#installation-on-windows-10).*
+*For other installations methods, click [here](https://github.com/allejok96/jw-scripts/wiki/Installation).*
 
 Fisrt make sure to install `python-setuptools` or `python3-setuptools` depending on your distro.
 
@@ -17,6 +17,10 @@ Install the scripts
     git clone https://github.com/allejok96/jw-scripts.git
     cd jw-scripts
     sudo python3 setup.py install
+
+Then go ahead and get your latest videos...
+
+    jwb-index --download --latest ~/Videos
 
 Next, click on one of the scripts below for more info.
 
