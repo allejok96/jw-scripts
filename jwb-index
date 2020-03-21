@@ -2,14 +2,14 @@
 import time
 from sys import stderr
 
-from jwlib.arguments import DefaultArgumentParser
+from jwlib.arguments import ArgumentParser
 from jwlib.parse import parse_broadcasting
 from jwlib.download import download_all, disk_usage_info
 from jwlib.output import create_output
 
-parser = DefaultArgumentParser(prog='jwb-index',
-                               usage='%(prog)s [options] [DIR]',
-                               description='Index or download media from jw.org')
+parser = ArgumentParser(prog='jwb-index',
+                        usage='%(prog)s [options] [DIR]',
+                        description='Index or download media from jw.org')
 
 parser.add_arguments(['--quiet',
                       '--mode',
