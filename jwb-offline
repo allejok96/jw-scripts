@@ -24,7 +24,7 @@ class VideoManager:
     pos = 0
     errors = 0
 
-    def __init__(self, wd, replay=0, cmd=None):
+    def __init__(self, wd, replay=0, cmd=None, verbose=False):
         """Initialize self.
 
         :param wd: working directory
@@ -35,6 +35,7 @@ class VideoManager:
         self.wd = wd
         self.dump_file = os.path.join(wd, 'dump.json')
         self.history = []
+        self.verbose = verbose
 
         if cmd and len(cmd) > 0:
             self.cmd = cmd
@@ -92,7 +93,10 @@ class VideoManager:
         msg('playing: ' + self.video)
         cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [os.path.join(self.wd, self.video)]
         self.start_time = time.time()
-        subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if self.verbose:
+            subprocess.call(cmd)
+        else:
+            subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if self.calculate_pos() == 0:
             self.errors = self.errors + 1
@@ -139,10 +143,13 @@ parser.add_argument('--replay-sec',
                     default=30,
                     dest='replay',
                     help='seconds to replay after a restart')
+parser.add_argument('--verbose',
+                    action='store_true',
+                    help='show video player output')
 
 args = parser.parse_args()
 
-m = VideoManager(args.dir, replay=args.replay, cmd=args.cmd)
+m = VideoManager(args.dir, replay=args.replay, cmd=args.cmd, verbose=args.verbose)
 
 # JSONDecodeError was added to Python 3.5
 if hasattr(json, 'JSONDecodeError'):
