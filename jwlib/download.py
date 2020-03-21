@@ -55,15 +55,8 @@ def download_all(s: Settings, data: List[Category]):
 
     # Download all files
     for media in download_list:
-        # Clean up until there is enough space
-        while s.keep_free > 0:
-            space = shutil.disk_usage(wd).free
-            needed = media.size + s.keep_free
-            if space > needed:
-                break
-            if s.quiet < 1:
-                msg('free space: {:} MiB, needed: {:} MiB'.format(space // 1024 ** 2, needed // 1024 ** 2))
-            delete_oldest(wd, media.date, s.quiet)
+        if s.keep_free > 0:
+            disk_cleanup(s, wd, media)
 
         # Download the video
         if s.quiet < 2:
@@ -206,11 +199,11 @@ def disk_usage_info(s: Settings):
               file=stderr)
 
     if s.warning and free < s.keep_free:
-        msg = '\nWarning:\n' \
+        message = '\nWarning:\n' \
               'The disk usage currently exceeds the limit by {} MiB.\n' \
               'If the limit was set too high, many or ALL videos may get deleted.\n' \
               'Press Enter to proceed or Ctrl+D to abort... '
-        print(msg.format((s.keep_free - free) // 1024 ** 2), file=stderr)
+        print(message.format((s.keep_free - free) // 1024 ** 2), file=stderr)
         try:
             input()
         except EOFError:
@@ -223,6 +216,7 @@ def _urlbasename(string: str):
 
 def _md5(file: str):
     """Return MD5 of a file."""
+
     hash_md5 = hashlib.md5()
     with open(file, 'rb') as f:
         for chunk in iter(lambda: f.read(4096), b""):
@@ -232,6 +226,7 @@ def _md5(file: str):
 
 def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional[str] = 'curl', progress=False):
     """Throttled file download by calling the curl command."""
+
     if curl_path:
         proc = [curl_path, url, '-o', file]
 
@@ -271,33 +266,40 @@ def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional
                 f.write(chunk)
 
 
-def delete_oldest(wd: str, max_date: int, quiet=0):
-    """Delete the oldest .mp4 file in the work_dir
+def disk_cleanup(s: Settings, directory: str, reference_media: Media):
+    """Clean up old videos until there is enough space"""
 
-    If oldest video is newer than max_date, exit the program.
+    if not reference_media.date:
+        raise RuntimeError("missing date on {}".format(reference_media.name))
 
-    :param wd: directory to look for videos
-    :param max_date: seconds since epoch
-    :param quiet: info level, 0 = all, 1 = only deleted, 2 = nothing
-    """
-    videos = []
-    for file in os.listdir(wd):
-        file = os.path.join(wd, file)
-        if file.lower().endswith('.mp4') and os.path.isfile(file):
-            videos.append((file, os.stat(file).st_mtime))
-    if len(videos) == 0:
-        raise (RuntimeError('cannot free any disk space, no videos found'))
-    videos = sorted(videos, key=lambda x: x[1])
-    oldest_file, oldest_date = videos[0]
+    while s.keep_free > 0:
+        space = shutil.disk_usage(directory).free
+        needed = reference_media.size + s.keep_free
+        if space > needed:
+            break
+        if s.quiet < 1:
+            msg('free space: {:} MiB, needed: {:} MiB'.format(space // 1024 ** 2, needed // 1024 ** 2))
 
-    if max_date and max_date <= oldest_date:
-        if quiet < 1:
-            msg('disk limit reached, all videos up to date')
-        quit(0)
+        # Get the oldest .mp4 file in the working directory
+        videos = []
+        for file in os.listdir(directory):
+            file = os.path.join(directory, file)
+            if file.lower().endswith('.mp4') and os.path.isfile(file):
+                videos.append((file, os.stat(file).st_mtime))
+        if not videos:
+            raise RuntimeError('cannot free any disk space, no videos found')
+        videos = sorted(videos, key=lambda x: x[1])
+        oldest_file, oldest_date = videos[0]
 
-    if quiet < 2:
-        msg('removing {}'.format(oldest_file))
-    os.remove(oldest_file)
-    # Add a "deleted" marker
-    with open(oldest_file + '.deleted', 'w') as file:
-        file.write('')
+        # If the reference date is older than the oldest file, exit the program.
+        if reference_media.date <= oldest_date:
+            if s.quiet < 1:
+                msg('disk limit reached, all videos up to date')
+            quit(0)
+
+        # Delete the file and add a "deleted" marker
+        if s.quiet < 2:
+            msg('removing {}'.format(oldest_file))
+        os.remove(oldest_file)
+        with open(oldest_file + '.deleted', 'w') as file:
+            file.write('')
