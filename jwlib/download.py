@@ -8,11 +8,11 @@ import urllib.parse
 from typing import List, Optional
 
 from .parse import msg, Category, Media
-from .arguments import JwbSettings
+from .arguments import Settings
 from .output import format_filename
 
 
-def download_all(s: JwbSettings, data: List[Category]):
+def download_all(s: Settings, data: List[Category]):
     """Download/check media files"""
 
     wd = os.path.join(s.work_dir, s.sub_dir)  # work dir
@@ -71,7 +71,7 @@ def download_all(s: JwbSettings, data: List[Category]):
         media.file = download_media(s, media, wd)
 
 
-def download_subtitles(s: JwbSettings, media: Media, directory: str):
+def download_subtitles(s: Settings, media: Media, directory: str):
     """Download VTT files from Media
 
     :param s: Global settings
@@ -89,7 +89,7 @@ def download_subtitles(s: JwbSettings, media: Media, directory: str):
     _curl(media.subtitle_url, file=os.path.join(directory, basename), curl_path=None)
 
 
-def download_media(s: JwbSettings, media: Media, directory: str, check_only=False):
+def download_media(s: Settings, media: Media, directory: str, check_only=False):
     """Download media file and check it.
 
     Download file, check MD5 sum and size, delete file if it missmatches.
@@ -191,6 +191,30 @@ def download_media(s: JwbSettings, media: Media, directory: str, check_only=Fals
                 if s.quiet < 2:
                     msg('failed to download: {} ({})'.format(basename, media.name))
                 return None
+
+
+def disk_usage_info(s: Settings):
+    """Display information about disk usage and maybe a warning"""
+
+    # We create a directory here to prevent FileNotFoundError
+    # if someone specified --free without --download they are dumb
+    os.makedirs(s.work_dir, exist_ok=True)
+    free = shutil.disk_usage(s.work_dir).free
+
+    if s.quiet < 1:
+        print('free space: {:} MiB, minimum limit: {:} MiB'.format(free // 1024 ** 2, s.keep_free // 1024 ** 2),
+              file=stderr)
+
+    if s.warning and free < s.keep_free:
+        msg = '\nWarning:\n' \
+              'The disk usage currently exceeds the limit by {} MiB.\n' \
+              'If the limit was set too high, many or ALL videos may get deleted.\n' \
+              'Press Enter to proceed or Ctrl+D to abort... '
+        print(msg.format((s.keep_free - free) // 1024 ** 2), file=stderr)
+        try:
+            input()
+        except EOFError:
+            exit(1)
 
 
 def _urlbasename(string: str):

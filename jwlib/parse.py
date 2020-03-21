@@ -6,7 +6,7 @@ import urllib.request
 import urllib.parse
 from typing import List, Union
 
-from .arguments import JwbSettings
+from .arguments import Settings
 
 
 class Category:
@@ -69,7 +69,7 @@ def get_best_video(videos: list, quality: int, subtitles: bool):
     return rankings[-1][1]
 
 
-def parse_broadcasting(s: JwbSettings):
+def parse_broadcasting(s: Settings):
     """Index JW Broadcasting categories recursively and return a list with Category objects
 
     :param s: Global settings object
@@ -145,99 +145,5 @@ def parse_broadcasting(s: JwbSettings):
                         pass
 
                 cat.contents.append(media)
-
-    return result
-
-
-def parse_jwpub(pub='bi12', start_book=0, lang='E', quiet=0):
-    """Index JW org sound recordings and return a list with Category objects
-
-    :param pub: Publication code
-    :param start_book: Book of the bible
-    :param lang: Language code
-    :param quiet: level of quietness
-    """
-    result = []
-
-    url_template = 'https://apps.jw.org/GETPUBMEDIALINKS' \
-                   '?output=json&fileformat=MP3&alllangs={a}&langwritten={L}&txtCMSLang={L}&pub={p}'
-
-    # Watchtower/Awake reference is split up into pub and issue
-    magazine_match = re.match('(wp?|g)([0-9]+)', pub)
-    if magazine_match:
-        url_template = url_template + '&issue={i}'
-        pub = magazine_match.group(1)
-        queue = [magazine_match.group(2)]
-    else:
-        url_template = url_template + '&booknum={i}'
-        queue = [start_book]
-
-    # Check language code
-    # This must be done after the magazine stuff
-    # We want the languages for THAT publication only, or else the list gets SOO long
-    # The language is checked on the first pub in the queue
-    url = url_template.format(L='E', p=pub, i=queue[0], a='1')
-
-    with urllib.request.urlopen(url) as response:
-        response = json.loads(response.read().decode('utf-8'))
-
-        if not lang:
-            # Print table of language codes
-            msg('language codes:')
-            for l in sorted(response['languages'], key=lambda x: response['languages'][x]['name']):
-                msg('{:>3}  {:<}'.format(l, response['languages'][l]['name']))
-            exit()
-        else:
-            # Check if the code is valid
-            if lang not in response['languages']:
-                raise ValueError(lang + ': invalid language code')
-
-    for key in queue:
-        url = url_template.format(L=lang, p=pub, i=key, a=0)
-
-        book = Category()
-        result.append(book)
-
-        if pub == 'bi12' or pub == 'nwt':
-            book.key = format(int(key), '02')
-            # This is the starting point if the value in the queue
-            # is the same as the one the user specified
-            book.home = key == start_book
-        else:
-            book.key = pub
-            book.home = True
-
-        with urllib.request.urlopen(url) as response:
-            response = json.loads(response.read().decode('utf-8'))
-            book.name = response['pubName']
-
-            if quiet < 1:
-                msg('{} ({})'.format(book.key, book.name))
-
-            # For the Bible's index page
-            # Add all books to the queue
-            if key == 0 and (pub == 'bi12' or pub == 'nwt'):
-                for sub_book in response['files'][lang]['MP3']:
-
-                    s = Category()
-                    s.key = format(sub_book['booknum'], '02')
-                    s.name = sub_book['title']
-                    book.contents.append(s)
-
-                    if s.key not in queue:
-                        queue.append(s.key)
-            else:
-                for chptr in response['files'][lang]['MP3']:
-                    # Skip the ZIP
-                    if chptr['mimetype'] != 'audio/mpeg':
-                        continue
-
-                    m = Media()
-                    m.url = chptr['file']['url']
-                    m.name = chptr['title']
-                    if 'filesize' in chptr:
-                        m.size = chptr['filesize']
-
-                    book.contents.append(m)
 
     return result

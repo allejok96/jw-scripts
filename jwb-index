@@ -1,75 +1,37 @@
 #!/usr/bin/env python3
-import os
 import time
 from sys import stderr
 
-from jwlib.arguments import DefaultArgumentParser, disk_usage_info, action_factory
+from jwlib.arguments import DefaultArgumentParser
 from jwlib.parse import parse_broadcasting
-from jwlib.download import download_all
+from jwlib.download import download_all, disk_usage_info
 from jwlib.output import create_output
 
 parser = DefaultArgumentParser(prog='jwb-index',
                                usage='%(prog)s [options] [DIR]',
                                description='Index or download media from jw.org')
 
-parser.add_default_arguments(['--quiet',
-                              '--mode',
-                              '--lang',
-                              '--languages',
-                              '--quality',
-                              '--hard-subtitles',
-                              '--no-checksum',
-                              '--no-warning',
-                              '--free',
-                              'work_dir'])
+parser.add_arguments(['--quiet',
+                      '--mode',
+                      '--lang',
+                      '--languages',
+                      '--quality',
+                      '--hard-subtitles',
+                      '--no-checksum',
+                      '--no-warning',
+                      '--free',
+                      '--category',
+                      '--exclude',
+                      '--latest',
+                      '--since',
+                      '--limit-rate',
+                      '--curl-path',
+                      '--no-curl',
+                      '--clean-symlinks',
+                      '--ntfs',
+                      '--download',
+                      'work_dir'])
 
-parser.add_argument('--category', '-c',
-                    default='VideoOnDemand',
-                    action=action_factory(lambda x: tuple(x.split(','))),
-                    dest='include_categories',
-                    help='comma separated list of categories to index',
-                    metavar='CODE')
-parser.add_argument('--exclude',
-                    metavar='CODE',
-                    dest='exclude_categories',
-                    action=action_factory(lambda x: tuple(x.split(','))),
-                    help='comma separated list of categories to exclude from download')
-parser.add_argument('--latest',
-                    action='store_const',
-                    const=['LatestVideos'],
-                    dest='include_categories',
-                    help='index the "Latest Videos" section')
-parser.add_argument('--since',
-                    metavar='YYYY-MM-DD',
-                    dest='min_date',
-                    action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
-                    help='only index media newer than this date')
-parser.add_argument('--limit-rate',
-                    default='1M',
-                    dest='rate_limit',
-                    help='maximum download rate, passed to curl (0 = no limit)')
-parser.add_argument('--curl-path',
-                    default='curl',
-                    metavar='PATH',
-                    help='path to the curl binary')
-parser.add_argument('--no-curl',
-                    action='store_const',
-                    const=None,
-                    dest='curl_path',
-                    help='use urllib instead of external curl (compatibility)')
-parser.add_argument('--clean-symlinks',
-                    action='store_true',
-                    dest='clean_all_symlinks',
-                    help='remove all old symlinks (only valid with --mode=filesystem)')
-parser.add_argument('--ntfs',
-                    action='store_true',
-                    dest='safe_filenames',
-                    help='remove special characters from file names (NTFS/FAT compatibility)')
-parser.add_argument('--download', '-d',
-                    choices=['media', 'subtitles', 'friendly-subtitles'],
-                    nargs='?',
-                    const='media',
-                    help='download media files or subtitles'),
 settings = parser.parse_args()
 
 if not settings.mode and not settings.download:

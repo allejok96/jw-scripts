@@ -3,12 +3,12 @@ import os
 from typing import List
 
 from .parse import Category, Media
-from .arguments import JwbSettings
+from .arguments import Settings
 
 pj = os.path.join
 
 
-def create_output(s: JwbSettings, data: List[Category], stdout_uniq=False):
+def create_output(s: Settings, data: List[Category], stdout_uniq=False):
     """Settings for output modes
 
     :param s: Global settings
@@ -31,7 +31,7 @@ def create_output(s: JwbSettings, data: List[Category], stdout_uniq=False):
         raise RuntimeError('invalid mode')
 
 
-def output_stdout(s: JwbSettings, data: List[Category], uniq=False):
+def output_stdout(s: Settings, data: List[Category], uniq=False):
     """Output URLs or filenames to stdout.
 
     :param uniq: If True all output is unique, but unordered
@@ -50,7 +50,7 @@ def output_stdout(s: JwbSettings, data: List[Category], uniq=False):
     print(*out, sep='\n')
 
 
-def output_m3u(s: JwbSettings, data: List[Category], writer=None, flat=False, file_ending='.m3u'):
+def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_ending='.m3u'):
     """Create a M3U playlist tree.
 
     :param writer: Function to write to files
@@ -105,7 +105,7 @@ def output_m3u(s: JwbSettings, data: List[Category], writer=None, flat=False, fi
             writer(source, name, output_file)
 
 
-def output_filesystem(s: JwbSettings, data: List[Category]):
+def output_filesystem(s: Settings, data: List[Category]):
     """Creates a directory structure with symlinks to videos"""
     wd = s.work_dir
     sd = s.sub_dir
@@ -169,7 +169,7 @@ def format_filename(string, safe=False):
     return ''.join(x for x in string if x not in forbidden)
 
 
-def clean_symlinks(s: JwbSettings):
+def clean_symlinks(s: Settings):
     """Clean out broken (or all) symlinks from work dir"""
 
     path = pj(s.work_dir, s.sub_dir)
