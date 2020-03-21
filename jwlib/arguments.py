@@ -53,7 +53,7 @@ class Settings:
     quality = 1080
     hard_subtitles = False
     min_date = None  # type: int
-    include_categories = tuple('VideoOnDemand')
+    include_categories = ('VideoOnDemand',)
     exclude_categories = ()  # type: Tuple[str]
 
     # Disk space check stuff
@@ -68,6 +68,10 @@ class Settings:
     curl_path = 'curl'
     rate_limit = '1M'
     checksums = True
+
+    # Stream stuff
+    command = None  # type: list
+    stream_forever = False
 
     # Output stuff
     sub_dir = ''
@@ -88,10 +92,6 @@ class Settings:
 class ArgumentParser(argparse.ArgumentParser):
     """Predefined arguments can be activated with add_arguments()"""
 
-    def __init__(self, *args, argument_default=None, **kwargs):
-        # Do not overwrite attributes with None
-        super().__init__(*args, argument_default=argparse.SUPPRESS, **kwargs)
-
     def add_predefined(self, *flags, **kwargs):
         self.predefined_arguments[flags[0]] = dict(flags=flags, **kwargs)
 
@@ -103,60 +103,69 @@ class ArgumentParser(argparse.ArgumentParser):
             self.add_argument(*args, **keywords)
 
     def parse_args(self, *args, namespace=None, **kwargs):
-        settings = Settings()
+        settings = namespace or Settings()
         super().parse_args(*args, namespace=settings, **kwargs)
         return settings
 
-    # Put all argument definitions here
-    # This way, the syntax will be equal to running add_argument()
-    predefined_arguments = {}
-    add_predefined('--quiet', '-q', action='count',
-                   help='Less info, can be used multiple times')
-    add_predefined('--mode', '-m',
-                   choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
-                   help='output mode')
-    add_predefined('--lang', '-l', nargs='?',
-                   action=action_factory(verify_language),
-                   help='language code')
-    add_predefined('--languages',
-                   action=action_factory(print_language),
-                   help='display a list of valid language codes')
-    add_predefined('--quality', '-Q', type=int,
-                   choices=[240, 360, 480, 720],
-                   help='maximum video quality')
-    add_predefined('--hard-subtitles', action='store_true',
-                   help='prefer videos with hard-coded subtitles')
-    add_predefined('--no-checksum', action='store_false', dest='checksum',
-                   help="don't check md5 checksum")
-    add_predefined('--free', type=int, metavar='MiB', dest='keep_free',
-                   action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
-                   help='disk space in MiB to keep free (deletes older MP4 files)')
-    add_predefined('--no-warning', dest='warning', action='store_false',
-                   help='do not warn when space limit seems wrong')
-    add_predefined('work_dir', nargs='?', metavar='DIR',
-                   help='directory to save data in')
-    add_predefined('--category', '-c', dest='include_categories', metavar='CODE',
-                   action=action_factory(lambda x: tuple(x.split(','))),
-                   help='comma separated list of categories to index')
-    add_predefined('--exclude', metavar='CODE', dest='exclude_categories',
-                   action=action_factory(lambda x: tuple(x.split(','))),
-                   help='comma separated list of categories to exclude from download')
-    add_predefined('--latest', action='store_const', const=['LatestVideos'],
-                   dest='include_categories',
-                   help='index the "Latest Videos" section')
-    add_predefined('--since', metavar='YYYY-MM-DD', dest='min_date',
-                   action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
-                   help='only index media newer than this date')
-    add_predefined('--limit-rate', dest='rate_limit',
-                   help='maximum download rate, passed to curl (0 = no limit)')
-    add_predefined('--curl-path', metavar='PATH',
-                   help='path to the curl binary')
-    add_predefined('--no-curl', action='store_const', const=None, dest='curl_path',
-                   help='use urllib instead of external curl (compatibility)')
-    add_predefined('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
-                   help='remove all old symlinks (only valid with --mode=filesystem)')
-    add_predefined('--ntfs', action='store_true', dest='safe_filenames',
-                   help='remove special characters from file names (NTFS/FAT compatibility)')
-    add_predefined('--download', '-d', nargs='?', const='media',
-                   choices=['media', 'subtitles', 'friendly-subtitles'],
-                   help='download media files or subtitles')
+    def __init__(self, *args, argument_default=None, **kwargs):
+        # Do not overwrite attributes with None
+        super().__init__(*args, argument_default=argparse.SUPPRESS, **kwargs)
+        self.predefined_arguments = {}
+        add_predefined = self.add_predefined
+
+        # Put all argument definitions here
+        # This way, the syntax will be equal to running add_argument()
+        add_predefined('--quiet', '-q', action='count',
+                       help='Less info, can be used multiple times')
+        add_predefined('--mode', '-m',
+                       choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
+                       help='output mode')
+        add_predefined('--lang', '-l', nargs='?',
+                       action=action_factory(verify_language),
+                       help='language code')
+        add_predefined('--languages',
+                       action=action_factory(print_language),
+                       help='display a list of valid language codes')
+        add_predefined('--quality', '-Q', type=int,
+                       choices=[240, 360, 480, 720],
+                       help='maximum video quality')
+        add_predefined('--hard-subtitles', action='store_true',
+                       help='prefer videos with hard-coded subtitles')
+        add_predefined('--no-checksum', action='store_false', dest='checksum',
+                       help="don't check md5 checksum")
+        add_predefined('--free', type=int, metavar='MiB', dest='keep_free',
+                       action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
+                       help='disk space in MiB to keep free (deletes older MP4 files)')
+        add_predefined('--no-warning', dest='warning', action='store_false',
+                       help='do not warn when space limit seems wrong')
+        add_predefined('--category', '-c', dest='include_categories', metavar='CODE',
+                       action=action_factory(lambda x: tuple(x.split(','))),
+                       help='comma separated list of categories to index')
+        add_predefined('--exclude', metavar='CODE', dest='exclude_categories',
+                       action=action_factory(lambda x: tuple(x.split(','))),
+                       help='comma separated list of categories to exclude from download')
+        add_predefined('--latest', action='store_const', const=['LatestVideos'],
+                       dest='include_categories',
+                       help='index the "Latest Videos" section')
+        add_predefined('--since', metavar='YYYY-MM-DD', dest='min_date',
+                       action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
+                       help='only index media newer than this date')
+        add_predefined('--limit-rate', dest='rate_limit',
+                       help='maximum download rate, passed to curl (0 = no limit)')
+        add_predefined('--curl-path', metavar='PATH',
+                       help='path to the curl binary')
+        add_predefined('--no-curl', action='store_const', const=None, dest='curl_path',
+                       help='use urllib instead of external curl (compatibility)')
+        add_predefined('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
+                       help='remove all old symlinks (only valid with --mode=filesystem)')
+        add_predefined('--ntfs', action='store_true', dest='safe_filenames',
+                       help='remove special characters from file names (NTFS/FAT compatibility)')
+        add_predefined('--download', '-d', nargs='?', const='media',
+                       choices=['media', 'subtitles', 'friendly-subtitles'],
+                       help='download media files or subtitles')
+        add_predefined('--forever', action='store_true', dest='stream_forever',
+                       help='re-run program when the last video finishes')
+        add_predefined('work_dir', nargs='?', metavar='DIR',
+                       help='directory to save data in')
+        add_predefined('command', nargs=argparse.REMAINDER, metavar='COMMAND',
+                       help='video player command')
