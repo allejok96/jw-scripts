@@ -1,6 +1,5 @@
 from sys import stderr
 import os
-import re
 from typing import List
 
 from .parse import Category, Media
@@ -161,12 +160,13 @@ def format_filename(string, safe=False):
 
     if safe:
         # NTFS/FAT forbidden characters
-        regex = '[<>:"|?*/\0]'
+        string = string.replace('"', "'").replace(':', '.')
+        forbidden = '<>:"|?*/\0'
     else:
         # Unix forbidden characters
-        regex = '[/\0]'
+        forbidden = '/\0'
 
-    return re.sub(regex, '', string)
+    return ''.join(x for x in string if x not in forbidden)
 
 
 def clean_symlinks(s: JwbSettings):
