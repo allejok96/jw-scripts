@@ -1,89 +1,77 @@
 #!/usr/bin/env python3
-import argparse
 import os
 import shutil
 from sys import stderr
 
-from jwlib.arguments import disk_usage_info, add_arguments
-from jwlib.parse import delete_oldest
+from jwlib.arguments import ArgumentParser, Settings
+from jwlib.parse import Media
+from jwlib.download import disk_usage_info, disk_cleanup
 
 
-def msg(s):
-    print(s, file=stderr, flush=True)
+class File(Media):
+    def __init__(self, name: str, directory):
+        self.name = name
+        self.file = os.path.join(directory, name)
+        try:
+            stat = os.stat(self.file)
+            self.size = stat.st_size
+            self.date = stat.st_mtime
+        except FileNotFoundError:
+            pass
+        self.deleted = os.path.exists(self.file + '.deleted')
 
 
-class File:
-    def __init__(self, source, dest):
-        self.source = source
-        self.dest = dest
-        self.exists = os.path.exists(source)
-        if self.exists:
-            s = os.stat(source)
-            self.size = s.st_size
-            self.time = s.st_mtime
+class LocalSettings(Settings):
+    percent = False
+    source = None
+    dest = None
 
 
-parser = argparse.ArgumentParser(prog='jwb-import',
-                                 usage='%(prog)s SOURCE DEST ',
-                                 description='Import new videos from SOURCE')
-add_arguments(parser, ['--free', '--no-warning', '--quiet'])
-parser.add_argument('--percent',
-                    action='store_true',
-                    help='output progress in percent to stdout (for piping)')
-parser.add_argument('source',
-                    metavar='SOURCE',
-                    help='source directory')
-parser.add_argument('dest',
-                    metavar='DEST',
-                    help='destination directory')
-args = parser.parse_args()
+parser = ArgumentParser(prog='jwb-import',
+                        usage='%(prog)s SOURCE DEST ',
+                        description='Copy new videos from SOURCE to DEST')
 
-if not os.path.isdir(args.dest):
-    os.makedirs(args.dest)
+parser.add_arguments(['--free', '--no-warning', '--quiet'])
+parser.add_argument('--percent', action='store_true', help='output progress in percent to stdout (for piping)')
+parser.add_argument('source', metavar='SOURCE', help='source directory')
+parser.add_argument('dest', metavar='DEST', help='destination directory')
 
-if args.keep_free > 0:
-    args.keep_free = args.keep_free * 1024 ** 2  # MiB to B
-    disk_usage_info(args.dest, args.keep_free, args.warn, args.quiet)
+settings = LocalSettings()
+parser.parse_args(namespace=settings)
 
-# Create a list with source and destination file objects
-files = []
-for name in os.listdir(args.source):
+if settings.keep_free > 0:
+    disk_usage_info(settings)
+
+# Create a list of all mp4 files to be copied
+source_files = []
+for name in os.listdir(settings.source):
     if not name.lower().endswith('.mp4'):
         continue
-    f = File(os.path.join(args.source, name), os.path.join(args.dest, name))
-    if not f.exists:
-        continue
-    if os.path.exists(f.dest + '.deleted'):
-        continue
-    if os.path.exists(f.dest) and f.size == os.stat(f.dest).st_size:
-        continue
-    files.append(f)
+    source = File(name, directory=settings.source)
+    dest = File(name, directory=settings.dest)
+    if not dest.deleted and source.size != dest.size:
+        source_files.append(source)
 
-# Sort by newest file first
-files = sorted(files, key=lambda x: x.time, reverse=True)
+# Newest file first
+source_files.sort(key=lambda x: x.date, reverse=True)
 
-total = len(files)
-for f in files:
-    i = files.index(f)
-    if args.percent:
-        print(i*100//total, flush=True)
+os.makedirs(settings.dest, exist_ok=True)
 
-    # Clean up until there is enough space
-    while args.keep_free > 0:
-        space = shutil.disk_usage(args.dest).free
-        needed = f.size + args.keep_free
-        if space > needed:
-            break
-        if args.quiet < 1:
-            msg('free space: {:} MiB, needed: {:} MiB'.format(space // 1024**2, needed // 1024**2))
-        delete_oldest(args.dest, f.time, args.quiet)
+total = len(source_files)
+for source in source_files:
+    i = source_files.index(source)
 
-    # Copy file
-    if args.quiet < 1:
-        msg('copying [{}/{}]: {}'.format(i+1, total, os.path.basename(f.source)))
-    shutil.copy2(f.source, f.dest)
+    if settings.keep_free > 0:
+        disk_cleanup(settings, directory=settings.dest, reference_media=source)
 
-if args.percent:
+    if settings.percent:
+        print(i * 100 // total, flush=True)
+    if settings.quiet < 1:
+        print('copying [{}/{}]: {}'.format(i + 1, total, source.name), file=stderr, flush=True)
+
+    shutil.copy2(source.file, os.path.join(settings.dest, source.name))
+
+if settings.percent:
     print(100, flush=True)
-if args.quiet < 1:
-    msg('done')
+if settings.quiet < 1:
+    print('done', file=stderr)
