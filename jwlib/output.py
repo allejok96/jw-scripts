@@ -28,7 +28,7 @@ def create_output(s: Settings, data: List[Category], stdout_uniq=False):
     else:
         raise RuntimeError('invalid mode')
 
-
+    
 def output_stdout(s: Settings, data: List[Category], uniq=False):
     """Output URLs or filenames to stdout.
 
