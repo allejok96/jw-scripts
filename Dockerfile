@@ -1,11 +1,10 @@
 FROM python:3
 
 COPY jwlib /jwlib
-COPY jwb-import /jwb-import
 COPY jwb-index /jwb-index
-COPY jwb-rpi /jwb-rpi
 COPY jwb-stream /jwb-stream
-COPY nwt-index /nwt-index
+COPY jwb-offline /jwb-offline
+COPY jwb-offline-import /jwb-offline-import
 
 ADD setup.py /
 
