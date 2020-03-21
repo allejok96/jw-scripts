@@ -11,9 +11,7 @@ pj = os.path.join
 def create_output(s: Settings, data: List[Category], stdout_uniq=False):
     """Settings for output modes
 
-    :param s: Global settings
-    :param data: list with Media and Category objects
-    :param stdout_uniq: passed to output_stdout
+    :keyword stdout_uniq: passed to output_stdout
     """
 
     if s.mode == 'stdout':
@@ -34,7 +32,7 @@ def create_output(s: Settings, data: List[Category], stdout_uniq=False):
 def output_stdout(s: Settings, data: List[Category], uniq=False):
     """Output URLs or filenames to stdout.
 
-    :param uniq: If True all output is unique, but unordered
+    :keyword uniq: If True all output is unique, but unordered
     """
     out = []
     for category in data:
@@ -53,9 +51,9 @@ def output_stdout(s: Settings, data: List[Category], uniq=False):
 def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_ending='.m3u'):
     """Create a M3U playlist tree.
 
-    :param writer: Function to write to files
-    :param flat: If all playlist will be saved outside of subdir
-    :param file_ending: Well, duh
+    :keyword writer: Function to write to files
+    :keyword flat: If all playlist will be saved outside of subdir
+    :keyword file_ending: Well, duh
     """
     wd = s.work_dir
     sd = s.sub_dir
@@ -107,6 +105,7 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
 
 def output_filesystem(s: Settings, data: List[Category]):
     """Creates a directory structure with symlinks to videos"""
+
     wd = s.work_dir
     sd = s.sub_dir
 
@@ -197,6 +196,7 @@ def clean_symlinks(s: Settings):
 
 def _truncate_file(file, string=''):
     """Create a file and the parent directories."""
+
     d = os.path.dirname(file)
     os.makedirs(d, exist_ok=True)
 
@@ -213,6 +213,7 @@ def _truncate_file(file, string=''):
 
 def _write_to_m3u(source, name, file):
     """Write entry to a M3U playlist file."""
+
     _truncate_file(file, string='#EXTM3U\n')
     with open(file, 'a', encoding='utf-8') as f:
         f.write('#EXTINF:0,' + name + '\n' + source + '\n')
@@ -220,6 +221,7 @@ def _write_to_m3u(source, name, file):
 
 def _write_to_html(source, name, file):
     """Write a HTML file with a hyperlink to a media file."""
+
     _truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>')
     with open(file, 'a', encoding='utf-8') as f:
         f.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
