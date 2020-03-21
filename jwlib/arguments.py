@@ -54,7 +54,7 @@ class Settings:
     hard_subtitles = False
     min_date = None  # type: int
     include_categories = ('VideoOnDemand',)
-    exclude_categories = ()  # type: Tuple[str]
+    exclude_categories = ('VODSJJMeetings',)
 
     # Disk space check stuff
     keep_free = 0  # bytes
