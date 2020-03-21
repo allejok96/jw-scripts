@@ -25,16 +25,6 @@ Next, click on one of the scripts below for more info.
 * [jwb-offline](https://github.com/allejok96/jw-scripts/wiki/jwb-offline) - Play downloaded videos in random order (and some more nice things).
 * [jwb-offline-import](https://github.com/allejok96/jw-scripts/wiki/jwb-offline-import) - Import videos from a USB to be played with jwb-offline.
 
-## Docker
-
-    cd jw-scripts
-    docker build -t jw-scripts .
-    docker run -v /Users/yourusername/Downloads:/downloads -it jw-scripts
-
-For example use the jwb-index command to start the download
-
-    jwb-index --mode filesystem --download --category VODChildren /downloads
-
 ## Questions
 
 #### Isn't there an easier way to watch JW Broadcasting in Kodi?
