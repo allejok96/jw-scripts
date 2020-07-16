@@ -132,7 +132,7 @@ class ArgumentParser(argparse.ArgumentParser):
                        help='maximum video quality')
         add_predefined('--hard-subtitles', action='store_true',
                        help='prefer videos with hard-coded subtitles')
-        add_predefined('--no-checksum', action='store_false', dest='checksum',
+        add_predefined('--no-checksum', action='store_false', dest='checksums',
                        help="don't check md5 checksum")
         add_predefined('--free', type=int, metavar='MiB', dest='keep_free',
                        action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
