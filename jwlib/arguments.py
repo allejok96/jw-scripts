@@ -1,9 +1,9 @@
 import json
 import urllib.request
 import argparse
-from sys import stderr
-from typing import Tuple
 import time
+
+from . import msg
 
 
 def action_factory(function):
@@ -34,9 +34,9 @@ def verify_language(code):
 
 
 def print_language(x):
-    print('language codes:', file=stderr)
+    msg('language codes:')
     for l in get_jwb_languages():
-        print('{:>3}  {:<}'.format(l['code'], l['name']), file=stderr)
+        msg('{:>3}  {:<}'.format(l['code'], l['name']))
     exit()
 
 

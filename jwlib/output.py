@@ -2,6 +2,7 @@ from sys import stderr
 import os
 from typing import List
 
+from . import msg
 from .parse import Category, Media
 from .arguments import Settings
 
@@ -28,7 +29,7 @@ def create_output(s: Settings, data: List[Category], stdout_uniq=False):
     else:
         raise RuntimeError('invalid mode')
 
-    
+
 def output_stdout(s: Settings, data: List[Category], uniq=False):
     """Output URLs or filenames to stdout.
 
@@ -60,6 +61,9 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
 
     def fmt(x):
         return format_filename(x, safe=s.safe_filenames)
+
+    if s.quiet < 1:
+        msg('writing output files')
 
     if not writer:
         writer = _write_to_m3u
@@ -111,6 +115,9 @@ def output_filesystem(s: Settings, data: List[Category]):
 
     def fmt(x):
         return format_filename(x, safe=s.safe_filenames)
+
+    if s.quiet < 1:
+        msg('creating directory structure')
 
     for category in data:
 
@@ -189,8 +196,8 @@ def clean_symlinks(s: Settings):
             source = pj(subdir, os.readlink(file))
 
             if s.clean_all_symlinks or not os.path.exists(source):
-                if s.quiet < 2:
-                    print('removing link: ' + os.path.basename(file), file=stderr)
+                if s.quiet < 1:
+                    msg('removing link: ' + os.path.basename(file))
                 os.remove(file)
 
 

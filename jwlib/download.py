@@ -7,9 +7,14 @@ import urllib.request
 import urllib.parse
 from typing import List, Optional
 
-from .parse import msg, Category, Media
+from . import msg
+from .parse import Category, Media
 from .arguments import Settings
 from .output import format_filename
+
+
+class MissingTimestampError(Exception):
+    pass
 
 
 def download_all(s: Settings, data: List[Category]):
@@ -21,6 +26,8 @@ def download_all(s: Settings, data: List[Category]):
                   if cat.key not in s.exclude_categories or cat.home
                   for x in cat.contents
                   if isinstance(x, Media)]
+    # Sort download queue with newest files first
+    # This is important for the --free flag's disk_cleanup() to work as expected
     media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
 
     if s.download_subtitles:
@@ -37,8 +44,13 @@ def download_all(s: Settings, data: List[Category]):
     download_list = []
     checked_files = []
 
+    # Search for local media before initiating the download
+    # (to get correct progress info for the download in next step)
+    if s.quiet < 1:
+        msg('scanning local files')
     for media in media_list:
         # Only run this check once per filename
+        # (there may be multiple Media objects referring to the same file)
         name = _urlbasename(media.url)
         if name in checked_files:
             continue
@@ -46,9 +58,11 @@ def download_all(s: Settings, data: List[Category]):
 
         # Skip previously deleted files
         if os.path.exists(os.path.join(wd, name + '.deleted')):
+            if s.quiet < 1:
+                msg('skipping previously deleted file: {}'.format(name))
             continue
 
-        # Search for local media and delete broken files before initiating the download
+        # Check existing files
         media.file = download_media(s, media, wd, check_only=True)
         if not media.file:
             download_list.append(media)
@@ -56,7 +70,12 @@ def download_all(s: Settings, data: List[Category]):
     # Download all files
     for media in download_list:
         if s.keep_free > 0:
-            disk_cleanup(s, wd, media)
+            try:
+                disk_cleanup(s, wd, media)
+            except MissingTimestampError:
+                if s.quiet < 2:
+                    msg('low disk space and missing metadata, skipping: {}'.format(media.name))
+                continue
 
         # Download the video
         if s.quiet < 2:
@@ -127,7 +146,7 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
             else:
                 # File size is bad - Delete
                 if s.quiet < 2:
-                    msg('size mismatch, deleting: {}'.format(basename + '.part'))
+                    msg('size mismatch, deleting: {}'.format(basename))
                 os.remove(file)
 
         elif check_only:
@@ -195,17 +214,18 @@ def disk_usage_info(s: Settings):
     free = shutil.disk_usage(s.work_dir).free
 
     if s.quiet < 1:
-        print('free space: {:} MiB, minimum limit: {:} MiB'.format(free // 1024 ** 2, s.keep_free // 1024 ** 2),
-              file=stderr)
+        msg('note: old MP4 files in target directory will be deleted if space runs low')
+        msg('free space: {:} MiB, minimum limit: {:} MiB'.format(free // 1024 ** 2, s.keep_free // 1024 ** 2))
 
     if s.warning and free < s.keep_free:
         message = '\nWarning:\n' \
-              'The disk usage currently exceeds the limit by {} MiB.\n' \
-              'If the limit was set too high, many or ALL videos may get deleted.\n' \
-              'Press Enter to proceed or Ctrl+D to abort... '
-        print(message.format((s.keep_free - free) // 1024 ** 2), file=stderr)
+                  'The disk usage currently exceeds the limit by {} MiB.\n' \
+                  'If the limit was set too high by mistake, many or ALL \n' \
+                  'currently downloaded videos may get deleted.\n'
+        msg(message.format((s.keep_free - free) // 1024 ** 2))
         try:
-            input()
+            if not input('Do you want to proceed anyway? [y/N]: ') in ('y', 'Y'):
+                exit(1)
         except EOFError:
             exit(1)
 
@@ -245,7 +265,7 @@ def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional
         subprocess.call(proc, stderr=stderr)
 
     else:
-        # If there is no rate limit, use urllib (for compatibility)
+        # using urllib (for compatibility)
         request = urllib.request.Request(url)
         file_mode = 'wb'
 
@@ -268,17 +288,20 @@ def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional
 
 def disk_cleanup(s: Settings, directory: str, reference_media: Media):
     """Clean up old videos until there is enough space"""
+    assert isinstance(s.keep_free, int)
+    assert isinstance(reference_media.size, int)
 
-    if not reference_media.date:
-        raise RuntimeError("missing date on {}".format(reference_media.name))
-
-    while s.keep_free > 0:
+    while True:
         space = shutil.disk_usage(directory).free
         needed = reference_media.size + s.keep_free
         if space > needed:
             break
         if s.quiet < 1:
             msg('free space: {:} MiB, needed: {:} MiB'.format(space // 1024 ** 2, needed // 1024 ** 2))
+
+        # We dare not delete files if we don't know if they are older or newer than this one
+        if not isinstance(reference_media.date, (int, float)):
+            raise MissingTimestampError
 
         # Get the oldest .mp4 file in the working directory
         videos = []
@@ -287,7 +310,7 @@ def disk_cleanup(s: Settings, directory: str, reference_media: Media):
             if file.lower().endswith('.mp4') and os.path.isfile(file):
                 videos.append((file, os.stat(file).st_mtime))
         if not videos:
-            raise RuntimeError('cannot free any disk space, no videos found')
+            raise RuntimeError('disk limit reached, but no videos in {}'.format(directory))
         videos = sorted(videos, key=lambda x: x[1])
         oldest_file, oldest_date = videos[0]
 
@@ -299,7 +322,7 @@ def disk_cleanup(s: Settings, directory: str, reference_media: Media):
 
         # Delete the file and add a "deleted" marker
         if s.quiet < 2:
-            msg('removing {}'.format(oldest_file))
+            msg('removing old video: {}'.format(oldest_file))
         os.remove(oldest_file)
         with open(oldest_file + '.deleted', 'w') as file:
             file.write('')

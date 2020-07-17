@@ -4,8 +4,10 @@ import re
 import json
 import urllib.request
 import urllib.parse
+from urllib.error import HTTPError
 from typing import List, Union
 
+from . import msg
 from .arguments import Settings
 
 
@@ -29,10 +31,6 @@ class Media:
     size = None  # type: int
     file = None  # type: str
     subtitle_url = None  # type: str
-
-
-def msg(s):
-    print(s, file=stderr, flush=True)
 
 
 # Whoops, copied this from the Kodi plug-in
@@ -83,67 +81,72 @@ def parse_broadcasting(s: Settings):
         url = 'https://data.jw-api.org/mediator/v1/categories/{L}/{c}?detailed=1&clientType=www'
         url = url.format(L=s.lang, c=key)
 
-        with urllib.request.urlopen(url) as j_raw:  # j as JSON
-            j = json.loads(j_raw.read().decode('utf-8'))
+        try:
+            with urllib.request.urlopen(url) as j_raw:  # j as JSON
+                j = json.loads(j_raw.read().decode('utf-8'))
+        except HTTPError as e:
+            if e.code == 404:
+                e.msg = '{} not found'.format(key)
+                raise e
 
-            if j.get('status') == '404':
-                raise ValueError('No such category or language')
+        cat = Category()
+        result.append(cat)
+        cat.key = j['category']['key']
+        cat.name = j['category']['name']
+        cat.home = cat.key in s.include_categories
 
-            cat = Category()
-            result.append(cat)
-            cat.key = j['category']['key']
-            cat.name = j['category']['name']
-            cat.home = cat.key in s.include_categories
+        if s.quiet < 1:
+            msg('indexing: {} ({})'.format(cat.key, cat.name))
 
-            if s.quiet < 1:
-                msg('{} ({})'.format(cat.key, cat.name))
+        for j_sub in j['category'].get('subcategories', []):
+            sub = Category()
+            sub.key = j_sub['key']
+            sub.name = j_sub['name']
+            cat.contents.append(sub)
+            # Add subcategory key to queue for parsing later
+            if sub.key not in queue:
+                queue.append(sub.key)
 
-            for j_sub in j['category'].get('subcategories', []):
-                sub = Category()
-                sub.key = j_sub['key']
-                sub.name = j_sub['name']
-                cat.contents.append(sub)
-                # Add subcategory key to queue for parsing later
-                if sub.key not in queue:
-                    queue.append(sub.key)
-
-            for j_media in j['category'].get('media', []):
-                # Skip videos marked as hidden
-                if 'tags' in j['category']['media']:
-                    if 'WebExclude' in j['category']['media']['tags']:
-                        continue
-
-                try:
-                    if j_media.get('type') == 'audio':
-                        # Simply pick first audio stream for the time being...
-                        j_media_file = j_media['files'][0]
-                    else:
-                        # Note: empty list will raise IndexError
-                        j_media_file = get_best_video(j_media['files'], quality=s.quality, subtitles=s.hard_subtitles)
-                except IndexError:
+        for j_media in j['category'].get('media', []):
+            # Skip videos marked as hidden
+            if 'tags' in j['category']['media']:
+                if 'WebExclude' in j['category']['media']['tags']:
                     continue
 
-                media = Media()
-                media.url = j_media_file['progressiveDownloadURL']
-                media.name = j_media['title']
-                media.md5 = j_media_file.get('checksum')
-                media.size = j_media_file.get('filesize')
-                if j_media_file.get('subtitles'):
-                    media.subtitle_url = j_media_file['subtitles']['url']
+            try:
+                if j_media.get('type') == 'audio':
+                    # Simply pick first audio stream for the time being...
+                    j_media_file = j_media['files'][0]
+                else:
+                    # Note: empty list will raise IndexError
+                    j_media_file = get_best_video(j_media['files'], quality=s.quality, subtitles=s.hard_subtitles)
+            except IndexError:
+                if s.quiet < 1:
+                    msg('no media files found for: {}'.format(j_media['title']))
+                continue
 
-                # Save time data
-                if 'firstPublished' in j_media:
-                    try:
-                        # Remove last stuff from date, what is it anyways?
-                        date_string = re.sub('\\.[0-9]+Z$', '', j_media['firstPublished'])
-                        # Try to convert it to seconds
-                        date = time.mktime(time.strptime(date_string, '%Y-%m-%dT%H:%M:%S'))
-                        if s.min_date and date < s.min_date:
-                            continue
-                        media.date = date
-                    except ValueError:
-                        pass
+            media = Media()
+            media.url = j_media_file['progressiveDownloadURL']
+            media.name = j_media['title']
+            media.md5 = j_media_file.get('checksum')
+            media.size = j_media_file.get('filesize')
+            if j_media_file.get('subtitles'):
+                media.subtitle_url = j_media_file['subtitles']['url']
 
-                cat.contents.append(media)
+            # Save time data
+            if 'firstPublished' in j_media:
+                try:
+                    # Remove last stuff from date, what is it anyways?
+                    date_string = re.sub('\\.[0-9]+Z$', '', j_media['firstPublished'])
+                    # Try to convert it to seconds
+                    date = time.mktime(time.strptime(date_string, '%Y-%m-%dT%H:%M:%S'))
+                    if s.min_date and date < s.min_date:
+                        continue
+                    media.date = date
+                except ValueError:
+                    if s.quiet < 1:
+                        msg('could not get timestamp on: {}'.format(j_media['title']))
+
+            cat.contents.append(media)
 
     return result
