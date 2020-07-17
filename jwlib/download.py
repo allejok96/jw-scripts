@@ -127,12 +127,6 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
 
         if os.path.exists(file):
 
-            # Set timestamp to date of publishing
-            # NOTE: Do this before checking _checked_files since
-            # this is not done for newly renamed .part files!
-            if media.date:
-                os.utime(file, (media.date, media.date))
-
             if os.path.getsize(file) == media.size or not media.size:
                 # File size is OK or unknown - Validate checksum
                 if s.checksums and media.md5 and _md5(file) != media.md5:
@@ -167,6 +161,9 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
                 else:
                     # Checksum is correct or unknown - Move and approve
                     os.rename(file + '.part', file)
+                    # Set timestamp to date of publishing
+                    if media.date:
+                        os.utime(file, (media.date, media.date))
                     return file
             elif fsize < media.size and not resumed:
                 # File is smaller - Resume download once
