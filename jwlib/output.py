@@ -62,9 +62,6 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
     def fmt(x):
         return format_filename(x, safe=s.safe_filenames)
 
-    if s.quiet < 1:
-        msg('writing output files')
-
     if not writer:
         writer = _write_to_m3u
 
@@ -86,15 +83,11 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
             source_prepend_dir = ''
             output_file = pj(wd, sd, category.key + file_ending)
 
-        # Since we want to start on a clean file, remove the old one
-        try:
-            os.remove(output_file)
-        except FileNotFoundError:
-            pass
-
+        is_start = True
         for item in category.contents:
             if isinstance(item, Category):
                 if flat:
+                    # "flat" playlists does not link to other playlists
                     continue
                 name = item.name.upper()
                 source = pj('.', source_prepend_dir, item.key + file_ending)
@@ -104,7 +97,13 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
                     source = pj('.', source_prepend_dir, item.file)
                 else:
                     source = item.url
-            writer(source, name, output_file)
+
+            if is_start and s.quiet < 1:
+                msg('writing: {}'.format(output_file))
+
+            # First line will overwrite existing files
+            writer(source, name, output_file, overwrite=is_start)
+            is_start = False
 
 
 def output_filesystem(s: Settings, data: List[Category]):
@@ -201,15 +200,15 @@ def clean_symlinks(s: Settings):
                 os.remove(file)
 
 
-def _truncate_file(file, string=''):
+def _truncate_file(file, string='', overwrite=False):
     """Create a file and the parent directories."""
 
     d = os.path.dirname(file)
     os.makedirs(d, exist_ok=True)
 
-    # Don't truncate non-empty files
     try:
-        if os.stat(file).st_size != 0:
+        if not overwrite and os.stat(file).st_size != 0:
+            # Don't truncate non-empty files
             return
     except FileNotFoundError:
         pass
@@ -218,17 +217,17 @@ def _truncate_file(file, string=''):
         f.write(string)
 
 
-def _write_to_m3u(source, name, file):
+def _write_to_m3u(source, name, file, overwrite=False):
     """Write entry to a M3U playlist file."""
 
-    _truncate_file(file, string='#EXTM3U\n')
+    _truncate_file(file, '#EXTM3U\n', overwrite)
     with open(file, 'a', encoding='utf-8') as f:
         f.write('#EXTINF:0,' + name + '\n' + source + '\n')
 
 
-def _write_to_html(source, name, file):
+def _write_to_html(source, name, file, overwrite=False):
     """Write a HTML file with a hyperlink to a media file."""
 
-    _truncate_file(file, string='<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>')
+    _truncate_file(file, '<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>', overwrite)
     with open(file, 'a', encoding='utf-8') as f:
         f.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
