@@ -2,6 +2,7 @@ from sys import stderr
 import time
 import re
 import json
+import os
 import urllib.request
 import urllib.parse
 from urllib.error import HTTPError
@@ -20,6 +21,10 @@ class Category:
     def __init__(self):
         self.contents = []  # type: List[Union[Category, Media]]
 
+    # misleading use of repr, but it's only for debugging...
+    def __repr__(self):
+        return "Category('{}', {})".format(self.key, self.contents)
+
 
 class Media:
     """Object to put media info in."""
@@ -29,8 +34,18 @@ class Media:
     md5 = None  # type: str
     date = None  # type: int
     size = None  # type: int
-    file = None  # type: str
     subtitle_url = None  # type: str
+
+    # misleading use of repr, but it's only for debugging...
+    def __repr__(self):
+        return "Media('{}')".format(self.file)
+
+    @property
+    def file(self):
+        return os.path.basename(urllib.parse.urlparse(self.url).path)
+
+    def exists_in(self, directory):
+        return os.path.exists(os.path.join(directory, self.file))
 
 
 # Whoops, copied this from the Kodi plug-in

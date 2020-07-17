@@ -39,7 +39,7 @@ def output_stdout(s: Settings, data: List[Category], uniq=False):
     for category in data:
         for item in category.contents:
             if isinstance(item, Media):
-                if item.file:
+                if item.exists_in('.'):
                     out.append(os.path.relpath(item.file, s.work_dir))
                 else:
                     out.append(item.url)
@@ -100,8 +100,8 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
                 source = pj('.', source_prepend_dir, item.key + file_ending)
             else:
                 name = item.name
-                if item.file:
-                    source = pj('.', source_prepend_dir, os.path.basename(item.file))
+                if item.exists_in(pj(wd, sd)):
+                    source = pj('.', source_prepend_dir, item.file)
                 else:
                     source = item.url
             writer(source, name, output_file)
@@ -148,10 +148,10 @@ def output_filesystem(s: Settings, data: List[Category]):
                     link = pj(output_dir, fmt(item.name))
 
             else:
-                if not item.file:
+                if not item.exists_in(pj(wd, sd)):
                     continue
 
-                source = pj('..', os.path.basename(item.file))
+                source = pj('..', item.file)
                 ext = os.path.splitext(item.file)[1]
                 link = pj(output_dir, fmt(item.name + ext))
 

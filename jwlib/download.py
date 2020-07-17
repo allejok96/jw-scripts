@@ -62,9 +62,8 @@ def download_all(s: Settings, data: List[Category]):
                 msg('skipping previously deleted file: {}'.format(name))
             continue
 
-        # Check existing files
-        media.file = download_media(s, media, wd, check_only=True)
-        if not media.file:
+        # Check existing file
+        if not download_media(s, media, wd, check_only=True):
             download_list.append(media)
 
     # Download all files
@@ -80,7 +79,7 @@ def download_all(s: Settings, data: List[Category]):
         # Download the video
         if s.quiet < 2:
             print('[{}/{}]'.format(download_list.index(media) + 1, len(download_list)), end=' ', file=stderr)
-        media.file = download_media(s, media, wd)
+        download_media(s, media, wd)
 
 
 def download_subtitles(s: Settings, media: Media, directory: str):
@@ -110,10 +109,10 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
     :param media: a Media instance
     :param directory: dir to save the files to
     :param check_only: bool, True means no downloading
-    :return: filename, or None if unsuccessful
+    :return: True if download/check is successful
     """
     if not os.path.exists(directory) and not s.download:
-        return None
+        return False
     os.makedirs(directory, exist_ok=True)
 
     basename = _urlbasename(media.url)
@@ -136,7 +135,7 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
                     os.remove(file)
                 else:
                     # Checksum is correct or unknown
-                    return file
+                    return True
             else:
                 # File size is bad - Delete
                 if s.quiet < 2:
@@ -145,7 +144,7 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
 
         elif check_only:
             # The rest of this method is only applicable in download mode
-            return None
+            return False
 
         elif os.path.exists(file + '.part'):
 
@@ -164,7 +163,7 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
                     # Set timestamp to date of publishing
                     if media.date:
                         os.utime(file, (media.date, media.date))
-                    return file
+                    return True
             elif fsize < media.size and not resumed:
                 # File is smaller - Resume download once
                 resumed = True
@@ -199,7 +198,7 @@ def download_media(s: Settings, media: Media, directory: str, check_only=False):
                 # There is nothing left to do.
                 if s.quiet < 2:
                     msg('failed to download: {} ({})'.format(basename, media.name))
-                return None
+                return False
 
 
 def disk_usage_info(s: Settings):

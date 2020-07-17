@@ -40,7 +40,8 @@ while True:
         for item in category.contents:
             if isinstance(item, Media):
                 print(item.name)
-                if item.file:
+                if item.exists_in('.'):
+                    # Use local files if available
                     links.add(item.file)
                 else:
                     links.add(item.url)
