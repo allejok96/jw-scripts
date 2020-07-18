@@ -117,9 +117,15 @@ def parse_broadcasting(s: Settings):
             sub = Category()
             sub.key = j_sub['key']
             sub.name = j_sub['name']
+            # Note:
+            # We always add an sub-category entry
+            # but sometimes it is --exclude'ed so it won't get parsed
+            # This will create broken symlinks etc
+            # But if script is re-run with these categories included, the links will start to work
+            # We call it implementation detail instead of bug...
             cat.contents.append(sub)
             # Add subcategory key to queue for parsing later
-            if sub.key not in queue:
+            if sub.key not in queue and sub.key not in s.exclude_categories:
                 queue.append(sub.key)
 
         for j_media in j['category'].get('media', []):

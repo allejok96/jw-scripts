@@ -27,7 +27,6 @@ def download_all(s: Settings, data: List[Category]):
     wd = os.path.join(s.work_dir, s.sub_dir)  # work dir
 
     media_list = [x for cat in data
-                  if cat.key not in s.exclude_categories or cat.home
                   for x in cat.contents
                   if isinstance(x, Media)]
     # Sort download queue with newest files first

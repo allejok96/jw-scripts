@@ -147,7 +147,7 @@ class ArgumentParser(argparse.ArgumentParser):
                        help='comma separated list of categories to index')
         add_predefined('--exclude', metavar='CODE', dest='exclude_categories',
                        action=action_factory(lambda x: tuple(x.split(','))),
-                       help='comma separated list of categories to exclude from download')
+                       help='comma separated list of categories to exclude')
         add_predefined('--latest', action='store_const', const=['LatestVideos'],
                        dest='include_categories',
                        help='index the "Latest Videos" section')
