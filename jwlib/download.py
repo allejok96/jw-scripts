@@ -17,6 +17,10 @@ class MissingTimestampError(Exception):
     pass
 
 
+class DiskLimitReached(Exception):
+    pass
+
+
 def download_all(s: Settings, data: List[Category]):
     """Download/check media files"""
 
@@ -61,6 +65,8 @@ def download_all(s: Settings, data: List[Category]):
                 if s.quiet < 2:
                     msg('low disk space and missing metadata, skipping: {}'.format(media.name))
                 continue
+            except DiskLimitReached:
+                return
 
         # Download the video
         if s.quiet < 2:
@@ -315,7 +321,7 @@ def disk_cleanup(s: Settings, directory: str, reference_media: Media):
             if file.lower().endswith('.mp4') and os.path.isfile(file):
                 videos.append((file, os.stat(file).st_mtime))
         if not videos:
-            raise RuntimeError('disk limit reached, but no videos in {}'.format(directory))
+            raise RuntimeError('cannot free more disk space, no videos in {}'.format(directory))
         videos = sorted(videos, key=lambda x: x[1])
         oldest_file, oldest_date = videos[0]
 
@@ -323,7 +329,7 @@ def disk_cleanup(s: Settings, directory: str, reference_media: Media):
         if reference_media.date <= oldest_date:
             if s.quiet < 1:
                 msg('disk limit reached, all videos up to date')
-            quit(0)
+            raise DiskLimitReached
 
         # Delete the file and add a "deleted" marker
         if s.quiet < 2:
