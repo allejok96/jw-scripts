@@ -139,7 +139,7 @@ class ArgumentParser(argparse.ArgumentParser):
                        help='check existing files and re-download them if they are broken')
         add_predefined('--free', type=int, metavar='MiB', dest='keep_free',
                        action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
-                       help='disk space in MiB to keep free (deletes older MP4 files)')
+                       help='disk space in MiB to keep free (warning: deletes old MP4 files, use separate folder!)')
         add_predefined('--no-warning', dest='warning', action='store_false',
                        help='do not warn when space limit seems wrong')
         add_predefined('--category', '-c', dest='include_categories', metavar='CODE',
