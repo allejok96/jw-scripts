@@ -8,25 +8,17 @@ With these scripts you can get the latest JW Broadcasting videos automatically d
 
 ## Get started
 
-*For other installations methods, click [here](https://github.com/allejok96/jw-scripts/wiki/Installation).*
+Take a look at [installation methods](https://github.com/allejok96/jw-scripts/wiki/Installation) to get up and running.
 
-Fisrt make sure to install `python-setuptools` or `python3-setuptools` depending on your distro.
+For example, to download the latest videos in Swedish, you would run:
 
-Install the scripts
+    python jwb-index --download --latest --lang=Z
 
-    git clone https://github.com/allejok96/jw-scripts.git
-    cd jw-scripts
-    sudo python3 setup.py install
+Next, check out the Wiki pages for more examples and options: 
 
-Then go ahead and get your latest videos...
-
-    jwb-index --download --latest ~/Videos
-
-Next, click on one of the scripts below for more info.
-
-* [jwb-index](https://github.com/allejok96/jw-scripts/wiki/jwb-index) - Download and index videos from jw.org. **Plex** users look here.
-* [jwb-stream](https://github.com/allejok96/jw-scripts/wiki/jwb-stream) - Stream JW Broadcasting in your media player of choice, like VLC.
-* [jwb-offline](https://github.com/allejok96/jw-scripts/wiki/jwb-offline) - Play downloaded videos in random order (and some more nice things).
+* [**jwb-index**](https://github.com/allejok96/jw-scripts/wiki/jwb-index) - Download and index videos from jw.org (Plex users, look here).
+* [jwb-stream](https://github.com/allejok96/jw-scripts/wiki/jwb-stream) - Play JW streaming channels using any media player, like VLC.
+* [jwb-offline](https://github.com/allejok96/jw-scripts/wiki/jwb-offline) - Create a set-top-box playing downloaded videos in random order.
 * [jwb-offline-import](https://github.com/allejok96/jw-scripts/wiki/jwb-offline-import) - Import videos from a USB to be played with jwb-offline.
 
 ## Questions
