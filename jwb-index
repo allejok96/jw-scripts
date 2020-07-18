@@ -44,7 +44,7 @@ settings.download = settings.download == 'media'
 
 # Some heads-up
 if settings.quiet < 1:
-    if settings.curl_path is not None and settings.rate_limit != 0:
+    if settings.download and settings.curl_path is not None and settings.rate_limit != 0:
         msg('note: download rate limit is active')
     if not settings.safe_filenames and (settings.mode not in (None, 'stdout') or settings.friendly_subtitle_filenames):
         msg('note: NTFS/FAT compatibility is off')

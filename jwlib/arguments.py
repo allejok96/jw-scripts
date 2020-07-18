@@ -155,7 +155,7 @@ class ArgumentParser(argparse.ArgumentParser):
                        action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
                        help='only index media newer than this date')
         add_predefined('--limit-rate', dest='rate_limit',
-                       help='maximum download rate, passed to curl (0 = no limit)')
+                       help='maximum download rate, passed to curl (default: 1m = 1 megabyte/s, 0 = no limit)')
         add_predefined('--curl-path', metavar='PATH',
                        help='path to the curl binary')
         add_predefined('--no-curl', action='store_const', const=None, dest='curl_path',
