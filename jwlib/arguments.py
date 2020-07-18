@@ -67,7 +67,8 @@ class Settings:
     friendly_subtitle_filenames = False
     curl_path = 'curl'
     rate_limit = '1M'
-    checksums = True
+    checksums = False
+    overwrite_bad = False
 
     # Stream stuff
     command = None  # type: list
@@ -107,9 +108,9 @@ class ArgumentParser(argparse.ArgumentParser):
         super().parse_args(*args, namespace=settings, **kwargs)
         return settings
 
-    def __init__(self, *args, argument_default=None, **kwargs):
+    def __init__(self, *args, argument_default=argparse.SUPPRESS, **kwargs):
         # Do not overwrite attributes with None
-        super().__init__(*args, argument_default=argparse.SUPPRESS, **kwargs)
+        super().__init__(*args, argument_default=argument_default, **kwargs)
         self.predefined_arguments = {}
         add_predefined = self.add_predefined
 
@@ -132,8 +133,10 @@ class ArgumentParser(argparse.ArgumentParser):
                        help='maximum video quality')
         add_predefined('--hard-subtitles', action='store_true',
                        help='prefer videos with hard-coded subtitles')
-        add_predefined('--no-checksum', action='store_false', dest='checksums',
-                       help="don't check md5 checksum")
+        add_predefined('--checksum', action='store_true', dest='checksums',
+                       help="validate MD5 checksums")
+        add_predefined('--fix-broken', action='store_true', dest='overwrite_bad',
+                       help='check existing files and re-download them if they are broken')
         add_predefined('--free', type=int, metavar='MiB', dest='keep_free',
                        action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
                        help='disk space in MiB to keep free (deletes older MP4 files)')

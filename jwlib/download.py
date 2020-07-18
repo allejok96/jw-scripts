@@ -31,43 +31,29 @@ def download_all(s: Settings, data: List[Category]):
     media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
 
     if s.download_subtitles:
-        subtitle_list = [m for m in media_list if m.subtitle_url]
-        for media in subtitle_list:
-            if s.quiet < 2:
-                print('[{}/{}]'.format(subtitle_list.index(media) + 1, len(subtitle_list)), end=' ', file=stderr)
-            download_subtitles(s, media, wd)
+        download_all_subtitles(s, media_list, wd)
 
     if not s.download:
         return
-
-    # Trim down the list of files that need to be downloaded
-    download_list = []
-    checked_files = []
 
     # Search for local media before initiating the download
     # (to get correct progress info for the download in next step)
     if s.quiet < 1:
         msg('scanning local files')
+
+    checked_files = []
+    download_list = []
     for media in media_list:
         # Only run this check once per filename
         # (there may be multiple Media objects referring to the same file)
-        name = _urlbasename(media.url)
-        if name in checked_files:
-            continue
-        checked_files.append(name)
+        if media.file not in checked_files:
+            checked_files.append(media.file)
+            if not check_media(s, media, wd):
+                # Queue missing or bad files
+                download_list.append(media)
 
-        # Skip previously deleted files
-        if os.path.exists(os.path.join(wd, name + '.deleted')):
-            if s.quiet < 1:
-                msg('skipping previously deleted file: {}'.format(name))
-            continue
-
-        # Check existing file
-        if not download_media(s, media, wd, check_only=True):
-            download_list.append(media)
-
-    # Download all files
-    for media in download_list:
+    # Start downloading
+    for num, media in enumerate(download_list):
         if s.keep_free > 0:
             try:
                 disk_cleanup(s, wd, media)
@@ -78,11 +64,11 @@ def download_all(s: Settings, data: List[Category]):
 
         # Download the video
         if s.quiet < 2:
-            print('[{}/{}]'.format(download_list.index(media) + 1, len(download_list)), end=' ', file=stderr)
+            print('[{}/{}]'.format(num + 1, len(download_list)), end=' ', file=stderr)
         download_media(s, media, wd)
 
 
-def download_subtitles(s: Settings, media: Media, directory: str):
+def download_all_subtitles(s: Settings, media_list: List[Media], directory: str):
     """Download VTT files from Media
 
     :param s: Global settings
@@ -91,114 +77,141 @@ def download_subtitles(s: Settings, media: Media, directory: str):
     """
     os.makedirs(directory, exist_ok=True)
 
-    basename = _urlbasename(media.subtitle_url)
-    if s.friendly_subtitle_filenames:
-        suffix = os.path.splitext(basename)[1]
-        basename = format_filename(media.name + suffix, safe=s.safe_filenames)
-    if s.quiet < 2:
-        msg('downloading: {}'.format(basename, media.name))
-    _curl(media.subtitle_url, file=os.path.join(directory, basename), curl_path=None)
+    download_list = set()
+    for media in media_list:
+        if not media.subtitle_url:
+            continue
+
+        filename = os.path.basename(urllib.parse.urlparse(media.subtitle_url).path)
+        if s.friendly_subtitle_filenames:
+            filename = format_filename(media.name + os.path.splitext(filename)[1], safe=s.safe_filenames)
+
+        file = os.path.join(directory, filename)
+        # Note: --fix-broken will re-download all subtitle files...
+        if s.overwrite_bad or not os.path.exists(file):
+            download_list.add((media.subtitle_url, file, filename))
+
+    for num, data in enumerate(download_list):
+        url, file, filename = data
+        if s.quiet < 2:
+            msg('[{}/{}] downloading: {}'.format(num + 1, len(download_list), filename))
+        _curl(url, file=file, curl_path=None)
 
 
-def download_media(s: Settings, media: Media, directory: str, check_only=False):
+def check_media(s: Settings, media: Media, directory: str):
     """Download media file and check it.
 
     Download file, check MD5 sum and size, delete file if it missmatches.
 
     :param s: Global settings
     :param media: a Media instance
-    :param directory: dir to save the files to
-    :param check_only: bool, True means no downloading
-    :return: True if download/check is successful
+    :param directory: dir where files are located
+    :return: True if check is successful
     """
-    if not os.path.exists(directory) and not s.download:
+    file = os.path.join(directory, media.file)
+    if not os.path.exists(file):
         return False
-    os.makedirs(directory, exist_ok=True)
 
-    basename = _urlbasename(media.url)
-    file = os.path.join(directory, basename)
+    # If we are going to fix bad files, check the existing ones
+    if s.overwrite_bad:
 
-    # Only try resuming and downloading once
-    resumed = False
-    downloaded = False
-
-    while True:
-
-        if os.path.exists(file):
-
-            if os.path.getsize(file) == media.size or not media.size:
-                # File size is OK or unknown - Validate checksum
-                if s.checksums and media.md5 and _md5(file) != media.md5:
-                    # Checksum is bad - Remove
-                    if s.quiet < 2:
-                        msg('checksum mismatch, deleting: {}'.format(basename))
-                    os.remove(file)
-                else:
-                    # Checksum is correct or unknown
-                    return True
-            else:
-                # File size is bad - Delete
-                if s.quiet < 2:
-                    msg('size mismatch, deleting: {}'.format(basename))
-                os.remove(file)
-
-        elif check_only:
-            # The rest of this method is only applicable in download mode
+        if media.size and os.path.getsize(file) != media.size:
+            if s.quiet < 2:
+                msg('size mismatch: {}'.format(file))
             return False
 
-        elif os.path.exists(file + '.part'):
+        if s.checksums and media.md5 and _md5(file) != media.md5:
+            if s.quiet < 2:
+                msg('checksum mismatch: {}'.format(file))
+            return False
 
-            fsize = os.path.getsize(file + '.part')
+    return True
 
-            if fsize == media.size or not media.size:
-                # File size is OK - Validate checksum
-                if s.checksums and media.md5 and _md5(file + '.part') != media.md5:
-                    # Checksum is bad - Remove
-                    if s.quiet < 2:
-                        msg('checksum mismatch, deleting: {}'.format(basename + '.part'))
-                    os.remove(file + '.part')
-                else:
-                    # Checksum is correct or unknown - Move and approve
-                    os.rename(file + '.part', file)
-                    # Set timestamp to date of publishing
-                    if media.date:
-                        os.utime(file, (media.date, media.date))
-                    return True
-            elif fsize < media.size and not resumed:
-                # File is smaller - Resume download once
-                resumed = True
-                if s.quiet < 2:
-                    msg('resuming: {} ({})'.format(basename + '.part', media.name))
-                _curl(media.url,
-                      file + '.part',
-                      resume=True,
-                      rate_limit=s.rate_limit,
-                      curl_path=s.curl_path,
-                      progress=s.quiet < 1)
-            else:
-                # File size is bad - Remove
-                if s.quiet < 2:
-                    msg('size mismatch, deleting: {}'.format(basename + '.part'))
-                os.remove(file + '.part')
 
+def download_media(s: Settings, media: Media, directory: str):
+    """Download media file and check it.
+
+    :param s: Global settings
+    :param media: a Media instance
+    :param directory: dir to save the files to
+    :return: True if download was successful
+    """
+    os.makedirs(directory, exist_ok=True)
+
+    file = os.path.join(directory, media.file)
+    tmpfile = file + '.part'
+
+    if os.path.exists(tmpfile):
+
+        # If file is smaller, resume download
+        if media.size and os.path.getsize(tmpfile) < media.size:
+            if s.quiet < 2:
+                msg('resuming: {} ({})'.format(media.file, media.name))
+            _curl(media.url,
+                  tmpfile,
+                  resume=True,
+                  rate_limit=s.rate_limit,
+                  curl_path=s.curl_path,
+                  progress=s.quiet < 1)
+
+        # Check size
+        if media.size and os.path.getsize(tmpfile) != media.size:
+            if s.quiet < 2:
+                msg('size mismatch, deleting: {}'.format(tmpfile))
+            # Always remove resumed files that have wrong size
+            os.remove(tmpfile)
+
+        # Always check checksum on resumed files
+        elif media.md5 and _md5(tmpfile) != media.md5:
+            if s.quiet < 2:
+                msg('checksum mismatch, deleting: {}'.format(tmpfile))
+            # Always remove resumed files that are broken
+            os.remove(tmpfile)
+
+        # Set timestamp to date of publishing, move and approve
         else:
-            # Download whole file once
-            if not downloaded:
-                downloaded = True
-                if s.quiet < 2:
-                    msg('downloading: {} ({})'.format(basename, media.name))
-                _curl(media.url,
-                      file + '.part',
-                      rate_limit=s.rate_limit,
-                      curl_path=s.curl_path,
-                      progress=s.quiet < 1)
-            else:
-                # If we get here, all tests have failed.
-                # Resume and regular download too.
-                # There is nothing left to do.
-                if s.quiet < 2:
-                    msg('failed to download: {} ({})'.format(basename, media.name))
-                return False
+            if media.date:
+                os.utime(tmpfile, (media.date, media.date))
+            os.rename(tmpfile, file)
+            return True
+
+    # Continuing to regular download
+    if s.quiet < 2:
+        msg('downloading: {} ({})'.format(media.file, media.name))
+    _curl(media.url,
+          tmpfile,
+          rate_limit=s.rate_limit,
+          curl_path=s.curl_path,
+          progress=s.quiet < 1)
+
+    # Check exist and non-empty
+    try:
+        fsize = os.path.getsize(tmpfile)
+        if fsize == 0:
+            os.remove(tmpfile)
+            raise FileNotFoundError
+    except FileNotFoundError:
+        if s.quiet < 2:
+            msg('download failed: {}'.format(media.file))
+        return False
+
+    # Set timestamp to date of publishing, move and approve
+    if media.date:
+        os.utime(tmpfile, (media.date, media.date))
+    os.rename(tmpfile, file)
+
+    # Check size (log only)
+    if media.size and fsize != media.size:
+        if s.quiet < 2:
+            msg('size mismatch: {}'.format(file))
+        return False
+
+    # Check MD5 if size was correct (optional, log only)
+    if s.checksums and media.md5 and _md5(file) != media.md5:
+        if s.quiet < 2:
+            msg('checksum mismatch: {}'.format(file))
+
+    return True
 
 
 def disk_usage_info(s: Settings):
@@ -224,10 +237,6 @@ def disk_usage_info(s: Settings):
                 exit(1)
         except EOFError:
             exit(1)
-
-
-def _urlbasename(string: str):
-    return os.path.basename(urllib.parse.urlparse(string).path)
 
 
 def _md5(file: str):
@@ -320,5 +329,3 @@ def disk_cleanup(s: Settings, directory: str, reference_media: Media):
         if s.quiet < 2:
             msg('removing old video: {}'.format(oldest_file))
         os.remove(oldest_file)
-        with open(oldest_file + '.deleted', 'w') as file:
-            file.write('')
