@@ -46,8 +46,8 @@ def download_all(s: Settings, data: List[Category]):
     for media in media_list:
         # Only run this check once per filename
         # (there may be multiple Media objects referring to the same file)
-        if media.file not in checked_files:
-            checked_files.append(media.file)
+        if media.filename not in checked_files:
+            checked_files.append(media.filename)
             if not check_media(s, media, wd):
                 # Queue missing or bad files
                 download_list.append(media)
@@ -108,7 +108,7 @@ def check_media(s: Settings, media: Media, directory: str):
     :param directory: dir where files are located
     :return: True if check is successful
     """
-    file = os.path.join(directory, media.file)
+    file = os.path.join(directory, media.filename)
     if not os.path.exists(file):
         return False
 
@@ -138,7 +138,7 @@ def download_media(s: Settings, media: Media, directory: str):
     """
     os.makedirs(directory, exist_ok=True)
 
-    file = os.path.join(directory, media.file)
+    file = os.path.join(directory, media.filename)
     tmpfile = file + '.part'
 
     if os.path.exists(tmpfile):
@@ -146,7 +146,7 @@ def download_media(s: Settings, media: Media, directory: str):
         # If file is smaller, resume download
         if media.size and os.path.getsize(tmpfile) < media.size:
             if s.quiet < 2:
-                msg('resuming: {} ({})'.format(media.file, media.name))
+                msg('resuming: {} ({})'.format(media.filename, media.name))
             _curl(media.url,
                   tmpfile,
                   resume=True,
@@ -177,7 +177,7 @@ def download_media(s: Settings, media: Media, directory: str):
 
     # Continuing to regular download
     if s.quiet < 2:
-        msg('downloading: {} ({})'.format(media.file, media.name))
+        msg('downloading: {} ({})'.format(media.filename, media.name))
     _curl(media.url,
           tmpfile,
           rate_limit=s.rate_limit,
@@ -192,7 +192,7 @@ def download_media(s: Settings, media: Media, directory: str):
             raise FileNotFoundError
     except FileNotFoundError:
         if s.quiet < 2:
-            msg('download failed: {}'.format(media.file))
+            msg('download failed: {}'.format(media.filename))
         return False
 
     # Set timestamp to date of publishing, move and approve

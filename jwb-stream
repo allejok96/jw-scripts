@@ -42,7 +42,7 @@ while True:
                 print(item.name)
                 if item.exists_in('.'):
                     # Use local files if available
-                    links.add(item.file)
+                    links.add(item.filename)
                 else:
                     links.add(item.url)
 

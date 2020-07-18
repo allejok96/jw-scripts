@@ -38,14 +38,14 @@ class Media:
 
     # misleading use of repr, but it's only for debugging...
     def __repr__(self):
-        return "Media('{}')".format(self.file)
+        return "Media('{}')".format(self.filename)
 
     @property
-    def file(self):
+    def filename(self):
         return os.path.basename(urllib.parse.urlparse(self.url).path)
 
     def exists_in(self, directory):
-        return os.path.exists(os.path.join(directory, self.file))
+        return os.path.exists(os.path.join(directory, self.filename))
 
 
 # Whoops, copied this from the Kodi plug-in
