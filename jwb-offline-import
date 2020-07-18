@@ -4,12 +4,11 @@ import shutil
 from sys import stderr
 
 from jwlib.arguments import ArgumentParser, Settings
-from jwlib.parse import Media
 from jwlib.download import disk_usage_info, disk_cleanup
 
 
-class File(Media):
-    def __init__(self, name: str, directory):
+class File:
+    def __init__(self, name: str, directory: str):
         self.name = name
         self.file = os.path.join(directory, name)
         try:
@@ -17,8 +16,8 @@ class File(Media):
             self.size = stat.st_size
             self.date = stat.st_mtime
         except FileNotFoundError:
-            pass
-        self.deleted = os.path.exists(self.file + '.deleted')
+            self.size = None
+            self.date = None
 
 
 class LocalSettings(Settings):
@@ -49,7 +48,7 @@ for name in os.listdir(settings.source):
         continue
     source = File(name, directory=settings.source)
     dest = File(name, directory=settings.dest)
-    if not dest.deleted and source.size != dest.size:
+    if source.size != dest.size:
         source_files.append(source)
 
 # Newest file first

@@ -1,4 +1,3 @@
-from sys import stderr
 import os
 from typing import List
 
