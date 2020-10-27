@@ -1,4 +1,3 @@
-from sys import stderr
 import time
 import re
 import json
@@ -8,8 +7,10 @@ import urllib.parse
 from urllib.error import HTTPError
 from typing import List, Union
 
-from . import msg
-from .arguments import Settings
+from .arguments import msg, Settings
+
+SAFE_FILENAMES = False
+FRIENDLY_FILENAMES = False
 
 
 class Category:
@@ -25,10 +26,13 @@ class Category:
     def __repr__(self):
         return "Category('{}', {})".format(self.key, self.contents)
 
+    @property
+    def safe_name(self):
+        return format_filename(self.name)
+
 
 class Media:
     """Object to put media info in."""
-
     url = None  # type: str
     name = None  # type: str
     md5 = None  # type: str
@@ -40,12 +44,46 @@ class Media:
     def __repr__(self):
         return "Media('{}')".format(self.filename)
 
-    @property
-    def filename(self):
-        return os.path.basename(urllib.parse.urlparse(self.url).path)
-
     def exists_in(self, directory):
         return os.path.exists(os.path.join(directory, self.filename))
+
+    def _get_filename(self, url=''):
+        return format_filename(os.path.basename(urllib.parse.urlparse(url).path))
+
+    def _get_friendly_filename(self, url=''):
+        return format_filename((self.name or '') + os.path.splitext(self._get_filename(url))[1])
+
+    @property
+    def filename(self):
+        if FRIENDLY_FILENAMES:
+            return self._get_friendly_filename(self.url)
+        else:
+            return self._get_filename(self.url)
+
+    @property
+    def friendly_filename(self):
+        return self._get_friendly_filename(self.url)
+
+    @property
+    def subtitle_filename(self):
+        if FRIENDLY_FILENAMES:
+            return self._get_friendly_filename(self.subtitle_url)
+        else:
+            return self._get_filename(self.subtitle_url)
+
+
+def format_filename(string):
+    """Remove unsafe characters from file names"""
+
+    if SAFE_FILENAMES:
+        # NTFS/FAT forbidden characters
+        string = string.replace('"', "'").replace(':', '.')
+        forbidden = '<>:"|?*/\0'
+    else:
+        # Unix forbidden characters
+        forbidden = '/\0'
+
+    return ''.join(x for x in string if x not in forbidden)
 
 
 # Whoops, copied this from the Kodi plug-in
@@ -87,6 +125,11 @@ def parse_broadcasting(s: Settings):
 
     :param s: Global settings object
     """
+    # TODO this is really ugly
+    global FRIENDLY_FILENAMES, SAFE_FILENAMES
+    FRIENDLY_FILENAMES = s.friendly_filenames
+    SAFE_FILENAMES = s.safe_filenames
+
     result = []
 
     # Make a copy of the list, because we'll append stuff here later

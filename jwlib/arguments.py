@@ -1,9 +1,12 @@
+import sys
 import json
 import urllib.request
 import argparse
 import time
 
-from . import msg
+
+def msg(s):
+    print(s, file=sys.stderr, flush=True)
 
 
 def action_factory(function):
@@ -64,7 +67,7 @@ class Settings:
     # Download stuff
     download = False
     download_subtitles = False
-    friendly_subtitle_filenames = False
+    friendly_filenames = False
     curl_path = 'curl'
     rate_limit = '1M'
     checksums = False
@@ -93,8 +96,13 @@ class Settings:
 class ArgumentParser(argparse.ArgumentParser):
     """Predefined arguments can be activated with add_arguments()"""
 
-    def add_predefined(self, *flags, **kwargs):
-        self.predefined_arguments[flags[0]] = dict(flags=flags, **kwargs)
+    def add_predefined(self, long_flag, short_flag=None, **kwargs):
+        # Note: put short flags first in help message
+        if short_flag:
+            flags = [short_flag, long_flag]
+        else:
+            flags = [long_flag]
+        self.predefined_arguments[long_flag] = dict(flags=flags, **kwargs)
 
     def add_arguments(self, flags: list):
         """Activate predefined arguments found in list"""
@@ -121,12 +129,9 @@ class ArgumentParser(argparse.ArgumentParser):
         add_predefined('--mode', '-m',
                        choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
                        help='output mode')
-        add_predefined('--lang', '-l', nargs='?',
-                       action=action_factory(verify_language),
+        add_predefined('--lang', '-l', action=action_factory(verify_language),
                        help='language code')
-        add_predefined('--languages',
-                       nargs=0,
-                       action=action_factory(print_language),
+        add_predefined('--languages', '-L', nargs=0, action=action_factory(print_language),
                        help='display a list of valid language codes')
         add_predefined('--quality', '-Q', type=int,
                        choices=[240, 360, 480, 720],
@@ -154,7 +159,7 @@ class ArgumentParser(argparse.ArgumentParser):
         add_predefined('--since', metavar='YYYY-MM-DD', dest='min_date',
                        action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
                        help='only index media newer than this date')
-        add_predefined('--limit-rate', dest='rate_limit',
+        add_predefined('--limit-rate', '-R', metavar='RATE', dest='rate_limit',
                        help='maximum download rate, passed to curl (default: 1m = 1 megabyte/s, 0 = no limit)')
         add_predefined('--curl-path', metavar='PATH',
                        help='path to the curl binary')
@@ -162,11 +167,14 @@ class ArgumentParser(argparse.ArgumentParser):
                        help='use urllib instead of external curl (compatibility)')
         add_predefined('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
                        help='remove all old symlinks (only valid with --mode=filesystem)')
-        add_predefined('--ntfs', action='store_true', dest='safe_filenames',
+        add_predefined('--ntfs', '-X', action='store_true', dest='safe_filenames',
                        help='remove special characters from file names (NTFS/FAT compatibility)')
-        add_predefined('--download', '-d', nargs='?', const='media',
-                       choices=['media', 'subtitles', 'friendly-subtitles'],
-                       help='download media files or subtitles')
+        add_predefined('--download', '-d', action='store_true',
+                       help='download media files')
+        add_predefined('--friendly', '-H', action='store_true', dest='friendly_filenames',
+                       help='save downloads with human readable names')
+        add_predefined('--download-subtitles', action='store_true',
+                       help='download VTT subtitle files')
         add_predefined('--forever', action='store_true', dest='stream_forever',
                        help='re-run program when the last video finishes')
         add_predefined('work_dir', nargs='?', metavar='DIR',

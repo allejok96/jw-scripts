@@ -1,9 +1,8 @@
 import os
 from typing import List
 
-from . import msg
 from .parse import Category, Media
-from .arguments import Settings
+from .arguments import Settings, msg
 
 pj = os.path.join
 
@@ -24,7 +23,7 @@ def create_output(s: Settings, data: List[Category], stdout_uniq=False):
     elif s.mode == 'm3ucompat':
         output_m3u(s, data, flat=True)
     elif s.mode == 'html':
-        output_m3u(s, data, writer=_write_to_html, file_ending='.html')
+        output_m3u(s, data, writer=_write_to_html, ext='.html')
     else:
         raise RuntimeError('invalid mode')
 
@@ -48,18 +47,15 @@ def output_stdout(s: Settings, data: List[Category], uniq=False):
     print(*out, sep='\n')
 
 
-def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_ending='.m3u'):
+def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, ext='.m3u'):
     """Create a M3U playlist tree.
 
     :keyword writer: Function to write to files
     :keyword flat: If all playlist will be saved outside of subdir
-    :keyword file_ending: Well, duh
+    :keyword ext: Filename extension
     """
     wd = s.work_dir
     sd = s.sub_dir
-
-    def fmt(x):
-        return format_filename(x, safe=s.safe_filenames)
 
     if not writer:
         writer = _write_to_m3u
@@ -67,20 +63,20 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
     for category in data:
         if flat:
             # Flat mode, all files in working dir
-            output_file = pj(wd, category.key + ' - ' + fmt(category.name) + file_ending)
+            output_file = pj(wd, category.key + ' - ' + category.safe_name + ext)
             source_prepend_dir = sd
         elif category.home:
             # For home/index/starting categories
             # The current file gets saved outside the subdir
             # Links point inside the subdir
             source_prepend_dir = sd
-            output_file = pj(wd, fmt(category.name) + file_ending)
+            output_file = pj(wd, category.safe_name + ext)
         else:
             # For all other categories
             # Things get saved inside the subdir
             # No need to prepend links with the subdir itself
             source_prepend_dir = ''
-            output_file = pj(wd, sd, category.key + file_ending)
+            output_file = pj(wd, sd, category.key + ext)
 
         is_start = True
         for item in category.contents:
@@ -89,7 +85,7 @@ def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, file_
                     # "flat" playlists does not link to other playlists
                     continue
                 name = item.name.upper()
-                source = pj('.', source_prepend_dir, item.key + file_ending)
+                source = pj('.', source_prepend_dir, item.key + ext)
             else:
                 name = item.name
                 if item.exists_in(pj(wd, sd)):
@@ -111,9 +107,6 @@ def output_filesystem(s: Settings, data: List[Category]):
     wd = s.work_dir
     sd = s.sub_dir
 
-    def fmt(x):
-        return format_filename(x, safe=s.safe_filenames)
-
     if s.quiet < 1:
         msg('creating directory structure')
 
@@ -125,7 +118,7 @@ def output_filesystem(s: Settings, data: List[Category]):
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
-            link = pj(wd, fmt(category.name))
+            link = pj(wd, category.safe_name)
             # Note: the source will be relative
             source = pj(sd, category.key)
             try:
@@ -141,36 +134,21 @@ def output_filesystem(s: Settings, data: List[Category]):
                 source = pj('..', item.key)
 
                 if s.include_keyname:
-                    link = pj(output_dir, item.key + ' - ' + fmt(item.name))
+                    link = pj(output_dir, item.key + ' - ' + item.safe_name)
                 else:
-                    link = pj(output_dir, fmt(item.name))
+                    link = pj(output_dir, item.safe_name)
 
             else:
                 if not item.exists_in(pj(wd, sd)):
                     continue
 
                 source = pj('..', item.filename)
-                ext = os.path.splitext(item.filename)[1]
-                link = pj(output_dir, fmt(item.name + ext))
+                link = pj(output_dir, item.friendly_filename)
 
             try:
                 os.symlink(source, link)
             except FileExistsError:
                 pass
-
-
-def format_filename(string, safe=False):
-    """Remove unsafe characters from file names"""
-
-    if safe:
-        # NTFS/FAT forbidden characters
-        string = string.replace('"', "'").replace(':', '.')
-        forbidden = '<>:"|?*/\0'
-    else:
-        # Unix forbidden characters
-        forbidden = '/\0'
-
-    return ''.join(x for x in string if x not in forbidden)
 
 
 def clean_symlinks(s: Settings):

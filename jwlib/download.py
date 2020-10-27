@@ -7,10 +7,8 @@ import urllib.request
 import urllib.parse
 from typing import List, Optional
 
-from . import msg
 from .parse import Category, Media
-from .arguments import Settings
-from .output import format_filename
+from .arguments import Settings, msg
 
 
 class MissingTimestampError(Exception):
@@ -74,12 +72,8 @@ def download_all(s: Settings, data: List[Category]):
 
 
 def download_all_subtitles(s: Settings, media_list: List[Media], directory: str):
-    """Download VTT files from Media
+    """Download VTT files from Media"""
 
-    :param s: Global settings
-    :param media: a Media instance
-    :param directory: dir to save the files to
-    """
     os.makedirs(directory, exist_ok=True)
 
     download_list = set()
@@ -87,14 +81,10 @@ def download_all_subtitles(s: Settings, media_list: List[Media], directory: str)
         if not media.subtitle_url:
             continue
 
-        filename = os.path.basename(urllib.parse.urlparse(media.subtitle_url).path)
-        if s.friendly_subtitle_filenames:
-            filename = format_filename(media.name + os.path.splitext(filename)[1], safe=s.safe_filenames)
-
-        file = os.path.join(directory, filename)
+        file = os.path.join(directory, media.subtitle_filename)
         # Note: --fix-broken will re-download all subtitle files...
         if s.overwrite_bad or not os.path.exists(file):
-            download_list.add((media.subtitle_url, file, filename))
+            download_list.add((media.subtitle_url, file, media.subtitle_filename))
 
     for num, data in enumerate(download_list):
         url, file, filename = data
