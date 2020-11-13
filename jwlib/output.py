@@ -119,8 +119,10 @@ def output_filesystem(s: Settings, data: List[Category]):
         # Index/starting/home categories: create link outside subdir
         if category.home:
             link = pj(wd, category.safe_name)
-            # Note: the source will be relative
-            source = pj(sd, category.key)
+            if s.safe_filenames:
+                source = pj(wd, sd, category.key)
+            else:
+                source = pj(sd, category.key)
             try:
                 os.symlink(source, link)
             except FileExistsError:
@@ -131,18 +133,20 @@ def output_filesystem(s: Settings, data: List[Category]):
             if isinstance(item, Category):
                 d = pj(wd, sd, item.key)
                 os.makedirs(d, exist_ok=True)
-                source = pj('..', item.key)
-
-                if s.include_keyname:
-                    link = pj(output_dir, item.key + ' - ' + item.safe_name)
+                if s.safe_filenames:
+                    source = d
                 else:
-                    link = pj(output_dir, item.safe_name)
+                    source = pj('..', item.key)
+                link = pj(output_dir, item.safe_name)
 
             else:
                 if not item.exists_in(pj(wd, sd)):
                     continue
 
-                source = pj('..', item.filename)
+                if s.safe_filenames:
+                    source = pj(wd, sd, item.filename)
+                else:
+                    source = pj('..', item.filename)
                 link = pj(output_dir, item.friendly_filename)
 
             try:

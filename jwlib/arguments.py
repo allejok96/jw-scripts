@@ -82,8 +82,6 @@ class Settings:
     mode = None  # type: str
     # NTFS friendly
     safe_filenames = False
-    # Prepend the codename (filesystem)
-    include_keyname = False
     # Remove non-broken symlinks (filesystem)
     clean_all_symlinks = False
 
@@ -168,7 +166,7 @@ class ArgumentParser(argparse.ArgumentParser):
         add_predefined('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
                        help='remove all old symlinks (only valid with --mode=filesystem)')
         add_predefined('--ntfs', '-X', action='store_true', dest='safe_filenames',
-                       help='remove special characters from file names (NTFS/FAT compatibility)')
+                       help='use NTFS/FAT compatible file names, and absolute paths for symlinks')
         add_predefined('--download', '-d', action='store_true',
                        help='download media files')
         add_predefined('--friendly', '-H', action='store_true', dest='friendly_filenames',
