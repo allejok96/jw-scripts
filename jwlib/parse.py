@@ -113,7 +113,7 @@ def get_best_video(videos: list, quality: int, subtitles: bool):
         if j_video.get('subtitled') is subtitles:
             rank += subtitles_matches_pref
         rankings.append((rank, j_video))
-    rankings.sort()
+    rankings.sort(key=lambda x: x[0])
 
     # [-1] The file with the highest rank, [1] the filename, not the rank
     # If there was no files, it will raise IndexError
