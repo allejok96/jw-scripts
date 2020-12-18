@@ -127,6 +127,9 @@ def output_filesystem(s: Settings, data: List[Category]):
                 os.symlink(source, link)
             except FileExistsError:
                 pass
+            except OSError:
+                print('Could not create symlink. If you are on Windows 10, try enabling developer mode.')
+                raise
 
         for item in category.contents:
 
@@ -153,6 +156,8 @@ def output_filesystem(s: Settings, data: List[Category]):
                 os.symlink(source, link)
             except FileExistsError:
                 pass
+            except OSError:
+                print('Could not create symlink. If you are on Windows 10, try enabling developer mode.')
 
 
 def clean_symlinks(s: Settings):

@@ -77,8 +77,9 @@ def format_filename(string):
 
     if SAFE_FILENAMES:
         # NTFS/FAT forbidden characters
+        # newline is not forbidden but causes problems in python on windows
         string = string.replace('"', "'").replace(':', '.')
-        forbidden = '<>:"|?*/\0'
+        forbidden = '<>|?\\*/\0\n'
     else:
         # Unix forbidden characters
         forbidden = '/\0'
