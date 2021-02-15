@@ -122,59 +122,59 @@ class ArgumentParser(argparse.ArgumentParser):
 
         # Put all argument definitions here
         # This way, the syntax will be equal to running add_argument()
-        add_predefined('--quiet', '-q', action='count',
-                       help='Less info, can be used multiple times')
-        add_predefined('--mode', '-m',
-                       choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
-                       help='output mode')
+        add_predefined('--category', '-c', dest='include_categories', metavar='CODE',
+                       action=action_factory(lambda x: tuple(x.split(','))),
+                       help='comma separated list of categories to index')
+        add_predefined('--checksum', action='store_true', dest='checksums',
+                       help="validate MD5 checksums")
+        add_predefined('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
+                       help='remove all old symlinks (only valid with --mode=filesystem)')
+        add_predefined('--curl-path', metavar='PATH',
+                       help='path to the curl binary')
+        add_predefined('--download', '-d', action='store_true',
+                       help='download media files')
+        add_predefined('--download-subtitles', action='store_true',
+                       help='download VTT subtitle files')
+        add_predefined('--exclude', metavar='CODE', dest='exclude_categories',
+                       action=action_factory(lambda x: tuple(x.split(','))),
+                       help='comma separated list of categories to exclude')
+        add_predefined('--fix-broken', action='store_true', dest='overwrite_bad',
+                       help='check existing files and re-download them if they are broken')
+        add_predefined('--forever', action='store_true', dest='stream_forever',
+                       help='re-run program when the last video finishes')
+        add_predefined('--free', type=int, metavar='MiB', dest='keep_free',
+                       action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
+                       help='disk space in MiB to keep free (warning: deletes old MP4 files, use separate folder!)')
+        add_predefined('--friendly', '-H', action='store_true', dest='friendly_filenames',
+                       help='save downloads with human readable names')
+        add_predefined('--hard-subtitles', action='store_true',
+                       help='prefer videos with hard-coded subtitles')
         add_predefined('--lang', '-l', action=action_factory(verify_language),
                        help='language code')
         add_predefined('--languages', '-L', nargs=0, action=action_factory(print_language),
                        help='display a list of valid language codes')
-        add_predefined('--quality', '-Q', type=int,
-                       choices=[240, 360, 480, 720],
-                       help='maximum video quality')
-        add_predefined('--hard-subtitles', action='store_true',
-                       help='prefer videos with hard-coded subtitles')
-        add_predefined('--checksum', action='store_true', dest='checksums',
-                       help="validate MD5 checksums")
-        add_predefined('--fix-broken', action='store_true', dest='overwrite_bad',
-                       help='check existing files and re-download them if they are broken')
-        add_predefined('--free', type=int, metavar='MiB', dest='keep_free',
-                       action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
-                       help='disk space in MiB to keep free (warning: deletes old MP4 files, use separate folder!)')
-        add_predefined('--no-warning', dest='warning', action='store_false',
-                       help='do not warn when space limit seems wrong')
-        add_predefined('--category', '-c', dest='include_categories', metavar='CODE',
-                       action=action_factory(lambda x: tuple(x.split(','))),
-                       help='comma separated list of categories to index')
-        add_predefined('--exclude', metavar='CODE', dest='exclude_categories',
-                       action=action_factory(lambda x: tuple(x.split(','))),
-                       help='comma separated list of categories to exclude')
         add_predefined('--latest', action='store_const', const=['LatestVideos'],
                        dest='include_categories',
                        help='index the "Latest Videos" section')
+        add_predefined('--limit-rate', '-R', metavar='RATE', dest='rate_limit',
+                       help='maximum download rate, passed to curl (default: 1m = 1 megabyte/s, 0 = no limit)')
+        add_predefined('--mode', '-m',
+                       choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
+                       help='output mode')
+        add_predefined('--no-curl', action='store_const', const=None, dest='curl_path',
+                       help='use urllib instead of external curl (compatibility)')
+        add_predefined('--no-warning', dest='warning', action='store_false',
+                       help='do not warn when space limit seems wrong')
+        add_predefined('--ntfs', '-X', action='store_true', dest='safe_filenames',
+                       help='use NTFS/FAT compatible file names, and absolute paths for symlinks')
+        add_predefined('--quality', '-Q', type=int,
+                       choices=[240, 360, 480, 720],
+                       help='maximum video quality')
+        add_predefined('--quiet', '-q', action='count',
+                       help='Less info, can be used multiple times')
         add_predefined('--since', metavar='YYYY-MM-DD', dest='min_date',
                        action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
                        help='only index media newer than this date')
-        add_predefined('--limit-rate', '-R', metavar='RATE', dest='rate_limit',
-                       help='maximum download rate, passed to curl (default: 1m = 1 megabyte/s, 0 = no limit)')
-        add_predefined('--curl-path', metavar='PATH',
-                       help='path to the curl binary')
-        add_predefined('--no-curl', action='store_const', const=None, dest='curl_path',
-                       help='use urllib instead of external curl (compatibility)')
-        add_predefined('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
-                       help='remove all old symlinks (only valid with --mode=filesystem)')
-        add_predefined('--ntfs', '-X', action='store_true', dest='safe_filenames',
-                       help='use NTFS/FAT compatible file names, and absolute paths for symlinks')
-        add_predefined('--download', '-d', action='store_true',
-                       help='download media files')
-        add_predefined('--friendly', '-H', action='store_true', dest='friendly_filenames',
-                       help='save downloads with human readable names')
-        add_predefined('--download-subtitles', action='store_true',
-                       help='download VTT subtitle files')
-        add_predefined('--forever', action='store_true', dest='stream_forever',
-                       help='re-run program when the last video finishes')
         add_predefined('work_dir', nargs='?', metavar='DIR',
                        help='directory to save data in')
         add_predefined('command', nargs=argparse.REMAINDER, metavar='COMMAND',
