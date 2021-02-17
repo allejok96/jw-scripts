@@ -15,8 +15,8 @@ FRIENDLY_FILENAMES = False
 
 class Category:
     """Object to put category info in."""
-    key = None  # type: str
-    name = None  # type: str
+    key = ''
+    name = ''
     home = False  # whether or not this is a "starting point"
 
     def __init__(self):
@@ -33,12 +33,12 @@ class Category:
 
 class Media:
     """Object to put media info in."""
-    url = None  # type: str
-    name = None  # type: str
-    md5 = None  # type: str
-    date = None  # type: int
-    size = None  # type: int
-    subtitle_url = None  # type: str
+    date = 0
+    md5 = ''
+    name = ''
+    size = 0
+    subtitle_url = ''
+    url = ''
 
     # misleading use of repr, but it's only for debugging...
     def __repr__(self):

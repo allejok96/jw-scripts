@@ -288,8 +288,8 @@ def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional
 
 def disk_cleanup(s: Settings, directory: str, reference_media: Media):
     """Clean up old videos until there is enough space"""
-    assert isinstance(s.keep_free, int)
-    assert isinstance(reference_media.size, int)
+    assert s.keep_free
+    assert reference_media.size
 
     while True:
         space = shutil.disk_usage(directory).free
@@ -300,7 +300,7 @@ def disk_cleanup(s: Settings, directory: str, reference_media: Media):
             msg('free space: {:} MiB, needed: {:} MiB'.format(space // 1024 ** 2, needed // 1024 ** 2))
 
         # We dare not delete files if we don't know if they are older or newer than this one
-        if not isinstance(reference_media.date, (int, float)):
+        if not reference_media.date:
             raise MissingTimestampError
 
         # Get the oldest .mp4 file in the working directory
