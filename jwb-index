@@ -8,13 +8,15 @@ parser = ArgumentParser(prog='jwb-index',
                         usage='%(prog)s [options] [DIR]',
                         description='Index or download media from jw.org')
 
-parser.add_arguments(['--category',
+parser.add_arguments(['--append',
+                      '--category',
                       '--checksum',
                       '--clean-symlinks',
                       '--curl-path',
                       '--download',
                       '--download-subtitles',
                       '--exclude',
+                      '--filename',
                       '--fix-broken',
                       '--free',
                       '--friendly',
@@ -30,6 +32,7 @@ parser.add_arguments(['--category',
                       '--quality',
                       '--quiet',
                       '--since',
+                      '--sort',
                       'work_dir'])
 
 settings = parser.parse_args()
@@ -60,4 +63,4 @@ if settings.download or settings.download_subtitles:
     download_all(settings, data)
 
 if settings.mode:
-    create_output(settings, data, stdout_uniq=True)
+    create_output(settings, data)

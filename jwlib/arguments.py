@@ -78,12 +78,13 @@ class Settings:
     stream_forever = False
 
     # Output stuff
-    sub_dir = ''
-    mode = None  # type: str
-    # NTFS friendly
-    safe_filenames = False
-    # Remove non-broken symlinks (filesystem)
+    append = False
     clean_all_symlinks = False
+    output_filename = 'output'
+    mode = None  # type: str
+    safe_filenames = False
+    sort = 'none'
+    sub_dir = ''
 
     def __setattr__(self, key, value):
         # This will raise an error if the attribute we are trying to set doesn't already exist
@@ -122,13 +123,15 @@ class ArgumentParser(argparse.ArgumentParser):
 
         # Put all argument definitions here
         # This way, the syntax will be equal to running add_argument()
+        add_predefined('--append', action='store_true',
+                       help='append to file instead of overwriting (mode=txt|m3u_single)')
         add_predefined('--category', '-c', dest='include_categories', metavar='CODE',
                        action=action_factory(lambda x: tuple(x.split(','))),
                        help='comma separated list of categories to index')
         add_predefined('--checksum', action='store_true', dest='checksums',
                        help="validate MD5 checksums")
         add_predefined('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
-                       help='remove all old symlinks (only valid with --mode=filesystem)')
+                       help='remove all old symlinks (mode=filesystem)')
         add_predefined('--curl-path', metavar='PATH',
                        help='path to the curl binary')
         add_predefined('--download', '-d', action='store_true',
@@ -138,6 +141,8 @@ class ArgumentParser(argparse.ArgumentParser):
         add_predefined('--exclude', metavar='CODE', dest='exclude_categories',
                        action=action_factory(lambda x: tuple(x.split(','))),
                        help='comma separated list of categories to exclude')
+        add_predefined('--filename', dest='output_filename',
+                       help='output file name (mode=txt|m3u_single)')
         add_predefined('--fix-broken', action='store_true', dest='overwrite_bad',
                        help='check existing files and re-download them if they are broken')
         add_predefined('--forever', action='store_true', dest='stream_forever',
@@ -159,7 +164,7 @@ class ArgumentParser(argparse.ArgumentParser):
         add_predefined('--limit-rate', '-R', metavar='RATE', dest='rate_limit',
                        help='maximum download rate, passed to curl (default: 1m = 1 megabyte/s, 0 = no limit)')
         add_predefined('--mode', '-m',
-                       choices=['stdout', 'filesystem', 'm3u', 'm3ucompat', 'html'],
+                       choices=['stdout', 'filesystem', 'txt', 'm3u_single', 'm3u_tree', 'm3u_flat', 'html'],
                        help='output mode')
         add_predefined('--no-curl', action='store_const', const=None, dest='curl_path',
                        help='use urllib instead of external curl (compatibility)')
@@ -175,6 +180,9 @@ class ArgumentParser(argparse.ArgumentParser):
         add_predefined('--since', metavar='YYYY-MM-DD', dest='min_date',
                        action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
                        help='only index media newer than this date')
+        add_predefined('--sort',
+                       choices=['none', 'date', 'name', 'random'],
+                       help='sort output, and remove doublets (mode=stdout|txt|m3u_single)')
         add_predefined('work_dir', nargs='?', metavar='DIR',
                        help='directory to save data in')
         add_predefined('command', nargs=argparse.REMAINDER, metavar='COMMAND',

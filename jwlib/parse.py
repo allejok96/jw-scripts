@@ -34,6 +34,7 @@ class Category:
 class Media:
     """Object to put media info in."""
     date = 0
+    duration = 0
     md5 = ''
     name = ''
     size = 0
@@ -195,6 +196,7 @@ def parse_broadcasting(s: Settings):
             media.name = j_media['title']
             media.md5 = j_media_file.get('checksum')
             media.size = j_media_file.get('filesize')
+            media.duration = j_media_file.get('duration')
             if j_media_file.get('subtitles'):
                 media.subtitle_url = j_media_file['subtitles']['url']
 

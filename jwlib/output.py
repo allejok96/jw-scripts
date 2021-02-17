@@ -1,5 +1,6 @@
 import os
-from typing import List
+from random import shuffle
+from typing import List, Type
 
 from .parse import Category, Media
 from .arguments import Settings, msg
@@ -7,98 +8,192 @@ from .arguments import Settings, msg
 pj = os.path.join
 
 
-def create_output(s: Settings, data: List[Category], stdout_uniq=False):
-    """Settings for output modes
+class PlaylistWriter:
+    ext = ''
+    start_string = ''
+    end_string = ''
 
-    :keyword stdout_uniq: passed to output_stdout
-    """
+    def __init__(self, file: str, append=False):
+        self.append = append
+        self.io = None
+        self.unique_lines = set()
 
-    if s.mode == 'stdout':
-        output_stdout(s, data, uniq=stdout_uniq)
-    elif s.mode == 'm3u':
-        output_m3u(s, data)
-    elif s.mode == 'filesystem':
+        if not file.endswith(self.ext):
+            file = file + self.ext
+        self.file = file
+
+    def __del__(self):
+        if self.io and not self.io.closed:
+            self.io.write(self.end_string)
+            self.io.close()
+
+    def write(self, string):
+        """Create dir/file, write header and append string"""
+
+        if not self.io or self.io.closed:
+            d = os.path.dirname(self.file)
+            os.makedirs(d, exist_ok=True)
+
+            if self.append and os.path.exists(self.file) and os.stat(self.file).st_size != 0:
+                self.io = open(self.file, 'a', encoding='utf-8')
+            else:
+                self.io = open(self.file, 'w', encoding='utf-8')
+                self.io.write(self.start_string)
+
+        self.io.write(string)
+
+    def unique(self, string):
+        """Run once to check unique status"""
+
+        # Get existing lines from file
+        if not self.unique_lines:
+            try:
+                with open(self.file, 'r') as file:
+                    for line in file:
+                        self.unique_lines.add(line.rstrip('\n'))
+            except OSError:
+                pass
+
+        if string in self.unique_lines:
+            return False
+        else:
+            self.unique_lines.add(string)
+            return True
+
+    def add(self, name, source, length=0):
+        raise NotImplementedError
+
+
+class TxtWriter(PlaylistWriter):
+    def add(self, name, source, length=0):
+        if self.unique(source):
+            self.write(source + '\n')
+
+
+class M3uWriter(PlaylistWriter):
+    start_string = '#EXTM3U\n'
+    ext = '.m3u'
+
+    def add(self, name, source, length=0):
+        if self.unique(source):
+            self.write('#EXTINF:{}, {}\n{}\n'.format(length, name, source))
+
+
+class HtmlWriter(PlaylistWriter):
+    start_string = '<!DOCTYPE html>\n<html><head><meta charset="utf-8" /></head><body>'
+    end_string = '\n</body></html>'
+    ext = '.html'
+
+    def add(self, name, source, length=0):
+        self.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
+
+
+class StdoutWriter(PlaylistWriter):
+    """Hack that only writes to stdout"""
+
+    def __init__(self, file, append=False):
+        super().__init__(file, append)
+        self.file = ''
+
+    def add(self, name, source, length=0):
+        if self.unique(source):
+            print(source)
+
+
+def create_output(s: Settings, data: List[Category]):
+    """Settings for output modes"""
+
+    if s.mode == 'filesystem':
         clean_symlinks(s)
         output_filesystem(s, data)
-    elif s.mode == 'm3ucompat':
-        output_m3u(s, data, flat=True)
     elif s.mode == 'html':
-        output_m3u(s, data, writer=_write_to_html, ext='.html')
+        output_multi(s, data, HtmlWriter)
+    elif s.mode == 'm3u_flat':
+        output_multi(s, data, M3uWriter, flat=True)
+    elif s.mode == 'm3u_single':
+        output_single(s, data, M3uWriter)
+    elif s.mode == 'm3u_tree':
+        output_multi(s, data, M3uWriter)
+    elif s.mode == 'stdout':
+        output_single(s, data, StdoutWriter)
+    elif s.mode == 'txt':
+        output_single(s, data, TxtWriter)
     else:
         raise RuntimeError('invalid mode')
 
 
-def output_stdout(s: Settings, data: List[Category], uniq=False):
-    """Output URLs or filenames to stdout.
+def output_single(s: Settings, data: List[Category], writercls: Type[PlaylistWriter]):
+    """Create a concatenated output file"""
 
-    :keyword uniq: If True all output is unique, but unordered
-    """
-    out = []
-    for category in data:
-        for item in category.contents:
-            if isinstance(item, Media):
-                if item.exists_in('.'):
-                    out.append(os.path.relpath(item.filename, s.work_dir))
-                else:
-                    out.append(item.url)
-    if uniq:
-        out = set(out)
+    all_media = [item for category in data for item in category.contents if isinstance(item, Media)]
 
-    print(*out, sep='\n')
+    if s.sort == 'date':
+        all_media.sort(key=lambda x: x.date)
+    elif s.sort == 'name':
+        all_media.sort(key=lambda x: x.name)
+    elif s.sort == 'random':
+        shuffle(all_media)
+
+    writer = writercls(pj(s.work_dir, s.output_filename), append=s.append)
+
+    if all_media and writer.file and s.quiet < 1:
+        msg('writing: {}'.format(writer.file))
+
+    for media in all_media:
+        if media.exists_in(pj(s.work_dir, s.sub_dir)):
+            source = pj('.', s.sub_dir, media.filename)
+        else:
+            source = media.url
+        writer.add(media.name, source, media.duration)
 
 
-def output_m3u(s: Settings, data: List[Category], writer=None, flat=False, ext='.m3u'):
-    """Create a M3U playlist tree.
+def output_multi(s: Settings, data: List[Category], writercls: Type[PlaylistWriter], flat=False):
+    """Create a tree of output files
 
-    :keyword writer: Function to write to files
-    :keyword flat: If all playlist will be saved outside of subdir
-    :keyword ext: Filename extension
+    :keyword writercls: a PlaylistWriter class
+    :keyword flat: all categories are saved at top level
     """
     wd = s.work_dir
     sd = s.sub_dir
 
-    if not writer:
-        writer = _write_to_m3u
-
     for category in data:
         if flat:
             # Flat mode, all files in working dir
-            output_file = pj(wd, category.key + ' - ' + category.safe_name + ext)
             source_prepend_dir = sd
+            writer = writercls(pj(wd, category.key + ' - ' + category.safe_name))
         elif category.home:
             # For home/index/starting categories
             # The current file gets saved outside the subdir
             # Links point inside the subdir
             source_prepend_dir = sd
-            output_file = pj(wd, category.safe_name + ext)
+            writer = writercls(pj(wd, category.safe_name))
         else:
             # For all other categories
             # Things get saved inside the subdir
             # No need to prepend links with the subdir itself
             source_prepend_dir = ''
-            output_file = pj(wd, sd, category.key + ext)
+            writer = writercls(pj(wd, sd, category.key))
 
-        is_start = True
+        if category.contents and s.quiet < 1:
+            msg('writing: {}'.format(writer.file))
+
         for item in category.contents:
             if isinstance(item, Category):
                 if flat:
                     # "flat" playlists does not link to other playlists
                     continue
                 name = item.name.upper()
-                source = pj('.', source_prepend_dir, item.key + ext)
+                source = pj('.', source_prepend_dir, item.key + writer.ext)
+                duration = 0
             else:
                 name = item.name
                 if item.exists_in(pj(wd, sd)):
                     source = pj('.', source_prepend_dir, item.filename)
                 else:
                     source = item.url
+                duration = item.duration
 
-            if is_start and s.quiet < 1:
-                msg('writing: {}'.format(output_file))
-
-            # First line will overwrite existing files
-            writer(source, name, output_file, overwrite=is_start)
-            is_start = False
+            writer.add(name, source, duration)
 
 
 def output_filesystem(s: Settings, data: List[Category]):
@@ -184,36 +279,3 @@ def clean_symlinks(s: Settings):
                 if s.quiet < 1:
                     msg('removing link: ' + os.path.basename(file))
                 os.remove(file)
-
-
-def _truncate_file(file, string='', overwrite=False):
-    """Create a file and the parent directories."""
-
-    d = os.path.dirname(file)
-    os.makedirs(d, exist_ok=True)
-
-    try:
-        if not overwrite and os.stat(file).st_size != 0:
-            # Don't truncate non-empty files
-            return
-    except FileNotFoundError:
-        pass
-
-    with open(file, 'w', encoding='utf-8') as f:
-        f.write(string)
-
-
-def _write_to_m3u(source, name, file, overwrite=False):
-    """Write entry to a M3U playlist file."""
-
-    _truncate_file(file, '#EXTM3U\n', overwrite)
-    with open(file, 'a', encoding='utf-8') as f:
-        f.write('#EXTINF:0,' + name + '\n' + source + '\n')
-
-
-def _write_to_html(source, name, file, overwrite=False):
-    """Write a HTML file with a hyperlink to a media file."""
-
-    _truncate_file(file, '<!DOCTYPE html>\n<head><meta charset="utf-8" /></head>', overwrite)
-    with open(file, 'a', encoding='utf-8') as f:
-        f.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
