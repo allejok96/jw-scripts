@@ -55,7 +55,7 @@ class Settings:
     lang = 'E'
     quality = 1080
     hard_subtitles = False
-    min_date = None  # type: int
+    min_date = 0  # 1970-01-01
     include_categories = ('VideoOnDemand',)
     exclude_categories = ('VODSJJMeetings',)
 

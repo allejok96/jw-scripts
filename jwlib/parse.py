@@ -207,7 +207,7 @@ def parse_broadcasting(s: Settings):
                     date_string = re.sub('\\.[0-9]+Z$', '', j_media['firstPublished'])
                     # Try to convert it to seconds
                     date = time.mktime(time.strptime(date_string, '%Y-%m-%dT%H:%M:%S'))
-                    if s.min_date and date < s.min_date:
+                    if date < s.min_date:
                         continue
                     media.date = date
                 except ValueError:
