@@ -1,4 +1,6 @@
+import html
 import os
+import subprocess
 from random import shuffle
 from typing import List, Type
 
@@ -8,192 +10,315 @@ from .arguments import Settings, msg
 pj = os.path.join
 
 
-class PlaylistWriter:
-    ext = ''
+class PlaylistEntry:
+    def __init__(self, name: str, source: str, duration=0):
+        self.name = name
+        self.source = source
+        self.duration = duration
+
+
+class BaseOutputWriter:
+    """Base class for creation of output files
+
+    Usage:
+    1. Load existing file data (stripping start and end).
+    2. Keep history of URLs so we don't include doublets.
+    3. Add lines to a queue.
+    4. Write out the queue to wherever (reversing happens here).
+    """
     start_string = ''
     end_string = ''
+    ext = ''
 
-    def __init__(self, file: str, append=False):
-        self.append = append
-        self.io = None
-        self.unique_lines = set()
+    def __init__(self, s: Settings, filename: str):
+        """
+        :param filename: File name (can also be a relative path)
+        """
+        self.quiet = s.quiet
+        self.append = s.append  # append instead of overwriting
+        self.reverse = s.sort == 'newest'  # prepend instead of append
+        self.file = pj(s.work_dir, filename)
 
-        if not file.endswith(self.ext):
-            file = file + self.ext
-        self.file = file
-
-    def __del__(self):
-        if self.io and not self.io.closed:
-            self.io.write(self.end_string)
-            self.io.close()
-
-    def write(self, string):
-        """Create dir/file, write header and append string"""
-
-        if not self.io or self.io.closed:
-            d = os.path.dirname(self.file)
-            os.makedirs(d, exist_ok=True)
-
-            if self.append and os.path.exists(self.file) and os.stat(self.file).st_size != 0:
-                self.io = open(self.file, 'a', encoding='utf-8')
-            else:
-                self.io = open(self.file, 'w', encoding='utf-8')
-                self.io.write(self.start_string)
-
-        self.io.write(string)
-
-    def unique(self, string):
-        """Run once to check unique status"""
+        self.queue = []
+        self.history = set()
 
         # Get existing lines from file
-        if not self.unique_lines:
-            try:
-                with open(self.file, 'r') as file:
-                    for line in file:
-                        self.unique_lines.add(line.rstrip('\n'))
-            except OSError:
-                pass
+        self.loaded_data = ''
+        if self.append or self.reverse:
+            self.load_existing()
 
-        if string in self.unique_lines:
+    def load_existing(self):
+        """Reads existing file into memory, removing start and end strings"""
+
+        try:
+            with open(self.file, 'r', encoding='utf-8') as file:
+                data = file.read()
+                if data.startswith(self.start_string):
+                    data = data[len(self.start_string):]
+                if data.endswith(self.end_string):
+                    data = data[:-len(self.end_string)]
+                self.loaded_data = data
+                # Generate history from loaded data
+                for line in data.splitlines():
+                    self.history.add(self.string_parse(line))
+        except OSError:
+            pass
+
+    def add_to_history(self, string: str):
+        """Return False if the string has been added before"""
+
+        if string in self.history:
             return False
         else:
-            self.unique_lines.add(string)
+            self.history.add(string)
             return True
 
-    def add(self, name, source, length=0):
-        raise NotImplementedError
+    def add_to_queue(self, entry: PlaylistEntry):
+        """Adds a line to the queue"""
+
+        if self.add_to_history(entry.source):
+            self.queue.append(self.string_format(entry))
+
+    def dump_queue(self):
+        """Create dir and write out queue to file"""
+
+        if not self.queue:
+            return
+        if self.reverse:
+            self.queue.reverse()
+
+        d = os.path.dirname(self.file)
+        os.makedirs(d, exist_ok=True)
+
+        # All IO is done in binary mode, since text mode is not seekable
+        try:
+            if self.reverse or not self.append or not self.loaded_data:
+                raise OSError  # file must be overwritten
+
+            file = open(self.file, 'r+b')
+            if self.quiet < 1:
+                msg('extending: {}'.format(self.file))
+
+            try:
+                # Truncate right before end string
+                # Seeking to invalid positions raises OSError
+                file.seek(-len(self.end_string.encode('utf-8')), 2)
+                if file.peek().decode('utf-8') == self.end_string:
+                    file.truncate()
+                else:
+                    raise OSError
+            except OSError:
+                raise RuntimeError(self.file + ': refusing to append to file which does not match output format')
+
+        except OSError:
+            # Overwrite with start string
+            file = open(self.file, 'wb')
+            if self.quiet < 1:
+                msg('writing: {}'.format(self.file))
+            file.write(self.start_string.encode('utf-8'))
+
+        with file:
+            # Write out buffer
+            for string in self.queue:
+                file.write((string + '\n').encode('utf-8'))
+            # Append old file contents
+            if self.reverse and self.append:
+                file.write(self.loaded_data.encode('utf-8'))
+            # End string
+            file.write(self.end_string.encode('utf-8'))
+
+    def string_format(self, entry: PlaylistEntry) -> str:
+        """Turn a playlist entry into a string"""
+        return entry.source
+
+    def string_parse(self, string: str) -> str:
+        """Extract URL from a string"""
+        return string
 
 
-class TxtWriter(PlaylistWriter):
-    def add(self, name, source, length=0):
-        if self.unique(source):
-            self.write(source + '\n')
+class TxtWriter(BaseOutputWriter):
+    pass
 
 
-class M3uWriter(PlaylistWriter):
+class M3uWriter(BaseOutputWriter):
     start_string = '#EXTM3U\n'
     ext = '.m3u'
 
-    def add(self, name, source, length=0):
-        if self.unique(source):
-            self.write('#EXTINF:{}, {}\n{}\n'.format(length, name, source))
+    def string_format(self, entry):
+        return '#EXTINF:{}, {}\n{}'.format(entry.duration, entry.name, entry.source)
+
+    def string_parse(self, string):
+        if not string.startswith('#'):
+            return string
 
 
-class HtmlWriter(PlaylistWriter):
-    start_string = '<!DOCTYPE html>\n<html><head><meta charset="utf-8" /></head><body>'
-    end_string = '\n</body></html>'
+class HtmlWriter(BaseOutputWriter):
+    start_string = '<!DOCTYPE html>\n<html><head><meta charset="utf-8"/></head><body>\n'
+    end_string = '</body></html>'
     ext = '.html'
 
-    def add(self, name, source, length=0):
-        self.write('\n<a href="{0}">{1}</a><br>'.format(source, name))
+    def string_format(self, entry):
+        # Note: we need to quote the URL too because it can have weird
+        # characters if friendly filenames are being used
+        source = html.escape(entry.source, quote=True)
+        return '<a href="{}">{}</a><br>'.format(source, html.escape(entry.name))
+
+    def string_parse(self, string):
+        # The thing between the first quotes is an URL
+        html.unescape(string.split('"')[1])
 
 
-class StdoutWriter(PlaylistWriter):
-    """Hack that only writes to stdout"""
+class StdoutWriter(BaseOutputWriter):
+    def load_existing(self):
+        """Don't read files"""
+        pass
 
-    def __init__(self, file, append=False):
-        super().__init__(file, append)
-        self.file = ''
+    def dump_queue(self):
+        """Write to stdout"""
 
-    def add(self, name, source, length=0):
-        if self.unique(source):
-            print(source)
+        if self.reverse:
+            self.queue.reverse()
+        for line in self.queue:
+            print(line)
+
+
+class CommandWriter(BaseOutputWriter):
+    def __init__(self, s, filename):
+        super().__init__(s, filename)
+        self.command = s.command
+
+    def load_existing(self):
+        pass
+
+    def dump_queue(self):
+        """Run a program with queue entries as arguments"""
+
+        if not self.queue:
+            msg('no media')
+            return
+        if self.reverse:
+            self.queue.reverse()
+
+        # Avoid too long argument string (~32kB max on win)
+        while self.queue:
+            subprocess.check_call(self.command + self.queue[:300])
+            self.queue = self.queue[300:]
+
+
+def sort_media(media_list: list, sort: str):
+    """Sort a list of Media objects in place"""
+
+    if sort == 'none':
+        return
+    elif sort == 'name':
+        media_list.sort(key=lambda x: x.name)
+    elif sort in ('newest', 'oldest'):
+        media_list.sort(key=lambda x: x.date)
+    elif sort == 'random':
+        shuffle(media_list)
+    else:
+        raise RuntimeError
 
 
 def create_output(s: Settings, data: List[Category]):
-    """Settings for output modes"""
+    """Call correct output function"""
 
     if s.mode == 'filesystem':
         clean_symlinks(s)
         output_filesystem(s, data)
-    elif s.mode == 'html':
-        output_multi(s, data, HtmlWriter)
-    elif s.mode == 'm3u_flat':
-        output_multi(s, data, M3uWriter, flat=True)
-    elif s.mode == 'm3u_single':
-        output_single(s, data, M3uWriter)
-    elif s.mode == 'm3u_tree':
-        output_multi(s, data, M3uWriter)
-    elif s.mode == 'stdout':
-        output_single(s, data, StdoutWriter)
-    elif s.mode == 'txt':
-        output_single(s, data, TxtWriter)
+        return
+    elif s.mode == 'run':
+        writer = CommandWriter
+    elif s.mode.startswith('html'):
+        writer = HtmlWriter
+    elif s.mode.startswith('m3u'):
+        writer = M3uWriter
+    elif s.mode.startswith('stdout'):
+        writer = StdoutWriter
+    elif s.mode.startswith('txt'):
+        writer = TxtWriter
     else:
+        # Note: ArgumentParser will make sure we never end up here
         raise RuntimeError('invalid mode')
 
+    if s.mode.endswith('multi'):
+        output_multi(s, data, writer, tree=False)
+    elif s.mode.endswith('tree'):
+        output_multi(s, data, writer, tree=True)
+    else:
+        output_single(s, data, writer)
 
-def output_single(s: Settings, data: List[Category], writercls: Type[PlaylistWriter]):
+
+def output_single(s: Settings, data: List[Category], writercls: Type[BaseOutputWriter]):
     """Create a concatenated output file"""
 
     all_media = [item for category in data for item in category.contents if isinstance(item, Media)]
+    sort_media(all_media, s.sort)
 
-    if s.sort == 'date':
-        all_media.sort(key=lambda x: x.date)
-    elif s.sort == 'name':
-        all_media.sort(key=lambda x: x.name)
-    elif s.sort == 'random':
-        shuffle(all_media)
-
-    writer = writercls(pj(s.work_dir, s.output_filename), append=s.append)
-
-    if all_media and writer.file and s.quiet < 1:
-        msg('writing: {}'.format(writer.file))
+    # Filename falls back to the name of the first category
+    filename = s.output_filename or (data[0].safe_name + writercls.ext)
+    writer = writercls(s, filename)
 
     for media in all_media:
         if media.exists_in(pj(s.work_dir, s.sub_dir)):
             source = pj('.', s.sub_dir, media.filename)
         else:
             source = media.url
-        writer.add(media.name, source, media.duration)
+        writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))
+
+    writer.dump_queue()
 
 
-def output_multi(s: Settings, data: List[Category], writercls: Type[PlaylistWriter], flat=False):
+def output_multi(s: Settings, data: List[Category], writercls: Type[BaseOutputWriter], tree=True):
     """Create a tree of output files
 
     :keyword writercls: a PlaylistWriter class
-    :keyword flat: all categories are saved at top level
+    :keyword tree: create an hierarchy vs everything at top level
     """
     wd = s.work_dir
     sd = s.sub_dir
 
     for category in data:
-        if flat:
-            # Flat mode, all files in working dir
-            source_prepend_dir = sd
-            writer = writercls(pj(wd, category.key + ' - ' + category.safe_name))
-        elif category.home:
-            # For home/index/starting categories
-            # The current file gets saved outside the subdir
+        if tree and category.home:
+            # For the root of a tree:
+            # Output file is outside subdir, with nice name
             # Links point inside the subdir
             source_prepend_dir = sd
-            writer = writercls(pj(wd, category.safe_name))
-        else:
-            # For all other categories
-            # Things get saved inside the subdir
-            # No need to prepend links with the subdir itself
+            writer = writercls(s, category.safe_name + writercls.ext)
+        elif tree:
+            # For sub-categories in a tree:
+            # Output file is inside subdir, with ugly name
+            # No need to prepend links with the subdir (since we are inside it)
             source_prepend_dir = ''
-            writer = writercls(pj(wd, sd, category.key))
+            writer = writercls(s, pj(sd, category.key) + writercls.ext)
+        else:
+            # "Flat" mode, not a tree:
+            # Output file is outside subdir, has both ugly and nice name
+            # Links point inside subdir
+            source_prepend_dir = sd
+            writer = writercls(s, category.key + ' - ' + category.safe_name + writercls.ext)
 
-        if category.contents and s.quiet < 1:
-            msg('writing: {}'.format(writer.file))
-
+        media_entries = []
         for item in category.contents:
             if isinstance(item, Category):
-                if flat:
-                    # "flat" playlists does not link to other playlists
-                    continue
-                name = item.name.upper()
-                source = pj('.', source_prepend_dir, item.key + writer.ext)
-                duration = 0
+                # Only link to categories if we are creating a tree structure
+                if tree:
+                    source = pj('.', source_prepend_dir, item.key + writer.ext)
+                    # Categories go on top of the queue
+                    writer.add_to_queue(PlaylistEntry(item.name.upper(), source))
             else:
-                name = item.name
                 if item.exists_in(pj(wd, sd)):
                     source = pj('.', source_prepend_dir, item.filename)
                 else:
                     source = item.url
-                duration = item.duration
+                # Hold on to media links so we can sort them later
+                media_entries.append(PlaylistEntry(item.name, source, item.duration))
 
-            writer.add(name, source, duration)
+        sort_media(media_entries, s.sort)
+        for entry in media_entries:
+            writer.add_to_queue(entry)
+
+        writer.dump_queue()
 
 
 def output_filesystem(s: Settings, data: List[Category]):
