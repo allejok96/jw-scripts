@@ -2,7 +2,7 @@
 import os
 import shutil
 
-from jwlib.arguments import Settings, msg
+from jwlib.common import Settings, msg
 from jwlib.download import disk_cleanup
 
 

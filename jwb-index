@@ -5,7 +5,7 @@ import os
 import time
 import urllib.request
 
-from jwlib.arguments import Settings, action_factory, msg
+from jwlib.common import Settings, action_factory, msg
 from jwlib.download import download_all, disk_usage_info
 from jwlib.offline import copy_files
 from jwlib.output import create_output

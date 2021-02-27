@@ -8,7 +8,7 @@ import urllib.parse
 from typing import List, Optional
 
 from .parse import Category, Media
-from .arguments import Settings, msg
+from .common import Settings, msg
 
 
 class MissingTimestampError(Exception):

@@ -7,7 +7,7 @@ import urllib.parse
 from urllib.error import HTTPError
 from typing import List, Union
 
-from .arguments import msg, Settings
+from .common import msg, Settings
 
 SAFE_FILENAMES = False
 FRIENDLY_FILENAMES = False

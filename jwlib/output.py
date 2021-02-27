@@ -5,7 +5,7 @@ from random import shuffle
 from typing import List, Type
 
 from .parse import Category, Media
-from .arguments import Settings, msg
+from .common import Settings, msg
 
 pj = os.path.join
 
