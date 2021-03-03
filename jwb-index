@@ -129,7 +129,7 @@ elif len(s.positional_arguments) == 1:
     # FILE
     if s.mode in ('txt', 'm3u', 'html') and not os.path.isdir(arg):
         s.output_filename = os.path.basename(arg)
-        s.work_dir = os.path.dirname(arg)
+        s.work_dir = os.path.dirname(arg) or '.'
     # DIR
     else:
         s.work_dir = arg
