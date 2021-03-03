@@ -55,7 +55,8 @@ class BaseOutputWriter:
                 data = file.read()
                 if data.startswith(self.start_string):
                     data = data[len(self.start_string):]
-                if data.endswith(self.end_string):
+                if self.end_string and data.endswith(self.end_string):
+                    # Note: don't run with empty end string, because list[:-0] -> []
                     data = data[:-len(self.end_string)]
                 self.loaded_data = data
                 # Generate history from loaded data
