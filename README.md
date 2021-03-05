@@ -14,12 +14,7 @@ For example, to download the latest videos in Swedish, you would run:
 
     python jwb-index --download --latest --lang=Z
 
-Next, check out the Wiki pages for more examples and options: 
-
-* [**jwb-index**](https://github.com/allejok96/jw-scripts/wiki/jwb-index) - Download and index videos from jw.org (Plex users, look here).
-* [jwb-stream](https://github.com/allejok96/jw-scripts/wiki/jwb-stream) - Play JW streaming channels using any media player, like VLC.
-* [jwb-offline](https://github.com/allejok96/jw-scripts/wiki/jwb-offline) - Create a set-top-box playing downloaded videos in random order.
-* [jwb-offline-import](https://github.com/allejok96/jw-scripts/wiki/jwb-offline-import) - Import videos from a USB to be played with jwb-offline.
+Next, check out the [Wiki pages](https://github.com/allejok96/jw-scripts/wiki) for more examples and options.
 
 ## Questions
 
