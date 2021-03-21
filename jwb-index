@@ -110,6 +110,8 @@ p.add_argument('--since', metavar='YYYY-MM-DD', dest='min_date',
 p.add_argument('--sort',
                choices=['newest', 'oldest', 'name', 'random'],
                help='sort output')
+p.add_argument('--update', action='store_true',
+               help='update existing categories with the latest videos (implies --append --latest --sort=newest)')
 p.add_argument('positional_arguments', nargs='*', metavar='DIR|FILE|COMMAND',
                help='where to send output (depends on mode)')
 
@@ -123,10 +125,21 @@ if s.print_category:
         s.print_category = True
     parse_broadcasting(s)
     exit()
+
 # Required arguments
 if not (s.mode or s.download or s.download_subtitles or s.import_dir):
     msg('please use --mode or --download')
     exit(1)
+
+# Implicit arguments
+if s.update:
+    if s.mode != 'filesystem' and not s.mode.endswith('_tree') and not s.mode.endswith('_multi'):
+        msg("this mode does not support --update")
+        exit(1)
+    s.append = True
+    s.include_categories = ['LatestVideos']
+    if not s.sort:
+        s.sort = 'newest'
 
 # Handle positional arguments depending on mode
 # COMMAND [ARGS]

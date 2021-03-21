@@ -13,6 +13,11 @@ SAFE_FILENAMES = False
 FRIENDLY_FILENAMES = False
 
 
+class CategoryError(Exception):
+    def __init__(self, message: str = None):
+        self.message = message or "requested name of unnamed category"
+
+
 class Category:
     """Object to put category info in."""
     key = ''
@@ -28,7 +33,18 @@ class Category:
 
     @property
     def safe_name(self):
+        """Returns name with special characters removed, or raises CategoryError if unset"""
+        if not self.name:
+            raise CategoryError
         return format_filename(self.name)
+
+    @property
+    def optional_name(self):
+        """Returns name with special characters removed, or '*' if unset"""
+        try:
+            return self.safe_name
+        except CategoryError:
+            return '*'
 
 
 class Media:
@@ -83,7 +99,8 @@ def format_filename(string):
         forbidden = '<>|?\\*/\0\n'
     else:
         # Unix forbidden characters
-        forbidden = '/\0'
+        # Remove asterisk as this is used by glob expansion later in the script
+        forbidden = '/\0*'
 
     return ''.join(x for x in string if x not in forbidden)
 
@@ -150,10 +167,11 @@ def parse_broadcasting(s: Settings):
                 raise e
 
         cat = Category()
-        result.append(cat)
         cat.key = j['category']['key']
         cat.name = j['category']['name']
         cat.home = cat.key in s.include_categories
+        if not s.update:
+            result.append(cat)
 
         if s.quiet < 1:
             if s.print_category:
@@ -169,6 +187,7 @@ def parse_broadcasting(s: Settings):
             if s.print_category:
                 print(j_sub['key'])
                 continue
+
             sub = Category()
             sub.key = j_sub['key']
             sub.name = j_sub['name']
@@ -233,6 +252,20 @@ def parse_broadcasting(s: Settings):
                     if s.quiet < 1:
                         msg('could not get timestamp on: {}'.format(j_media['title']))
 
-            cat.contents.append(media)
+            if s.update:
+                try:
+                    # Find a previously added category
+                    pcat = next(c for c in result if c.key == j_media["primaryCategory"])
+                except StopIteration:
+                    # Create a new homeless category
+                    pcat = Category()
+                    pcat.key = j_media["primaryCategory"]
+                    pcat.home = False
+                    result.append(pcat)
+                # Add media to its primary category
+                pcat.contents.append(media)
+            else:
+                # Add media to current category
+                cat.contents.append(media)
 
     return result

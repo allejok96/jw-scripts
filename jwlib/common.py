@@ -58,9 +58,10 @@ class Settings:
     # Output stuff
     append = False
     clean_all_symlinks = False
+    update = False
     mode = ''
     safe_filenames = False
-    sort = 'none'
+    sort = ''
 
     def __setattr__(self, key, value):
         # This will raise an error if the attribute we are trying to set doesn't already exist

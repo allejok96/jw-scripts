@@ -1,10 +1,11 @@
+import glob
 import html
 import os
 import subprocess
 from random import shuffle
 from typing import List, Type
 
-from .parse import Category, Media
+from .parse import Category, Media, CategoryError
 from .common import Settings, msg
 
 pj = os.path.join
@@ -17,14 +18,17 @@ class PlaylistEntry:
         self.duration = duration
 
 
-class BaseOutputWriter:
-    """Base class for creation of output files
+class AbstractOutputWriter:
+    """Base class for generation of output
 
-    Usage:
-    1. Load existing file data (stripping start and end).
-    2. Keep history of URLs so we don't include doublets.
-    3. Add lines to a queue.
-    4. Write out the queue to wherever (reversing happens here).
+    Use add_to_queue() to add lines. Doublets will be skipped.
+    Define what to do with the queue in dump_queue(). Reversal should happen there too.
+    Some data members are only for file writing sub-classes, but defined here to avoid type errors.
+
+    CLASS VARIABLES:
+     - start_string: first string in file
+     - end_string: last string in file
+     - ext: file name extension (dot included)
     """
     start_string = ''
     end_string = ''
@@ -35,35 +39,10 @@ class BaseOutputWriter:
         :param filename: File name (can also be a relative path)
         """
         self.quiet = s.quiet
-        self.append = s.append  # append instead of overwriting
-        self.reverse = s.sort == 'newest'  # prepend instead of append
-        self.file = pj(s.work_dir, filename)
+        self.reverse = s.sort == 'newest'
 
         self.queue = []
         self.history = set()
-
-        # Get existing lines from file
-        self.loaded_data = ''
-        if self.append or self.reverse:
-            self.load_existing()
-
-    def load_existing(self):
-        """Reads existing file into memory, removing start and end strings"""
-
-        try:
-            with open(self.file, 'r', encoding='utf-8') as file:
-                data = file.read()
-                if data.startswith(self.start_string):
-                    data = data[len(self.start_string):]
-                if self.end_string and data.endswith(self.end_string):
-                    # Note: don't run with empty end string, because list[:-0] -> []
-                    data = data[:-len(self.end_string)]
-                self.loaded_data = data
-                # Generate history from loaded data
-                for line in data.splitlines():
-                    self.history.add(self.string_parse(line))
-        except OSError:
-            pass
 
     def add_to_history(self, string: str):
         """Return False if the string has been added before"""
@@ -80,10 +59,75 @@ class BaseOutputWriter:
         if self.add_to_history(entry.source):
             self.queue.append(self.string_format(entry))
 
+    def string_format(self, entry: PlaylistEntry) -> str:
+        """Turn a playlist entry into a string"""
+
+        return entry.source
+
+    def string_parse(self, string: str) -> str:
+        """Extract URL from a string"""
+
+        return string
+
+    def dump_queue(self):
+        """Should do something with the queue (reversing happens here)"""
+
+        raise NotImplementedError
+
+
+class TxtWriter(AbstractOutputWriter):
+    """ Base class for writing text files
+
+    Usage:
+    1. Load existing file data (stripping start and end).
+    2. Keep history of URLs so we don't include doublets.
+    3. Add lines to a queue.
+    4. Write out the queue to wherever (reversing happens here).
+    """
+
+    def __init__(self, s, filename):
+        super().__init__(s, filename)
+        self.append = s.append
+
+        # File name expansion
+        if '*' in filename:
+            matches = glob.glob(pj(glob.escape(s.work_dir), filename))
+            if len(matches) == 1:
+                self.file = matches[0]
+            elif len(matches) == 0:
+                raise CategoryError("no matching file")
+            else:
+                raise CategoryError("multiple matching files")
+        else:
+            self.file = pj(s.work_dir, filename)
+
+        # Get existing lines from file
+        self.loaded_data = ''
+        if (s.append or s.sort == 'newest') and self.file:
+            self.load_existing()
+
+    def load_existing(self):
+        """Reads existing file into memory, removing start and end strings"""
+
+        try:
+            with open(self.file, 'r', encoding='utf-8') as file:
+                data = file.read().rstrip('\n')
+                if data.startswith(self.start_string):
+                    data = data[len(self.start_string):]
+                # Note: don't run with empty end string, because list[:-0] -> []
+                if self.end_string and data.endswith(self.end_string):
+                    data = data[:-len(self.end_string)]
+                self.loaded_data = data
+                # Generate history from loaded data
+                for line in data.splitlines():
+                    self.history.add(self.string_parse(line))
+        except OSError:
+            pass
+
     def dump_queue(self):
         """Create dir and write out queue to file"""
 
-        if not self.queue:
+        if not self.queue or not self.file:
             return
         if self.reverse:
             self.queue.reverse()
@@ -92,10 +136,8 @@ class BaseOutputWriter:
         os.makedirs(d, exist_ok=True)
 
         # All IO is done in binary mode, since text mode is not seekable
-        try:
-            if self.reverse or not self.append or not self.loaded_data:
-                raise OSError  # file must be overwritten
-
+        if self.append and not self.reverse and self.loaded_data:
+            # Note: loaded_data insures that files exists before trying to open with 'r'
             file = open(self.file, 'r+b')
             if self.quiet < 1:
                 msg('extending: {}'.format(self.file))
@@ -109,13 +151,16 @@ class BaseOutputWriter:
                 else:
                     raise OSError
             except OSError:
-                raise RuntimeError(self.file + ': refusing to append to file which does not match output format')
-
-        except OSError:
+                msg('file does not match output format: ' + self.file)
+                return
+        else:
             # Overwrite with start string
             file = open(self.file, 'wb')
             if self.quiet < 1:
-                msg('writing: {}'.format(self.file))
+                if self.loaded_data:
+                    msg('updating: {}'.format(self.file))
+                else:
+                    msg('creating: {}'.format(self.file))
             file.write(self.start_string.encode('utf-8'))
 
         with file:
@@ -128,20 +173,8 @@ class BaseOutputWriter:
             # End string
             file.write(self.end_string.encode('utf-8'))
 
-    def string_format(self, entry: PlaylistEntry) -> str:
-        """Turn a playlist entry into a string"""
-        return entry.source
 
-    def string_parse(self, string: str) -> str:
-        """Extract URL from a string"""
-        return string
-
-
-class TxtWriter(BaseOutputWriter):
-    pass
-
-
-class M3uWriter(BaseOutputWriter):
+class M3uWriter(TxtWriter):
     start_string = '#EXTM3U\n'
     ext = '.m3u'
 
@@ -153,7 +186,7 @@ class M3uWriter(BaseOutputWriter):
             return string
 
 
-class HtmlWriter(BaseOutputWriter):
+class HtmlWriter(TxtWriter):
     start_string = '<!DOCTYPE html>\n<html><head><meta charset="utf-8"/></head><body>\n'
     end_string = '</body></html>'
     ext = '.html'
@@ -166,14 +199,10 @@ class HtmlWriter(BaseOutputWriter):
 
     def string_parse(self, string):
         # The thing between the first quotes is an URL
-        html.unescape(string.split('"')[1])
+        return html.unescape(string.split('"')[1])
 
 
-class StdoutWriter(BaseOutputWriter):
-    def load_existing(self):
-        """Don't read files"""
-        pass
-
+class StdoutWriter(AbstractOutputWriter):
     def dump_queue(self):
         """Write to stdout"""
 
@@ -183,13 +212,10 @@ class StdoutWriter(BaseOutputWriter):
             print(line)
 
 
-class CommandWriter(BaseOutputWriter):
+class CommandWriter(AbstractOutputWriter):
     def __init__(self, s, filename):
         super().__init__(s, filename)
         self.command = s.command
-
-    def load_existing(self):
-        pass
 
     def dump_queue(self):
         """Run a program with queue entries as arguments"""
@@ -206,10 +232,10 @@ class CommandWriter(BaseOutputWriter):
             self.queue = self.queue[300:]
 
 
-def sort_media(media_list: list, sort: str):
+def sort_media(media_list: List[Media], sort: str):
     """Sort a list of Media objects in place"""
 
-    if sort == 'none':
+    if sort in ('none', ''):
         return
     elif sort == 'name':
         media_list.sort(key=lambda x: x.name)
@@ -239,8 +265,7 @@ def create_output(s: Settings, data: List[Category]):
     elif s.mode.startswith('txt'):
         writer = TxtWriter
     else:
-        # Note: ArgumentParser will make sure we never end up here
-        raise RuntimeError('invalid mode')
+        raise RuntimeError
 
     if s.mode.endswith('multi'):
         output_multi(s, data, writer, tree=False)
@@ -250,15 +275,15 @@ def create_output(s: Settings, data: List[Category]):
         output_single(s, data, writer)
 
 
-def output_single(s: Settings, data: List[Category], writercls: Type[BaseOutputWriter]):
+def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOutputWriter]):
     """Create a concatenated output file"""
 
     all_media = [item for category in data for item in category.contents if isinstance(item, Media)]
     sort_media(all_media, s.sort)
 
     # Filename falls back to the name of the first category
-    filename = s.output_filename or (data[0].safe_name + writercls.ext)
-    writer = writercls(s, filename)
+    # Note: CategoryError will be prevented in argument handling
+    writer = writercls(s, s.output_filename or data[0].safe_name + writercls.ext)
 
     for media in all_media:
         if media.exists_in(pj(s.work_dir, s.sub_dir)):
@@ -270,7 +295,7 @@ def output_single(s: Settings, data: List[Category], writercls: Type[BaseOutputW
     writer.dump_queue()
 
 
-def output_multi(s: Settings, data: List[Category], writercls: Type[BaseOutputWriter], tree=True):
+def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutputWriter], tree=True):
     """Create a tree of output files
 
     :keyword writercls: a PlaylistWriter class
@@ -285,6 +310,7 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[BaseOutputWr
             # Output file is outside subdir, with nice name
             # Links point inside the subdir
             source_prepend_dir = sd
+            # Note: CategoryError cannot occur on home categories
             writer = writercls(s, category.safe_name + writercls.ext)
         elif tree:
             # For sub-categories in a tree:
@@ -297,27 +323,31 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[BaseOutputWr
             # Output file is outside subdir, has both ugly and nice name
             # Links point inside subdir
             source_prepend_dir = sd
-            writer = writercls(s, category.key + ' - ' + category.safe_name + writercls.ext)
+            try:
+                writer = writercls(s, category.key + ' - ' + category.optional_name + writercls.ext)
+            except CategoryError as e:
+                if s.quiet < 1:
+                    msg("{}: {}".format(e.message, category.key))
+                continue
 
-        media_entries = []
+        # All categories go on top of the queue
         for item in category.contents:
             if isinstance(item, Category):
                 # Only link to categories if we are creating a tree structure
                 if tree:
                     source = pj('.', source_prepend_dir, item.key + writer.ext)
-                    # Categories go on top of the queue
-                    writer.add_to_queue(PlaylistEntry(item.name.upper(), source))
-            else:
-                if item.exists_in(pj(wd, sd)):
-                    source = pj('.', source_prepend_dir, item.filename)
-                else:
-                    source = item.url
-                # Hold on to media links so we can sort them later
-                media_entries.append(PlaylistEntry(item.name, source, item.duration))
 
-        sort_media(media_entries, s.sort)
-        for entry in media_entries:
-            writer.add_to_queue(entry)
+                    writer.add_to_queue(PlaylistEntry(item.name.upper(), source))
+
+        media_items = [m for m in category.contents if isinstance(m, Media)]
+        sort_media(media_items, s.sort)
+
+        for media in media_items:
+            if media.exists_in(pj(wd, sd)):
+                source = pj('.', source_prepend_dir, media.filename)
+            else:
+                source = media.url
+            writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))
 
         writer.dump_queue()
 
@@ -339,6 +369,7 @@ def output_filesystem(s: Settings, data: List[Category]):
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
+            # Note: CategoryError cannot occur on home categories
             link = pj(wd, category.safe_name)
             if s.safe_filenames:
                 source = pj(wd, sd, category.key)
@@ -361,6 +392,7 @@ def output_filesystem(s: Settings, data: List[Category]):
                     source = d
                 else:
                     source = pj('..', item.key)
+                # Note: CategoryError cannot occur on categories inside other categories contents
                 link = pj(output_dir, item.safe_name)
 
             else:
