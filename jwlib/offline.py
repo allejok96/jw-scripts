@@ -7,9 +7,9 @@ from jwlib.download import disk_cleanup
 
 
 class File:
-    def __init__(self, name: str, directory: str):
-        self.name = name
-        self.path = os.path.join(directory, name)
+    def __init__(self, directory: str, filename: str):
+        self.name = filename
+        self.path = os.path.join(directory, filename)
         try:
             stat = os.stat(self.path)
             self.size = stat.st_size
@@ -18,15 +18,22 @@ class File:
             self.size = None
             self.date = None
 
+    def isfile(self):
+        return os.path.isfile(self.path)
+
+    def ismp4(self):
+        return self.path.lower().endswith('.mp4')
+
+
 def copy_files(s: Settings):
     dest_dir = os.path.join(s.work_dir, s.sub_dir)
 
     # Create a list of all mp4 files to be copied
     source_files = []
     for name in os.listdir(s.import_dir):
-        if not name.lower().endswith('.mp4'):
-            continue
         source_file = File(s.import_dir, name)
+        if not source_file.isfile() or not source_file.ismp4():
+            continue
         dest_file = File(dest_dir, name)
         # Just a simple size check, no checksum etc
         if source_file.size != dest_file.size:

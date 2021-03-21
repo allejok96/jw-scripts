@@ -115,7 +115,8 @@ p.add_argument('positional_arguments', nargs='*', metavar='DIR|FILE|COMMAND',
 
 s = p.parse_args(namespace=Settings())
 
-if not (s.mode or s.download or s.download_subtitles):
+# Required arguments
+if not (s.mode or s.download or s.download_subtitles or s.import_dir):
     msg('please use --mode or --download')
     exit(1)
 
