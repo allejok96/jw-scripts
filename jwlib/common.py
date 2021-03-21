@@ -37,6 +37,7 @@ class Settings:
     min_date = 0  # 1970-01-01
     include_categories = ('VideoOnDemand',)
     exclude_categories = ('VODSJJMeetings',)
+    filter_categories = ()
 
     # Disk space check stuff
     keep_free = 0  # bytes

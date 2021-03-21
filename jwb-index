@@ -65,6 +65,9 @@ p.add_argument('--download-subtitles', action='store_true',
 p.add_argument('--exclude', metavar='CODE', dest='exclude_categories',
                action=action_factory(lambda x: tuple(x.split(','))),
                help='comma separated list of categories to exclude')
+p.add_argument('--filter', '-f', dest='filter_categories', metavar='CODE',
+               action=action_factory(lambda x: tuple(x.split(','))),
+               help='comma separated list of categories to extract (use with --latest)')
 p.add_argument('--fix-broken', action='store_true', dest='overwrite_bad',
                help='check existing files and re-download them if they are broken')
 p.add_argument('--forever', action='store_true', dest='stream_forever',

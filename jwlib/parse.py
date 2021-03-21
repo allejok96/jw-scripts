@@ -179,6 +179,9 @@ def parse_broadcasting(s: Settings):
                 if 'WebExclude' in j['category']['media']['tags']:
                     continue
 
+            # Apply category filter
+            if s.filter_categories and j_media['primaryCategory'] not in s.filter_categories:
+                continue
             try:
                 if j_media.get('type') == 'audio':
                     # Simply pick first audio stream for the time being...
