@@ -281,9 +281,13 @@ def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOut
     all_media = [item for category in data for item in category.contents if isinstance(item, Media)]
     sort_media(all_media, s.sort)
 
-    # Filename falls back to the name of the first category
-    # Note: CategoryError will be prevented in argument handling
-    writer = writercls(s, s.output_filename or data[0].safe_name + writercls.ext)
+    try:
+        # Filename falls back to the name of the first category
+        writer = writercls(s, s.output_filename or data[0].safe_name + writercls.ext)
+    except CategoryError:
+        msg('please specify filename for output')
+        exit(1)
+        raise
 
     for media in all_media:
         if media.exists_in(pj(s.work_dir, s.sub_dir)):
