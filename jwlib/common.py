@@ -38,6 +38,7 @@ class Settings:
     include_categories = ('VideoOnDemand',)
     exclude_categories = ('VODSJJMeetings',)
     filter_categories = ()
+    print_category = False
 
     # Disk space check stuff
     keep_free = 0  # bytes

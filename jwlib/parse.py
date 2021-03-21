@@ -138,8 +138,8 @@ def parse_broadcasting(s: Settings):
     queue = list(s.include_categories)
     for key in queue:
 
-        url = 'https://data.jw-api.org/mediator/v1/categories/{L}/{c}?detailed=1&clientType=www'
-        url = url.format(L=s.lang, c=key)
+        url = 'https://data.jw-api.org/mediator/v1/categories/{L}/{c}?detailed={d}&clientType=www'
+        url = url.format(L=s.lang, c=key, d=int(not s.print_category))
 
         try:
             with urllib.request.urlopen(url) as j_raw:  # j as JSON
@@ -156,9 +156,19 @@ def parse_broadcasting(s: Settings):
         cat.home = cat.key in s.include_categories
 
         if s.quiet < 1:
-            msg('indexing: {} ({})'.format(cat.key, cat.name))
+            if s.print_category:
+                if key == 'LatestVideos':
+                    msg('Categories linked to the latest videos:')
+                else:
+                    msg('Sub-categories of {}:'.format(key))
+            else:
+                msg('indexing: {} ({})'.format(cat.key, cat.name))
 
         for j_sub in j['category'].get('subcategories', []):
+
+            if s.print_category:
+                print(j_sub['key'])
+                continue
             sub = Category()
             sub.key = j_sub['key']
             sub.name = j_sub['name']
@@ -175,9 +185,15 @@ def parse_broadcasting(s: Settings):
 
         for j_media in j['category'].get('media', []):
             # Skip videos marked as hidden
-            if 'tags' in j['category']['media']:
-                if 'WebExclude' in j['category']['media']['tags']:
-                    continue
+            if 'tags' in j_media.get('tags', []):
+                continue
+
+            if s.print_category and key == 'LatestVideos':
+                if s.quiet < 1:
+                    print('{} -> {}'.format(j_media['primaryCategory'], j_media['title']))
+                else:
+                    print(j_media['primaryCategory'])
+                continue
 
             # Apply category filter
             if s.filter_categories and j_media['primaryCategory'] not in s.filter_categories:
