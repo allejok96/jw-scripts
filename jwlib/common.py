@@ -35,10 +35,11 @@ class Settings:
     quality = 1080
     hard_subtitles = False
     min_date = 0  # 1970-01-01
-    include_categories = ('VideoOnDemand',)
-    exclude_categories = ('VODSJJMeetings',)
-    filter_categories = ()
-    print_category = False
+    include_categories = ['VideoOnDemand']
+    exclude_categories = ['VODSJJMeetings']
+    filter_categories = []
+    print_category = ''
+    latest = False
 
     # Disk space check stuff
     keep_free = 0  # bytes

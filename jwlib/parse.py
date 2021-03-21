@@ -139,6 +139,26 @@ def get_best_video(videos: list, quality: int, subtitles: bool):
     return rankings[-1][1]
 
 
+def get_json(lang, key):
+    """Return loaded JSON from API"""
+
+    url = 'https://data.jw-api.org/mediator/v1/categories/{}/{}?detailed=1'.format(lang, key)
+    try:
+        with urllib.request.urlopen(url) as data:
+            return json.loads(data.read().decode('utf-8'))
+    except HTTPError as e:
+        if e.code == 404:
+            e.msg = '{} not found'.format(key)
+            raise e
+
+
+def get_categories(s: Settings, key):
+    """Return a list of sub category keys"""
+
+    j = get_json(s.lang, key)
+    return [sub['key'] for sub in j['category'].get('subcategories', [])]
+
+
 def parse_broadcasting(s: Settings):
     """Index JW Broadcasting categories recursively and return a list with Category objects
 
@@ -149,22 +169,12 @@ def parse_broadcasting(s: Settings):
     FRIENDLY_FILENAMES = s.friendly_filenames
     SAFE_FILENAMES = s.safe_filenames
 
+    # Make a copy because we'll append stuff here later
+    queue = s.include_categories.copy()
     result = []
 
-    # Make a copy of the list, because we'll append stuff here later
-    queue = list(s.include_categories)
     for key in queue:
-
-        url = 'https://data.jw-api.org/mediator/v1/categories/{L}/{c}?detailed={d}&clientType=www'
-        url = url.format(L=s.lang, c=key, d=int(not s.print_category))
-
-        try:
-            with urllib.request.urlopen(url) as j_raw:  # j as JSON
-                j = json.loads(j_raw.read().decode('utf-8'))
-        except HTTPError as e:
-            if e.code == 404:
-                e.msg = '{} not found'.format(key)
-                raise e
+        j = get_json(s.lang, key)
 
         cat = Category()
         cat.key = j['category']['key']
@@ -174,19 +184,9 @@ def parse_broadcasting(s: Settings):
             result.append(cat)
 
         if s.quiet < 1:
-            if s.print_category:
-                if key == 'LatestVideos':
-                    msg('Categories linked to the latest videos:')
-                else:
-                    msg('Sub-categories of {}:'.format(key))
-            else:
-                msg('indexing: {} ({})'.format(cat.key, cat.name))
+            msg('indexing: {} ({})'.format(cat.key, cat.name))
 
         for j_sub in j['category'].get('subcategories', []):
-
-            if s.print_category:
-                print(j_sub['key'])
-                continue
 
             sub = Category()
             sub.key = j_sub['key']
@@ -206,14 +206,6 @@ def parse_broadcasting(s: Settings):
             # Skip videos marked as hidden
             if 'tags' in j_media.get('tags', []):
                 continue
-
-            if s.print_category and key == 'LatestVideos':
-                if s.quiet < 1:
-                    print('{} -> {}'.format(j_media['primaryCategory'], j_media['title']))
-                else:
-                    print(j_media['primaryCategory'])
-                continue
-
             # Apply category filter
             if s.filter_categories and j_media['primaryCategory'] not in s.filter_categories:
                 continue

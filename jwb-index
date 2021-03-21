@@ -9,7 +9,7 @@ from jwlib.common import Settings, action_factory, msg
 from jwlib.download import download_all, disk_usage_info
 from jwlib.offline import copy_files
 from jwlib.output import create_output
-from jwlib.parse import parse_broadcasting
+from jwlib.parse import parse_broadcasting, get_categories
 
 
 def get_jwb_languages():
@@ -50,7 +50,7 @@ p = argparse.ArgumentParser(prog='jwb-index',
 p.add_argument('--append', action='store_true',
                help='append to file instead of overwriting')
 p.add_argument('--category', '-c', dest='include_categories', metavar='CODE',
-               action=action_factory(lambda x: tuple(x.split(','))),
+               action=action_factory(lambda x: x.split(',')),
                help='comma separated list of categories to index')
 p.add_argument('--checksum', action='store_true', dest='checksums',
                help="validate MD5 checksums")
@@ -63,11 +63,8 @@ p.add_argument('--download', '-d', action='store_true',
 p.add_argument('--download-subtitles', action='store_true',
                help='download VTT subtitle files')
 p.add_argument('--exclude', metavar='CODE', dest='exclude_categories',
-               action=action_factory(lambda x: tuple(x.split(','))),
+               action=action_factory(lambda x: x.split(',')),
                help='comma separated list of categories to skip (sub-categories will also be skipped)')
-p.add_argument('--filter', '-f', dest='filter_categories', metavar='CODE',
-               action=action_factory(lambda x: tuple(x.split(','))),
-               help='comma separated list of categories to extract (use with --latest)')
 p.add_argument('--fix-broken', action='store_true', dest='overwrite_bad',
                help='check existing files and re-download them if they are broken')
 p.add_argument('--free', type=int, metavar='MiB', dest='keep_free',
@@ -83,12 +80,11 @@ p.add_argument('--lang', '-l', action=action_factory(verify_language),
                help='language code')
 p.add_argument('--languages', '-L', nargs=0, action=action_factory(print_language),
                help='display a list of valid language codes')
-p.add_argument('--latest', action='store_const', const=['LatestVideos'],
-               dest='include_categories',
-               help='index the "Latest Videos" category')
+p.add_argument('--latest', action='store_true',
+               help='index the "Latest Videos" category only')
 p.add_argument('--limit-rate', '-R', metavar='RATE', dest='rate_limit',
                help='maximum download rate, passed to curl (default: 1m = 1 megabyte/s, 0 = no limit)')
-p.add_argument('--list-categories', '-C', nargs='?', const=True, metavar='CODE', dest='print_category',
+p.add_argument('--list-categories', '-C', nargs='?', const='VideoOnDemand', metavar='CODE', dest='print_category',
                help='print a list of (sub) category names')
 p.add_argument('--mode', '-m',
                choices=['filesystem', 'html', 'html_tree', 'm3u', 'm3u_multi', 'm3u_tree', 'run', 'stdout', 'txt'],
@@ -119,11 +115,7 @@ s = p.parse_args(namespace=Settings())
 
 # Quick print of categories list
 if s.print_category:
-    # Ugly: may be str even if it should be bool
-    if isinstance(s.print_category, str):
-        s.include_categories = s.print_category.split(',')
-        s.print_category = True
-    parse_broadcasting(s)
+    print(*get_categories(s, s.print_category), sep='\n')
     exit()
 
 # Required arguments
@@ -133,13 +125,17 @@ if not (s.mode or s.download or s.download_subtitles or s.import_dir):
 
 # Implicit arguments
 if s.update:
-    if s.mode != 'filesystem' and not s.mode.endswith('_tree') and not s.mode.endswith('_multi'):
-        msg("this mode does not support --update")
-        exit(1)
     s.append = True
-    s.include_categories = ['LatestVideos']
+    s.latest = True
     if not s.sort:
         s.sort = 'newest'
+if s.latest:
+    for key in s.include_categories:
+        if key != 'VideoOnDemand':
+            # Add key and its sub categories to the filter
+            s.filter_categories.append(key)
+            s.filter_categories += get_categories(s, key)
+    s.include_categories = ['LatestVideos']
 
 # Handle positional arguments depending on mode
 # COMMAND [ARGS]
@@ -181,7 +177,7 @@ if s.import_dir:
     exit()
 
 # Some heads-up
-if s.quiet < 1 and not s.print_category:
+if s.quiet < 1:
     if s.download and s.curl_path is not None and s.rate_limit != '0':
         msg('note: download rate limit is active')
     if not s.safe_filenames and (s.mode not in ('', 'stdout') or s.friendly_filenames):
