@@ -8,6 +8,8 @@ With these scripts you can get the latest JW Broadcasting videos automatically d
 
 ## Get started
 
+> From time to time the master branch may be in heavy development with new and untested features. You may have better luck finding a "stable" version under the [releases](https://github.com/allejok96/jw-scripts/releases) page.
+
 Take a look at [installation methods](https://github.com/allejok96/jw-scripts/wiki/Installation) to get up and running.
 
 For example, to download the latest videos in Swedish, you would run:
