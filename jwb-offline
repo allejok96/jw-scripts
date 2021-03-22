@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import time
 import os
 from sys import stderr
@@ -123,57 +121,63 @@ class VideoManager:
 def handler(signal, frame):
     raise KeyboardInterrupt
 
-signal.signal(signal.SIGTERM, handler)
+
+def main():
+    signal.signal(signal.SIGTERM, handler)
 
 
-parser = argparse.ArgumentParser(prog='jwb-offline',
-                                 usage='%(prog)s [DIR] [COMMAND]',
-                                 description='Shuffle and play videos in DIR')
-parser.add_argument('dir',
-                    nargs='?',
-                    metavar='DIR',
-                    default='.')
-parser.add_argument('cmd',
-                    nargs=argparse.REMAINDER,
-                    metavar='COMMAND',
-                    help='video player command, "{}" gets replaced by starting position in secs')
-parser.add_argument('--replay-sec',
-                    metavar='SEC',
-                    type=int,
-                    default=30,
-                    dest='replay',
-                    help='seconds to replay after a restart')
-parser.add_argument('--verbose',
-                    action='store_true',
-                    help='show video player output')
+    parser = argparse.ArgumentParser(prog='jwb-offline',
+                                     usage='%(prog)s [DIR] [COMMAND]',
+                                     description='Shuffle and play videos in DIR')
+    parser.add_argument('dir',
+                        nargs='?',
+                        metavar='DIR',
+                        default='.')
+    parser.add_argument('cmd',
+                        nargs=argparse.REMAINDER,
+                        metavar='COMMAND',
+                        help='video player command, "{}" gets replaced by starting position in secs')
+    parser.add_argument('--replay-sec',
+                        metavar='SEC',
+                        type=int,
+                        default=30,
+                        dest='replay',
+                        help='seconds to replay after a restart')
+    parser.add_argument('--verbose',
+                        action='store_true',
+                        help='show video player output')
 
-args = parser.parse_args()
+    args = parser.parse_args()
 
-m = VideoManager(args.dir, replay=args.replay, cmd=args.cmd, verbose=args.verbose)
+    m = VideoManager(args.dir, replay=args.replay, cmd=args.cmd, verbose=args.verbose)
 
-# JSONDecodeError was added to Python 3.5
-if hasattr(json, 'JSONDecodeError'):
-    JSONDecodeError = json.JSONDecodeError
-else:
-    JSONDecodeError = ValueError
+    # JSONDecodeError was added to Python 3.5
+    if hasattr(json, 'JSONDecodeError'):
+        JSONDecodeError = json.JSONDecodeError
+    else:
+        JSONDecodeError = ValueError
 
-try:
-    m.read_dump()
-except JSONDecodeError:
-    pass
+    try:
+        m.read_dump()
+    except JSONDecodeError:
+        pass
 
-showmsg = True
-try:
-    while True:
-        if m.set_random_video():
-            m.play_video()
-            showmsg = True
-        else:
-            if showmsg:
-                msg('no videos to play yet')
-                showmsg = False
-            time.sleep(10)
-            continue
-except KeyboardInterrupt:
-    msg('aborted')
-    m.write_dump()
+    showmsg = True
+    try:
+        while True:
+            if m.set_random_video():
+                m.play_video()
+                showmsg = True
+            else:
+                if showmsg:
+                    msg('no videos to play yet')
+                    showmsg = False
+                time.sleep(10)
+                continue
+    except KeyboardInterrupt:
+        msg('aborted')
+        m.write_dump()
+
+
+if __name__ == '__main__':
+    main()
