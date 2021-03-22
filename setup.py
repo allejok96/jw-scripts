@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from setuptools import setup
 
 setup(
@@ -10,5 +8,9 @@ setup(
     license='GPL',
     packages=['jwlib'],
     install_requires=['urllib3'],
-    scripts=['jwb-index', 'jwb-offline']
+    #scripts=['jwb-index', 'jwb-offline']
+    entry_points={'console_scripts': [
+        'jwb-index=jwlib.main:main',
+        'jwb-offline=jwlib.offline:main'
+    ]}
 )
