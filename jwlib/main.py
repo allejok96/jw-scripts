@@ -4,11 +4,11 @@ import os
 import time
 import urllib.request
 
-from .common import Settings, action_factory, msg
-from .download import download_all, disk_usage_info
-from .offline import copy_files
-from .output import create_output
-from .parse import parse_broadcasting, get_categories
+from jwlib.common import Settings, action_factory, msg
+from jwlib.download import download_all, disk_usage_info
+from jwlib.offline import copy_files
+from jwlib.output import create_output
+from jwlib.parse import parse_broadcasting, get_categories
 
 
 def get_jwb_languages():
