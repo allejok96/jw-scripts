@@ -134,6 +134,8 @@ def main():
             if key != 'VideoOnDemand':
                 # Add key and its sub categories to the filter
                 s.filter_categories.append(key)
+                if s.quiet < 1:
+                    msg('preparing filter: ' + key)
                 s.filter_categories += get_categories(s, key)
         s.include_categories = ['LatestVideos']
 
