@@ -5,10 +5,18 @@ import subprocess
 from random import shuffle
 from typing import List, Type
 
-from .parse import Category, Media, CategoryError
+from .parse import Category, Media, CategoryNameError
 from .common import Settings, msg
 
 pj = os.path.join
+
+
+class FileParseError(Exception):
+    pass
+
+
+class CategoryGlobError(Exception):
+    pass
 
 
 class PlaylistEntry:
@@ -30,6 +38,7 @@ class AbstractOutputWriter:
      - end_string: last string in file
      - ext: file name extension (dot included)
     """
+    # Make sure to end these with newline if non-empty
     start_string = ''
     end_string = ''
     ext = ''
@@ -94,29 +103,35 @@ class TxtWriter(AbstractOutputWriter):
             matches = glob.glob(pj(glob.escape(s.work_dir), filename))
             if len(matches) == 1:
                 self.file = matches[0]
-            elif len(matches) == 0:
-                raise CategoryError("no matching file")
             else:
-                raise CategoryError("multiple matching files")
+                raise CategoryGlobError
         else:
             self.file = pj(s.work_dir, filename)
 
         # Get existing lines from file
         self.loaded_data = ''
-        if (s.append or s.sort == 'newest') and self.file:
+        if s.append:
             self.load_existing()
 
     def load_existing(self):
         """Reads existing file into memory, removing start and end strings"""
 
         try:
-            with open(self.file, 'r', encoding='utf-8') as file:
-                data = file.read().rstrip('\n')
-                if data.startswith(self.start_string):
-                    data = data[len(self.start_string):]
-                # Note: don't run with empty end string, because list[:-0] -> []
-                if self.end_string and data.endswith(self.end_string):
-                    data = data[:-len(self.end_string)]
+            with open(self.file) as file:
+                data = file.read()
+                # Remove start string and end string
+                if self.start_string:
+                    if data.startswith(self.start_string):
+                        data = data[len(self.start_string):]
+                    else:
+                        raise FileParseError
+                if self.end_string:
+                    if data.endswith(self.end_string):
+                        # Just a note: list[:-0] == []
+                        data = data[:-len(self.end_string)]
+                    else:
+                        raise FileParseError
+                # Store file in memory
                 self.loaded_data = data
                 # Generate history from loaded data
                 for line in data.splitlines():
@@ -135,43 +150,28 @@ class TxtWriter(AbstractOutputWriter):
         d = os.path.dirname(self.file)
         os.makedirs(d, exist_ok=True)
 
-        # All IO is done in binary mode, since text mode is not seekable
-        if self.append and not self.reverse and self.loaded_data:
-            # Note: loaded_data insures that files exists before trying to open with 'r'
-            file = open(self.file, 'r+b')
-            if self.quiet < 1:
-                msg('extending: {}'.format(self.file))
+        if self.quiet < 1:
+            if self.loaded_data:
+                msg('updating: {}'.format(self.file))
+            else:
+                msg('creating: {}'.format(self.file))
 
-            try:
-                # Truncate right before end string
-                # Seeking to invalid positions raises OSError
-                file.seek(-len(self.end_string.encode('utf-8')), 2)
-                if file.peek().decode('utf-8') == self.end_string:
-                    file.truncate()
-                else:
-                    raise OSError
-            except OSError:
-                msg('file does not match output format: ' + self.file)
-                return
-        else:
-            # Overwrite with start string
-            file = open(self.file, 'wb')
-            if self.quiet < 1:
-                if self.loaded_data:
-                    msg('updating: {}'.format(self.file))
-                else:
-                    msg('creating: {}'.format(self.file))
-            file.write(self.start_string.encode('utf-8'))
-
-        with file:
+        # Note:
+        # Text append mode ('a') only works if there is no end_string
+        # Seeking only works in binary mode, and that does not support universal newlines (CRLF)
+        # So to make it simple we always write the file from scratch, even if append = True
+        with open(self.file, 'w') as file:
+            file.write(self.start_string)
+            # Prepend old content
+            if not self.reverse and self.append:
+                file.write(self.loaded_data)
             # Write out buffer
-            for string in self.queue:
-                file.write((string + '\n').encode('utf-8'))
-            # Append old file contents
+            file.writelines(line + '\n' for line in self.queue)
+            # Append old content
             if self.reverse and self.append:
-                file.write(self.loaded_data.encode('utf-8'))
+                file.write(self.loaded_data)
             # End string
-            file.write(self.end_string.encode('utf-8'))
+            file.write(self.end_string)
 
 
 class M3uWriter(TxtWriter):
@@ -188,7 +188,7 @@ class M3uWriter(TxtWriter):
 
 class HtmlWriter(TxtWriter):
     start_string = '<!DOCTYPE html>\n<html><head><meta charset="utf-8"/></head><body>\n'
-    end_string = '</body></html>'
+    end_string = '</body></html>\n'
     ext = '.html'
 
     def string_format(self, entry):
@@ -198,8 +198,12 @@ class HtmlWriter(TxtWriter):
         return '<a href="{}">{}</a><br>'.format(source, html.escape(entry.name))
 
     def string_parse(self, string):
-        # The thing between the first quotes is an URL
-        return html.unescape(string.split('"')[1])
+        try:
+            # The thing between the first quotes is an URL
+            if string.startswith('<a href="'):
+                return html.unescape(string.split('"')[1])
+        except IndexError:
+            raise FileParseError
 
 
 class StdoutWriter(AbstractOutputWriter):
@@ -284,7 +288,7 @@ def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOut
     try:
         # Filename falls back to the name of the first category
         writer = writercls(s, s.output_filename or data[0].safe_name + writercls.ext)
-    except CategoryError:
+    except CategoryNameError:
         msg('please specify filename for output')
         exit(1)
         raise
@@ -314,25 +318,31 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
             # Output file is outside subdir, with nice name
             # Links point inside the subdir
             source_prepend_dir = sd
-            # Note: CategoryError cannot occur on home categories
-            writer = writercls(s, category.safe_name + writercls.ext)
+            # Note: CategoryNameError cannot occur on home categories
+            file = category.safe_name + writercls.ext
         elif tree:
             # For sub-categories in a tree:
             # Output file is inside subdir, with ugly name
             # No need to prepend links with the subdir (since we are inside it)
             source_prepend_dir = ''
-            writer = writercls(s, pj(sd, category.key) + writercls.ext)
+            file = pj(sd, category.key) + writercls.ext
         else:
             # "Flat" mode, not a tree:
             # Output file is outside subdir, has both ugly and nice name
             # Links point inside subdir
             source_prepend_dir = sd
-            try:
-                writer = writercls(s, category.key + ' - ' + category.optional_name + writercls.ext)
-            except CategoryError as e:
-                if s.quiet < 1:
-                    msg("{}: {}".format(e.message, category.key))
-                continue
+            file = category.key + ' - ' + category.optional_name + writercls.ext
+
+        try:
+            writer = writercls(s, file)
+        except CategoryGlobError:
+            if s.quiet < 2:
+                msg('failed to find: ' + file)
+            continue
+        except FileParseError:
+            if s.quiet < 2:
+                msg('badly formatted file: ' + file)
+            continue
 
         # All categories go on top of the queue
         for item in category.contents:
@@ -373,7 +383,7 @@ def output_filesystem(s: Settings, data: List[Category]):
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
-            # Note: CategoryError cannot occur on home categories
+            # Note: CategoryNameError cannot occur on home categories
             link = pj(wd, category.safe_name)
             if s.safe_filenames:
                 source = pj(wd, sd, category.key)
@@ -396,7 +406,7 @@ def output_filesystem(s: Settings, data: List[Category]):
                     source = d
                 else:
                     source = pj('..', item.key)
-                # Note: CategoryError cannot occur on categories inside other categories contents
+                # Note: CategoryNameError cannot occur on categories inside other categories contents
                 link = pj(output_dir, item.safe_name)
 
             else:

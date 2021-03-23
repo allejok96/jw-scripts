@@ -13,9 +13,8 @@ SAFE_FILENAMES = False
 FRIENDLY_FILENAMES = False
 
 
-class CategoryError(Exception):
-    def __init__(self, message: str = None):
-        self.message = message or "requested name of unnamed category"
+class CategoryNameError(Exception):
+    pass
 
 
 class Category:
@@ -35,7 +34,7 @@ class Category:
     def safe_name(self):
         """Returns name with special characters removed, or raises CategoryError if unset"""
         if not self.name:
-            raise CategoryError
+            raise CategoryNameError
         return format_filename(self.name)
 
     @property
@@ -43,7 +42,7 @@ class Category:
         """Returns name with special characters removed, or '*' if unset"""
         try:
             return self.safe_name
-        except CategoryError:
+        except CategoryNameError:
             return '*'
 
 
