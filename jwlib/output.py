@@ -1,14 +1,10 @@
-import glob
 import html
-import os
 import subprocess
 from random import shuffle
 from typing import List, Type
 
 from .parse import Category, Media, CategoryNameError
-from .common import Settings, msg
-
-pj = os.path.join
+from .common import Path, Settings, msg
 
 
 class FileParseError(Exception):
@@ -100,13 +96,13 @@ class TxtWriter(AbstractOutputWriter):
 
         # File name expansion
         if '*' in filename:
-            matches = glob.glob(pj(glob.escape(s.work_dir), filename))
+            matches = list(s.work_dir.glob(filename))
             if len(matches) == 1:
                 self.file = matches[0]
             else:
                 raise CategoryGlobError
         else:
-            self.file = pj(s.work_dir, filename)
+            self.file = s.work_dir / filename
 
         # Get existing lines from file
         self.loaded_data = ''
@@ -117,7 +113,7 @@ class TxtWriter(AbstractOutputWriter):
         """Reads existing file into memory, removing start and end strings"""
 
         try:
-            with open(self.file) as file:
+            with self.file.open() as file:
                 data = file.read()
                 # Remove start string and end string
                 if self.start_string:
@@ -147,8 +143,7 @@ class TxtWriter(AbstractOutputWriter):
         if self.reverse:
             self.queue.reverse()
 
-        d = os.path.dirname(self.file)
-        os.makedirs(d, exist_ok=True)
+        self.file.parent.mkdir(parents=True, exist_ok=True)
 
         if self.quiet < 1:
             if self.loaded_data:
@@ -160,7 +155,7 @@ class TxtWriter(AbstractOutputWriter):
         # Text append mode ('a') only works if there is no end_string
         # Seeking only works in binary mode, and that does not support universal newlines (CRLF)
         # So to make it simple we always write the file from scratch, even if append = True
-        with open(self.file, 'w') as file:
+        with self.file.open('w') as file:
             file.write(self.start_string)
             # Prepend old content
             if not self.reverse and self.append:
@@ -294,8 +289,8 @@ def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOut
         raise
 
     for media in all_media:
-        if media.exists_in(pj(s.work_dir, s.sub_dir)):
-            source = pj('.', s.sub_dir, media.filename)
+        if (s.work_dir / s.sub_dir / media.filename).exists():
+            source = Path('.', s.sub_dir, media.filename).str
         else:
             source = media.url
         writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))
@@ -309,37 +304,30 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
     :keyword writercls: a PlaylistWriter class
     :keyword tree: create an hierarchy vs everything at top level
     """
-    wd = s.work_dir
-    sd = s.sub_dir
+    data_dir = s.work_dir / s.sub_dir
 
     for category in data:
         if tree and category.home:
-            # For the root of a tree:
-            # Output file is outside subdir, with nice name
-            # Links point inside the subdir
-            source_prepend_dir = sd
+            # Root of tree: file is outside subdir, with nice name
             # Note: CategoryNameError cannot occur on home categories
-            file = category.safe_name + writercls.ext
+            file = s.work_dir / (category.safe_name + writercls.ext)
         elif tree:
-            # For sub-categories in a tree:
-            # Output file is inside subdir, with ugly name
-            # No need to prepend links with the subdir (since we are inside it)
-            source_prepend_dir = ''
-            file = pj(sd, category.key) + writercls.ext
+            # Sub-categories in tree: file is inside subdir, with ugly name
+            file = data_dir / (category.key + writercls.ext)
         else:
-            # "Flat" mode, not a tree:
-            # Output file is outside subdir, has both ugly and nice name
-            # Links point inside subdir
-            source_prepend_dir = sd
-            file = category.key + ' - ' + category.optional_name + writercls.ext
+            # "Flat" mode: file is outside subdir, has both ugly and nice name
+            file = s.work_dir / (category.key + ' - ' + category.optional_name + writercls.ext)
 
+        # Open the output file
         try:
             writer = writercls(s, file)
         except CategoryGlobError:
+            # optional_name have triggered a glob search with no luck
             if s.quiet < 2:
                 msg('failed to find: ' + file)
             continue
         except FileParseError:
+            # File cannot be appended to
             if s.quiet < 2:
                 msg('badly formatted file: ' + file)
             continue
@@ -349,16 +337,15 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
             if isinstance(item, Category):
                 # Only link to categories if we are creating a tree structure
                 if tree:
-                    source = pj('.', source_prepend_dir, item.key + writer.ext)
-
+                    source = (data_dir / (item.key + writer.ext)).relative_to(file).str
                     writer.add_to_queue(PlaylistEntry(item.name.upper(), source))
 
         media_items = [m for m in category.contents if isinstance(m, Media)]
         sort_media(media_items, s.sort)
 
         for media in media_items:
-            if media.exists_in(pj(wd, sd)):
-                source = pj('.', source_prepend_dir, media.filename)
+            if (data_dir / media.filename).exists():
+                source = (data_dir / media.filename).relative_to(file).str
             else:
                 source = media.url
             writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))
@@ -369,8 +356,7 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
 def output_filesystem(s: Settings, data: List[Category]):
     """Creates a directory structure with symlinks to videos"""
 
-    wd = s.work_dir
-    sd = s.sub_dir
+    data_dir = s.work_dir / s.sub_dir
 
     if s.quiet < 1:
         msg('creating directory structure')
@@ -378,19 +364,19 @@ def output_filesystem(s: Settings, data: List[Category]):
     for category in data:
 
         # Create the directory
-        output_dir = pj(wd, sd, category.key)
-        os.makedirs(output_dir, exist_ok=True)
+        cat_dir = data_dir / category.key
+        cat_dir.mkdir(parents=True, exist_ok=True)
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
             # Note: CategoryNameError cannot occur on home categories
-            link = pj(wd, category.safe_name)
-            if s.safe_filenames:
-                source = pj(wd, sd, category.key)
-            else:
-                source = pj(sd, category.key)
             try:
-                os.symlink(source, link)
+                if s.safe_filenames:
+                    (s.work_dir / category.safe_name).symlink_to(data_dir.absolute() / category.key,
+                                                                 target_is_directory=True)
+                else:
+                    (s.work_dir / category.safe_name).symlink_to(data_dir.relative_to(s.work_dir) / category.key,
+                                                                 target_is_directory=True)
             except FileExistsError:
                 pass
             except OSError:
@@ -400,27 +386,24 @@ def output_filesystem(s: Settings, data: List[Category]):
         for item in category.contents:
 
             if isinstance(item, Category):
-                d = pj(wd, sd, item.key)
-                os.makedirs(d, exist_ok=True)
-                if s.safe_filenames:
-                    source = d
-                else:
-                    source = pj('..', item.key)
+                link_dest = data_dir / item.key
+                link_dest.mkdir(parents=True, exist_ok=True)
                 # Note: CategoryNameError cannot occur on categories inside other categories contents
-                link = pj(output_dir, item.safe_name)
+                link_file = cat_dir / item.safe_name
 
             else:
-                if not item.exists_in(pj(wd, sd)):
+                link_dest = data_dir / item.filename
+                if not link_dest.exists():
                     continue
-
-                if s.safe_filenames:
-                    source = pj(wd, sd, item.filename)
-                else:
-                    source = pj('..', item.filename)
-                link = pj(output_dir, item.friendly_filename)
+                link_file = cat_dir / item.friendly_filename
 
             try:
-                os.symlink(source, link)
+                if s.safe_filenames:
+                    link_file.symlink_to(link_dest.absolute(),
+                                         target_is_directory=link_dest.is_dir())  # needed on win
+                else:
+                    link_file.symlink_to(link_dest.relative_to(data_dir),
+                                         target_is_directory=link_dest.is_dir())
             except FileExistsError:
                 pass
             except OSError:
@@ -430,24 +413,10 @@ def output_filesystem(s: Settings, data: List[Category]):
 def clean_symlinks(s: Settings):
     """Clean out broken (or all) symlinks from work dir"""
 
-    path = pj(s.work_dir, s.sub_dir)
-
-    if not os.path.isdir(path):
-        return
-
-    for subdir in os.listdir(path):
-        subdir = pj(path, subdir)
-        if not os.path.isdir(subdir):
-            continue
-
-        for file in os.listdir(subdir):
-            file = pj(subdir, file)
-            if not os.path.islink(file):
-                continue
-
-            source = pj(subdir, os.readlink(file))
-
-            if s.clean_all_symlinks or not os.path.exists(source):
+    for link in (s.work_dir / s.sub_dir).glob('*/*'):
+        if link.is_symlink():
+            # If link is neither dir nor file it's probably broken
+            if s.clean_all_symlinks or (not link.is_dir() and not link.is_file()):
                 if s.quiet < 1:
-                    msg('removing link: ' + os.path.basename(file))
-                os.remove(file)
+                    msg('removing link: ' + link.name)
+                link.unlink()

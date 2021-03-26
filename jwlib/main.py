@@ -1,10 +1,9 @@
 import argparse
 import json
-import os
 import time
 import urllib.request
 
-from jwlib.common import Settings, action_factory, msg
+from jwlib.common import Path, Settings, action_factory, msg
 from jwlib.download import download_all, disk_usage_info
 from jwlib.offline import copy_files
 from jwlib.output import create_output
@@ -148,21 +147,21 @@ def main():
         s.command = s.positional_arguments
 
     elif len(s.positional_arguments) == 1:
-        arg = s.positional_arguments[0]
+        path = Path(s.positional_arguments[0])
         # FILE
-        if s.mode in ('txt', 'm3u', 'html') and not os.path.isdir(arg):
-            s.output_filename = os.path.basename(arg)
-            s.work_dir = os.path.dirname(arg) or '.'
+        if s.mode in ('txt', 'm3u', 'html') and not path.is_dir():
+            s.output_filename = path.name
+            s.work_dir = path.parent
         # DIR
         else:
-            s.work_dir = arg
+            s.work_dir = path
 
     elif len(s.positional_arguments) > 1:
         msg('unexpected argument: {}'.format(s.positional_arguments[1]))
         exit(1)
 
     # Check / set paths
-    if not os.path.isdir(s.work_dir):
+    if not s.work_dir.is_dir():
         msg('not a directory: ' + s.work_dir)
         exit(1)
 

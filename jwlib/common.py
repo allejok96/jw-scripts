@@ -1,4 +1,6 @@
 import argparse
+import os
+import pathlib
 import sys
 
 
@@ -17,6 +19,38 @@ def action_factory(function):
     return CustomAction
 
 
+# Ugly hack to fix ugly hack in pathlib
+# Path.__new__() returns PosixPath or WindowsPath based on the OS.
+# But this functionality is not inherited by subclasses of Path,
+# so we piggy-back on the parent class and call type() to get the correct one.
+# The second Path class is for typing in PyCharm only :)
+class Path(type(pathlib.Path()), pathlib.Path):
+    """pathlib.Path with extra stuff"""
+
+    @property
+    def str(self):
+        """For use when string is required (Python 3.5 does not support pathlike objects)"""
+        return self.__str__()
+
+    @property
+    def size(self):
+        """Size in bytes"""
+        return self.stat().st_size
+
+    @property
+    def mtime(self):
+        """Modification time"""
+        return self.stat().st_mtime
+
+    def set_mtime(self, time: int):
+        """Update modification time and access time"""
+        os.utime(self.__str__(), (time, time))
+
+    def is_mp4(self):
+        """True if this is an MP4 file"""
+        return self.is_file() and self.suffix.lower() == '.mp4'
+
+
 class Settings:
     """Global settings and defaults"""
 
@@ -25,7 +59,7 @@ class Settings:
 
     # Depending on mode
     positional_arguments = []
-    work_dir = '.'
+    work_dir = Path('.')
     sub_dir = ''
     output_filename = ''
     command = []
@@ -45,7 +79,7 @@ class Settings:
     keep_free = 0  # bytes
     warning = True  # warn if limit is set too low
 
-    import_dir = ''
+    import_dir = None  # type: Path
 
     # Download stuff
     download = False

@@ -1,77 +1,26 @@
 import argparse
 import json
-import os
 import shutil
 import signal
 import subprocess
 import time
 from random import shuffle
 
-from jwlib.common import Settings, msg
+from jwlib.common import Path, Settings, msg
 from jwlib.download import disk_cleanup
 
 
-class File:
-    def __init__(self, directory: str, filename: str):
-        self.name = filename
-        self.path = os.path.join(directory, filename)
-        try:
-            stat = os.stat(self.path)
-            self.size = stat.st_size
-            self.date = stat.st_mtime
-        except FileNotFoundError:
-            self.size = None
-            self.date = None
-
-    def isfile(self):
-        return os.path.isfile(self.path)
-
-    def ismp4(self):
-        return self.path.lower().endswith('.mp4')
-
-
-def copy_files(s: Settings):
-    dest_dir = os.path.join(s.work_dir, s.sub_dir)
-
-    # Create a list of all mp4 files to be copied
-    source_files = []
-    for name in os.listdir(s.import_dir):
-        source_file = File(s.import_dir, name)
-        if not source_file.isfile() or not source_file.ismp4():
-            continue
-        dest_file = File(dest_dir, name)
-        # Just a simple size check, no checksum etc
-        if source_file.size != dest_file.size:
-            source_files.append(source_file)
-
-    # Newest file first
-    source_files.sort(key=lambda x: x.date, reverse=True)
-
-    os.makedirs(dest_dir, exist_ok=True)
-
-    total = len(source_files)
-    for source_file in source_files:
-        if s.keep_free > 0:
-            disk_cleanup(s, directory=dest_dir, reference_media=source_file)
-
-        if s.quiet < 1:
-            i = source_files.index(source_file)
-            msg('copying [{}/{}]: {}'.format(i + 1, total, source_file.name))
-
-        shutil.copy2(source_file.path, os.path.join(dest_dir, source_file.name))
-
-
 class VideoManager:
-    """Play video files, keep track of history"""
-    # Can be changed by user
+    """Main class of jwb-offline
 
-    # Will be set by VideoManager
-    video = None
-    start_time = None
+    Play video files, keep track of history
+    """
+    video = None  # type: Path
+    start_time = None  # type: float
     pos = 0
     errors = 0
 
-    def __init__(self, wd, replay=0, cmd=None, verbose=False):
+    def __init__(self, wd: Path, replay=0, cmd=None, verbose=False):
         """Initialize self.
 
         :param wd: working directory
@@ -80,7 +29,7 @@ class VideoManager:
         """
         self.replay = replay
         self.wd = wd
-        self.dump_file = os.path.join(wd, 'dump.json')
+        self.dump_file = wd / 'dump.json'
         self.history = []
         self.verbose = verbose
 
@@ -91,21 +40,21 @@ class VideoManager:
 
     def write_dump(self):
         """Dump data to JSON file"""
-        d = {'video': self.video,
+        d = {'video': self.video.str,
              'pos': self.calculate_pos(),
              'history': self.history}
-        with open(self.dump_file, 'w') as output_file:
+        with self.dump_file.open('w') as output_file:
             output_file.write(json.dumps(d))
 
     def read_dump(self):
         """Load data from JSON file"""
-        if os.path.exists(self.dump_file):
-            with open(self.dump_file, 'r') as input_file:
+        if self.dump_file.exists():
+            with self.dump_file.open('r') as input_file:
                 d = json.loads(input_file.read())
             if 'history' in d and type(d['history']) is list:
                 self.history = d['history']
             if 'video' in d and type(d['video']) is str:
-                self.video = d['video']
+                self.video = Path(d['video'])
             if 'pos' in d and type(d['pos']) is int:
                 self.pos = d['pos']
 
@@ -137,8 +86,8 @@ class VideoManager:
     def play_video(self):
         """Play a video"""
         self.write_dump()
-        msg('playing: ' + self.video)
-        cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [os.path.join(self.wd, self.video)]
+        msg('playing: ' + self.video.name)
+        cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [self.video.str]
         self.start_time = time.time()
         if self.verbose:
             subprocess.call(cmd)
@@ -163,15 +112,52 @@ class VideoManager:
 
     def list_videos(self):
         """Return a list of all MP4 files in working dir"""
-        v = [f for f in os.listdir(self.wd) if f.lower().endswith('.mp4') if os.path.isfile(os.path.join(self.wd, f))]
-        return v
+        return [f for f in self.wd.iterdir() if f.is_mp4()]
 
 
-def handler(signal, frame):
-    raise KeyboardInterrupt
+def copy_files(s: Settings):
+    """jwb-index --import
+
+    Fancy copy of files from one directory to another
+    """
+
+    dest_dir = s.work_dir / s.sub_dir
+    dest_dir.mkdir(exist_ok=True)
+
+    # Create a list of all mp4 files to be copied
+    source_files = []
+    for source in s.import_dir.iterdir():
+        try:
+            # Just a simple size check, no checksum etc
+            if source.is_mp4() and source.size != (dest_dir / source.name).size:
+                source_files.append(source)
+        except OSError:
+            pass
+
+    # Newest file first
+    source_files.sort(key=lambda x: x.date, reverse=True)
+
+    total = len(source_files)
+    for source_file in source_files:
+        if s.keep_free > 0:
+            disk_cleanup(s, directory=dest_dir, reference_media=source_file)
+
+        if s.quiet < 1:
+            i = source_files.index(source_file)
+            msg('copying [{}/{}]: {}'.format(i + 1, total, source_file.name))
+
+        shutil.copy2(source_file.path, dest_dir / source_file.name)
 
 
 def main():
+    """jwb-offline
+
+    Video player script
+    """
+
+    def handler(signal, frame):
+        raise KeyboardInterrupt
+
     signal.signal(signal.SIGTERM, handler)
 
     parser = argparse.ArgumentParser(prog='jwb-offline',
@@ -182,7 +168,7 @@ def main():
                         metavar='DIR',
                         default='.')
     parser.add_argument('cmd',
-                        nargs=argparse.REMAINDER,
+                        nargs='+',
                         metavar='COMMAND',
                         help='video player command, "{}" gets replaced by starting position in secs')
     parser.add_argument('--replay-sec',
@@ -196,18 +182,13 @@ def main():
                         help='show video player output')
 
     args = parser.parse_args()
+    args.dir = Path(args.dir)
 
     m = VideoManager(args.dir, replay=args.replay, cmd=args.cmd, verbose=args.verbose)
 
-    # JSONDecodeError was added to Python 3.5
-    if hasattr(json, 'JSONDecodeError'):
-        JSONDecodeError = json.JSONDecodeError
-    else:
-        JSONDecodeError = ValueError
-
     try:
         m.read_dump()
-    except JSONDecodeError:
+    except json.JSONDecodeError:
         pass
 
     showmsg = True

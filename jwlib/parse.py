@@ -1,11 +1,11 @@
-import time
-import re
 import json
 import os
-import urllib.request
+import re
+import time
 import urllib.parse
-from urllib.error import HTTPError
+import urllib.request
 from typing import List, Union
+from urllib.error import HTTPError
 
 from .common import msg, Settings
 
@@ -59,9 +59,6 @@ class Media:
     # misleading use of repr, but it's only for debugging...
     def __repr__(self):
         return "Media('{}')".format(self.filename)
-
-    def exists_in(self, directory):
-        return os.path.exists(os.path.join(directory, self.filename))
 
     def _get_filename(self, url=''):
         return format_filename(os.path.basename(urllib.parse.urlparse(url).path))

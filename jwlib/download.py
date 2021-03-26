@@ -1,14 +1,13 @@
-from sys import stderr
-import os
-import shutil
 import hashlib
+import shutil
 import subprocess
-import urllib.request
 import urllib.parse
+import urllib.request
+from sys import stderr
 from typing import List, Optional
 
+from .common import Path, Settings, msg
 from .parse import Category, Media
-from .common import Settings, msg
 
 
 class MissingTimestampError(Exception):
@@ -22,7 +21,7 @@ class DiskLimitReached(Exception):
 def download_all(s: Settings, data: List[Category]):
     """Download/check media files"""
 
-    wd = os.path.join(s.work_dir, s.sub_dir)  # work dir
+    wd = s.work_dir / s.sub_dir
 
     media_list = [x for cat in data
                   for x in cat.contents
@@ -71,29 +70,26 @@ def download_all(s: Settings, data: List[Category]):
         download_media(s, media, wd)
 
 
-def download_all_subtitles(s: Settings, media_list: List[Media], directory: str):
+def download_all_subtitles(s: Settings, media_list: List[Media], directory: Path):
     """Download VTT files from Media"""
 
-    os.makedirs(directory, exist_ok=True)
+    directory.mkdir(exist_ok=True)
 
-    download_list = set()
-    for media in media_list:
-        if not media.subtitle_url:
-            continue
-
-        file = os.path.join(directory, media.subtitle_filename)
+    # Get all Media that needs subtitle downloaded
+    queue = set(
+        media for media in media_list
+        if media.subtitle_url
         # Note: --fix-broken will re-download all subtitle files...
-        if s.overwrite_bad or not os.path.exists(file):
-            download_list.add((media.subtitle_url, file, media.subtitle_filename))
+        if s.overwrite_bad or not (directory / media.subtitle_filename).exists()
+    )
 
-    for num, data in enumerate(download_list):
-        url, file, filename = data
+    for i, media in enumerate(queue):
         if s.quiet < 2:
-            msg('[{}/{}] downloading: {}'.format(num + 1, len(download_list), filename))
-        _curl(url, file=file, curl_path=None)
+            msg('[{}/{}] downloading: {}'.format(i + 1, len(queue), media.subtitle_filename))
+        _curl(media.subtitle_url, file=directory / media.subtitle_filename, curl_path=None)
 
 
-def check_media(s: Settings, media: Media, directory: str):
+def check_media(s: Settings, media: Media, directory: Path):
     """Download media file and check it.
 
     Download file, check MD5 sum and size, delete file if it missmatches.
@@ -103,14 +99,14 @@ def check_media(s: Settings, media: Media, directory: str):
     :param directory: dir where files are located
     :return: True if check is successful
     """
-    file = os.path.join(directory, media.filename)
-    if not os.path.exists(file):
+    file = directory / media.filename
+    if not file.exists():
         return False
 
     # If we are going to fix bad files, check the existing ones
     if s.overwrite_bad:
 
-        if media.size and os.path.getsize(file) != media.size:
+        if media.size and file.size != media.size:
             if s.quiet < 2:
                 msg('size mismatch: {}'.format(file))
             return False
@@ -123,7 +119,7 @@ def check_media(s: Settings, media: Media, directory: str):
     return True
 
 
-def download_media(s: Settings, media: Media, directory: str):
+def download_media(s: Settings, media: Media, directory: Path):
     """Download media file and check it.
 
     :param s: Global settings
@@ -131,15 +127,14 @@ def download_media(s: Settings, media: Media, directory: str):
     :param directory: dir to save the files to
     :return: True if download was successful
     """
-    os.makedirs(directory, exist_ok=True)
+    directory.mkdir(exist_ok=True)
+    file = directory / media.filename
+    tmpfile = directory / (media.filename + '.part')
 
-    file = os.path.join(directory, media.filename)
-    tmpfile = file + '.part'
-
-    if os.path.exists(tmpfile):
+    if tmpfile:
 
         # If file is smaller, resume download
-        if media.size and os.path.getsize(tmpfile) < media.size:
+        if media.size and tmpfile.size < media.size:
             if s.quiet < 2:
                 msg('resuming: {} ({})'.format(media.filename, media.name))
             _curl(media.url,
@@ -150,24 +145,24 @@ def download_media(s: Settings, media: Media, directory: str):
                   progress=s.quiet < 1)
 
         # Check size
-        if media.size and os.path.getsize(tmpfile) != media.size:
+        if media.size and tmpfile.size != media.size:
             if s.quiet < 2:
                 msg('size mismatch, deleting: {}'.format(tmpfile))
             # Always remove resumed files that have wrong size
-            os.remove(tmpfile)
+            tmpfile.unlink()
 
         # Always check checksum on resumed files
         elif media.md5 and _md5(tmpfile) != media.md5:
             if s.quiet < 2:
                 msg('checksum mismatch, deleting: {}'.format(tmpfile))
             # Always remove resumed files that are broken
-            os.remove(tmpfile)
+            tmpfile.unlink()
 
         # Set timestamp to date of publishing, move and approve
         else:
             if media.date:
-                os.utime(tmpfile, (media.date, media.date))
-            os.rename(tmpfile, file)
+                tmpfile.set_mtime(media.date)
+            tmpfile.rename(file)
             return True
 
     # Continuing to regular download
@@ -181,9 +176,8 @@ def download_media(s: Settings, media: Media, directory: str):
 
     # Check exist and non-empty
     try:
-        fsize = os.path.getsize(tmpfile)
-        if fsize == 0:
-            os.remove(tmpfile)
+        if tmpfile.size == 0:
+            tmpfile.unlink()
             raise FileNotFoundError
     except FileNotFoundError:
         if s.quiet < 2:
@@ -192,11 +186,11 @@ def download_media(s: Settings, media: Media, directory: str):
 
     # Set timestamp to date of publishing, move and approve
     if media.date:
-        os.utime(tmpfile, (media.date, media.date))
-    os.rename(tmpfile, file)
+        tmpfile.set_mtime(media.date)
+    tmpfile.rename(file)
 
     # Check size (log only)
-    if media.size and fsize != media.size:
+    if media.size and file.size != media.size:
         if s.quiet < 2:
             msg('size mismatch: {}'.format(file))
         return False
@@ -212,9 +206,6 @@ def download_media(s: Settings, media: Media, directory: str):
 def disk_usage_info(s: Settings):
     """Display information about disk usage and maybe a warning"""
 
-    # We create a directory here to prevent FileNotFoundError
-    # if someone specified --free without --download they are dumb
-    os.makedirs(s.work_dir, exist_ok=True)
     free = shutil.disk_usage(s.work_dir).free
 
     if s.quiet < 1:
@@ -234,21 +225,21 @@ def disk_usage_info(s: Settings):
             exit(1)
 
 
-def _md5(file: str):
+def _md5(file: Path):
     """Return MD5 of a file."""
 
     hash_md5 = hashlib.md5()
-    with open(file, 'rb') as f:
+    with file.open('rb') as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
 
-def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional[str] = 'curl', progress=False):
+def _curl(url: str, file: Path, resume=False, rate_limit='0', curl_path: Optional[str] = 'curl', progress=False):
     """Throttled file download by calling the curl command."""
 
     if curl_path:
-        proc = [curl_path, url, '-o', file]
+        proc = [curl_path, url, '-o', file.str]
 
         if rate_limit != '0':
             proc.append('--limit-rate')
@@ -271,14 +262,14 @@ def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional
 
         if resume:
             # Ask server to skip the first N bytes
-            request.add_header('Range', 'bytes={}-'.format(os.stat(file).st_size))
+            request.add_header('Range', 'bytes={}-'.format(file.size))
             # Append data to file, instead of overwriting
             file_mode = 'ab'
 
         response = urllib.request.urlopen(request)
 
         # Write out 1MB at a time, so whole file is not lost if interrupted
-        with open(file, file_mode) as f:
+        with file.open(file_mode) as f:
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:
@@ -286,13 +277,17 @@ def _curl(url: str, file: str, resume=False, rate_limit='0', curl_path: Optional
                 f.write(chunk)
 
 
-def disk_cleanup(s: Settings, directory: str, reference_media: Media):
+def disk_cleanup(s: Settings, directory: Path, reference_media: Media):
     """Clean up old videos until there is enough space"""
     assert s.keep_free
     assert reference_media.size
 
+    # As this runs before download, the subdirectory may not exist
+    if not directory.exists():
+        return
+
     while True:
-        space = shutil.disk_usage(directory).free
+        space = shutil.disk_usage(directory.str).free
         needed = reference_media.size + s.keep_free
         if space > needed:
             break
@@ -303,24 +298,21 @@ def disk_cleanup(s: Settings, directory: str, reference_media: Media):
         if not reference_media.date:
             raise MissingTimestampError
 
-        # Get the oldest .mp4 file in the working directory
-        videos = []
-        for file in os.listdir(directory):
-            file = os.path.join(directory, file)
-            if file.lower().endswith('.mp4') and os.path.isfile(file):
-                videos.append((file, os.stat(file).st_mtime))
-        if not videos:
-            raise RuntimeError('cannot free more disk space, no videos in {}'.format(directory))
-        videos = sorted(videos, key=lambda x: x[1])
-        oldest_file, oldest_date = videos[0]
+        try:
+            # Get the oldest .mp4 file in the working directory
+            oldest = min((f for f in directory.iterdir() if f.is_mp4()), key=lambda f: f.mtime)
+        except ValueError:
+            msg('cannot free more disk space, no videos in {}'.format(directory))
+            exit(1)
+            raise
 
         # If the reference date is older than the oldest file, exit the program.
-        if reference_media.date <= oldest_date:
+        if reference_media.date <= oldest.mtime:
             if s.quiet < 1:
                 msg('disk limit reached, all videos up to date')
             raise DiskLimitReached
 
         # Delete the file and add a "deleted" marker
         if s.quiet < 2:
-            msg('removing old video: {}'.format(oldest_file))
-        os.remove(oldest_file)
+            msg('removing old video: {}'.format(oldest))
+        oldest.unlink()
