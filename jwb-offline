@@ -1,4 +1,4 @@
 #!/usr/bin/env python
-import jwlib.offline
+import jwlib.player
 
-jwlib.offline.main()
+jwlib.player.main()

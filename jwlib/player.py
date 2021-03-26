@@ -1,14 +1,11 @@
 import argparse
 import json
-import shutil
 import signal
 import subprocess
 import time
 from random import shuffle
 
-from jwlib.common import Path, Settings, msg
-from jwlib.download import disk_cleanup
-
+from jwlib.common import Path, msg
 
 class VideoManager:
     """Main class of jwb-offline
@@ -113,40 +110,6 @@ class VideoManager:
     def list_videos(self):
         """Return a list of all MP4 files in working dir"""
         return [f for f in self.wd.iterdir() if f.is_mp4()]
-
-
-def copy_files(s: Settings):
-    """jwb-index --import
-
-    Fancy copy of files from one directory to another
-    """
-
-    dest_dir = s.work_dir / s.sub_dir
-    dest_dir.mkdir(exist_ok=True)
-
-    # Create a list of all mp4 files to be copied
-    source_files = []
-    for source in s.import_dir.iterdir():
-        try:
-            # Just a simple size check, no checksum etc
-            if source.is_mp4() and source.size != (dest_dir / source.name).size:
-                source_files.append(source)
-        except OSError:
-            pass
-
-    # Newest file first
-    source_files.sort(key=lambda x: x.date, reverse=True)
-
-    total = len(source_files)
-    for source_file in source_files:
-        if s.keep_free > 0:
-            disk_cleanup(s, directory=dest_dir, reference_media=source_file)
-
-        if s.quiet < 1:
-            i = source_files.index(source_file)
-            msg('copying [{}/{}]: {}'.format(i + 1, total, source_file.name))
-
-        shutil.copy2(source_file.path, dest_dir / source_file.name)
 
 
 def main():

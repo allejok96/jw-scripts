@@ -4,8 +4,7 @@ import time
 import urllib.request
 
 from jwlib.common import Path, Settings, action_factory, msg
-from jwlib.download import download_all, disk_usage_info
-from jwlib.offline import copy_files
+from jwlib.download import copy_files, download_all, disk_usage_info
 from jwlib.output import create_output
 from jwlib.parse import parse_broadcasting, get_categories
 

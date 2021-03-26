@@ -11,6 +11,6 @@ setup(
     #scripts=['jwb-index', 'jwb-offline']
     entry_points={'console_scripts': [
         'jwb-index=jwlib.main:main',
-        'jwb-offline=jwlib.offline:main'
+        'jwb-offline=jwlib.player:main'
     ]}
 )

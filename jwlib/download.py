@@ -316,3 +316,38 @@ def disk_cleanup(s: Settings, directory: Path, reference_media: Media):
         if s.quiet < 2:
             msg('removing old video: {}'.format(oldest))
         oldest.unlink()
+
+
+def copy_files(s: Settings):
+    """jwb-index --import
+
+    Fancy copy of files from one directory to another
+    """
+
+    dest_dir = s.work_dir / s.sub_dir
+    dest_dir.mkdir(exist_ok=True)
+
+    # Create a list of all mp4 files to be copied
+    source_files = []
+    for source in s.import_dir.iterdir():
+        try:
+            # Just a simple size check, no checksum etc
+            if source.is_mp4() and source.size != (dest_dir / source.name).size:
+                source_files.append(source)
+        except OSError:
+            pass
+
+    # Newest file first
+    source_files.sort(key=lambda x: x.date, reverse=True)
+
+    total = len(source_files)
+    for source_file in source_files:
+        if s.keep_free > 0:
+            disk_cleanup(s, directory=dest_dir, reference_media=source_file)
+
+        if s.quiet < 1:
+            i = source_files.index(source_file)
+            msg('copying [{}/{}]: {}'.format(i + 1, total, source_file.name))
+
+        shutil.copy2(source_file.path, dest_dir / source_file.name)
+
