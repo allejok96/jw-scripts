@@ -87,8 +87,6 @@ def main():
                    help='output mode (see wiki)')
     p.add_argument('--no-warning', dest='warning', action='store_false',
                    help='do not warn when space limit seems wrong')
-    p.add_argument('--ntfs', '-X', action='store_true', dest='safe_filenames',
-                   help='use NTFS/FAT compatible file names, and absolute paths for symlinks')
     p.add_argument('--quality', '-Q', type=int,
                    choices=[240, 360, 480, 720],
                    help='maximum video quality')
@@ -172,12 +170,21 @@ def main():
         copy_files(s)
         exit()
 
+    # NTFS compatibility (try to create a forbidden file)
+    try:
+        (s.work_dir / '?').touch(exist_ok=False)
+        (s.work_dir / '?').unlink()
+    except FileExistsError:
+        pass
+    except OSError:
+        s.safe_filenames = True
+
     # Some heads-up
     if s.quiet < 1:
         if s.download and s.rate_limit:
             msg('note: download rate limit is active')
-        if not s.safe_filenames and (s.mode not in ('', 'stdout') or s.friendly_filenames):
-            msg('note: NTFS/FAT compatibility is off')
+        if s.safe_filenames:
+            msg('note: using NTFS/FAT compatible file names')
 
     # Do the indexing
     data = parse_broadcasting(s)
