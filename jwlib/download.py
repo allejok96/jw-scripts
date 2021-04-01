@@ -1,10 +1,10 @@
 import hashlib
 import shutil
-import subprocess
+import time
 import urllib.parse
 import urllib.request
 from sys import stderr
-from typing import List, Optional
+from typing import List
 
 from .common import Path, Settings, msg
 from .parse import Category, Media
@@ -86,7 +86,7 @@ def download_all_subtitles(s: Settings, media_list: List[Media], directory: Path
     for i, media in enumerate(queue):
         if s.quiet < 2:
             msg('[{}/{}] downloading: {}'.format(i + 1, len(queue), media.subtitle_filename))
-        _curl(media.subtitle_url, file=directory / media.subtitle_filename, curl_path=None)
+        download_file(media.subtitle_url, directory / media.subtitle_filename)
 
 
 def check_media(s: Settings, media: Media, directory: Path):
@@ -131,34 +131,28 @@ def download_media(s: Settings, media: Media, directory: Path):
     file = directory / media.filename
     tmpfile = directory / (media.filename + '.part')
 
-    if tmpfile:
+    # Check for partially downloaded files
+    if tmpfile.exists():
 
         # If file is smaller, resume download
         if media.size and tmpfile.size < media.size:
             if s.quiet < 2:
                 msg('resuming: {} ({})'.format(media.filename, media.name))
-            _curl(media.url,
-                  tmpfile,
-                  resume=True,
-                  rate_limit=s.rate_limit,
-                  curl_path=s.curl_path,
-                  progress=s.quiet < 1)
+            download_file(media.url, tmpfile, resume=True, rate_limit=s.rate_limit, progress=s.quiet < 1)
 
-        # Check size
+        # Always validate size and MD5 on resumed downloads
         if media.size and tmpfile.size != media.size:
             if s.quiet < 2:
                 msg('size mismatch, deleting: {}'.format(tmpfile))
             # Always remove resumed files that have wrong size
             tmpfile.unlink()
-
-        # Always check checksum on resumed files
         elif media.md5 and _md5(tmpfile) != media.md5:
             if s.quiet < 2:
                 msg('checksum mismatch, deleting: {}'.format(tmpfile))
             # Always remove resumed files that are broken
             tmpfile.unlink()
 
-        # Set timestamp to date of publishing, move and approve
+        # Set timestamp to date of publishing, move and return success
         else:
             if media.date:
                 tmpfile.set_mtime(media.date)
@@ -168,11 +162,7 @@ def download_media(s: Settings, media: Media, directory: Path):
     # Continuing to regular download
     if s.quiet < 2:
         msg('downloading: {} ({})'.format(media.filename, media.name))
-    _curl(media.url,
-          tmpfile,
-          rate_limit=s.rate_limit,
-          curl_path=s.curl_path,
-          progress=s.quiet < 1)
+    download_file(media.url, tmpfile, rate_limit=s.rate_limit, progress=s.quiet < 1)
 
     # Check exist and non-empty
     try:
@@ -194,9 +184,8 @@ def download_media(s: Settings, media: Media, directory: Path):
         if s.quiet < 2:
             msg('size mismatch: {}'.format(file))
         return False
-
     # Check MD5 if size was correct (optional, log only)
-    if s.checksums and media.md5 and _md5(file) != media.md5:
+    elif s.checksums and media.md5 and _md5(file) != media.md5:
         if s.quiet < 2:
             msg('checksum mismatch: {}'.format(file))
 
@@ -235,47 +224,68 @@ def _md5(file: Path):
     return hash_md5.hexdigest()
 
 
-def _curl(url: str, file: Path, resume=False, rate_limit='0', curl_path: Optional[str] = 'curl', progress=False):
-    """Throttled file download by calling the curl command."""
+def download_file(url: str, file: Path, resume=False, rate_limit=0, progress=False):
+    """Throttled download with progress bar
 
-    if curl_path:
-        proc = [curl_path, url, '-o', file.str]
+    :param url: URL to download
+    :param file: Output file
+    :param resume: Append instead of overwrite
+    :param rate_limit: Rate limit in MB/s
+    :param progress: Show progress bar
+    """
 
-        if rate_limit != '0':
-            proc.append('--limit-rate')
-            proc.append(rate_limit)
-        if progress:
-            proc.append('--progress-bar')
-        else:
-            proc.append('--silent')
-        if resume:
-            # Download what is missing at the end of the file
-            proc.append('--continue-at')
-            proc.append('-')
-
-        subprocess.call(proc, stderr=stderr)
-
+    if resume and file.exists():
+        file_mode = 'ab'
+        done_bytes = file.size
     else:
-        # using urllib (for compatibility)
-        request = urllib.request.Request(url)
         file_mode = 'wb'
+        done_bytes = 0
 
-        if resume:
-            # Ask server to skip the first N bytes
-            request.add_header('Range', 'bytes={}-'.format(file.size))
-            # Append data to file, instead of overwriting
-            file_mode = 'ab'
+    # To be downloaded each second
+    if rate_limit != 0:
+        chunk_size = int(rate_limit * 1024 * 1024)
+    else:
+        # Default chunk size of 1 MB means we do not loose whole file if download gets aborted
+        chunk_size = 1024 * 1024
 
-        response = urllib.request.urlopen(request)
+    # Ask server to skip the first N bytes
+    request = urllib.request.Request(url)
+    request.add_header('Range', 'bytes={}-'.format(done_bytes))
 
-        # Write out 1MB at a time, so whole file is not lost if interrupted
+    with urllib.request.urlopen(request) as response:
+        if progress:
+            # Get size of download
+            total_bytes = int(response.headers['content-length']) + done_bytes
+            # Avoid ZeroDivisionError and only print progress bar if we are in a terminal
+            if total_bytes == 0 or not stderr.isatty():
+                progress = False
+
         with file.open(file_mode) as f:
             while True:
-                chunk = response.read(1024 * 1024)
+                # Print a progress bar
+                if progress:
+                    percent = 100 * (done_bytes / total_bytes)
+                    # Never more than 70 hash signs
+                    bar = '#' * min(70 * done_bytes // total_bytes, 70)
+                    ####----- (padded to 70 chars) NNN.N (padded to 5 chars) %
+                    print('\r{:-<70} {: >5.1f}%'.format(bar, percent), end='', flush=True, file=stderr)
+
+                # Download and write a chunk
+                started = time.time()
+                chunk = response.read(chunk_size)
+                done_bytes += chunk_size
                 if not chunk:
+                    if progress:
+                        print()  # newline when done
                     break
                 f.write(chunk)
 
+                if rate_limit:
+                    try:
+                        # Every chunk should take 1 second, sleep for the time that's left
+                        time.sleep(1 + started - time.time())
+                    except ValueError:
+                        pass
 
 def disk_cleanup(s: Settings, directory: Path, reference_media: Media):
     """Clean up old videos until there is enough space"""

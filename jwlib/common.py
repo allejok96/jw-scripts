@@ -85,8 +85,7 @@ class Settings:
     download = False
     download_subtitles = False
     friendly_filenames = False
-    curl_path = 'curl'
-    rate_limit = '1M'
+    rate_limit = 1.0  # MB/s
     checksums = False
     overwrite_bad = False
 

@@ -54,8 +54,6 @@ def main():
                    help="validate MD5 checksums")
     p.add_argument('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
                    help='remove all old symlinks (mode=filesystem)')
-    p.add_argument('--curl-path', metavar='PATH',
-                   help='path to the curl binary')
     p.add_argument('--download', '-d', action='store_true',
                    help='download media files')
     p.add_argument('--download-subtitles', action='store_true',
@@ -80,15 +78,13 @@ def main():
                    help='display a list of valid language codes')
     p.add_argument('--latest', action='store_true',
                    help='index the "Latest Videos" category only')
-    p.add_argument('--limit-rate', '-R', metavar='RATE', dest='rate_limit',
-                   help='maximum download rate, passed to curl (default: 1m = 1 megabyte/s, 0 = no limit)')
+    p.add_argument('--limit-rate', '-R', metavar='RATE', type=float, dest='rate_limit',
+                   help='maximum download rate, in megabytes/s (default = 1 MB/s, 0 = no limit)')
     p.add_argument('--list-categories', '-C', nargs='?', const='VideoOnDemand', metavar='CODE', dest='print_category',
                    help='print a list of (sub) category names')
     p.add_argument('--mode', '-m',
                    choices=['filesystem', 'html', 'html_tree', 'm3u', 'm3u_multi', 'm3u_tree', 'run', 'stdout', 'txt'],
                    help='output mode (see wiki)')
-    p.add_argument('--no-curl', action='store_const', const=None, dest='curl_path',
-                   help='use urllib instead of external curl (compatibility)')
     p.add_argument('--no-warning', dest='warning', action='store_false',
                    help='do not warn when space limit seems wrong')
     p.add_argument('--ntfs', '-X', action='store_true', dest='safe_filenames',
@@ -178,7 +174,7 @@ def main():
 
     # Some heads-up
     if s.quiet < 1:
-        if s.download and s.curl_path is not None and s.rate_limit != '0':
+        if s.download and s.rate_limit:
             msg('note: download rate limit is active')
         if not s.safe_filenames and (s.mode not in ('', 'stdout') or s.friendly_filenames):
             msg('note: NTFS/FAT compatibility is off')
