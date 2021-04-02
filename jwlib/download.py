@@ -224,7 +224,7 @@ def _md5(file: Path):
     return hash_md5.hexdigest()
 
 
-def download_file(url: str, file: Path, resume=False, rate_limit=0, progress=False):
+def download_file(url: str, file: Path, resume=False, rate_limit=0.0, progress=False):
     """Throttled download with progress bar
 
     :param url: URL to download
@@ -273,7 +273,7 @@ def download_file(url: str, file: Path, resume=False, rate_limit=0, progress=Fal
                 # Download and write a chunk
                 started = time.time()
                 chunk = response.read(chunk_size)
-                done_bytes += chunk_size
+                done_bytes += len(chunk)
                 if not chunk:
                     if progress:
                         print()  # newline when done
@@ -286,6 +286,7 @@ def download_file(url: str, file: Path, resume=False, rate_limit=0, progress=Fal
                         time.sleep(1 + started - time.time())
                     except ValueError:
                         pass
+
 
 def disk_cleanup(s: Settings, directory: Path, reference_media: Media):
     """Clean up old videos until there is enough space"""
@@ -360,4 +361,3 @@ def copy_files(s: Settings):
             msg('copying [{}/{}]: {}'.format(i + 1, total, source_file.name))
 
         shutil.copy2(source_file.path, dest_dir / source_file.name)
-
