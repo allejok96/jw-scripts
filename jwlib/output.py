@@ -98,7 +98,7 @@ class TxtWriter(AbstractOutputWriter):
         """Reads existing file into memory, removing start and end strings"""
 
         try:
-            with self.file.open() as file:
+            with self.file.open(encoding='utf-8') as file:
                 data = file.read()
                 # Remove start string and end string
                 if self.start_string:
@@ -140,7 +140,8 @@ class TxtWriter(AbstractOutputWriter):
         # Text append mode ('a') only works if there is no end_string
         # Seeking only works in binary mode, and that does not support universal newlines (CRLF)
         # So to make it simple we always write the file from scratch, even if append = True
-        with self.file.open('w') as file:
+        # Also: encoding is needed on Windows
+        with self.file.open('w', encoding='utf-8') as file:
             file.write(self.start_string)
             # Prepend old content
             if not self.reverse and self.append:
