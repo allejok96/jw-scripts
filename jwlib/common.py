@@ -30,11 +30,6 @@ class Path(type(pathlib.Path()), pathlib.Path):
     """pathlib.Path with extra stuff"""
 
     @property
-    def str(self):
-        """For use when string is required (Python 3.5 does not support pathlike objects)"""
-        return self.__str__()
-
-    @property
     def size(self):
         """Size in bytes"""
         return self.stat().st_size

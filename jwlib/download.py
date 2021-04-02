@@ -195,7 +195,7 @@ def download_media(s: Settings, media: Media, directory: Path):
 def disk_usage_info(s: Settings):
     """Display information about disk usage and maybe a warning"""
 
-    free = shutil.disk_usage(s.work_dir.str).free
+    free = shutil.disk_usage(str(s.work_dir)).free
 
     if s.quiet < 1:
         msg('note: old MP4 files in target directory will be deleted if space runs low')
@@ -298,7 +298,7 @@ def disk_cleanup(s: Settings, directory: Path, reference_media: Media):
         return
 
     while True:
-        space = shutil.disk_usage(directory.str).free
+        space = shutil.disk_usage(str(directory)).free
         needed = reference_media.size + s.keep_free
         if space > needed:
             break

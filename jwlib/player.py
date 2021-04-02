@@ -37,7 +37,7 @@ class VideoManager:
 
     def write_dump(self):
         """Dump data to JSON file"""
-        d = {'video': self.video.str,
+        d = {'video': str(self.video),
              'pos': self.calculate_pos(),
              'history': self.history}
         with self.dump_file.open('w') as output_file:
@@ -84,7 +84,7 @@ class VideoManager:
         """Play a video"""
         self.write_dump()
         msg('playing: ' + self.video.name)
-        cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [self.video.str]
+        cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [str(self.video)]
         self.start_time = time.time()
         if self.verbose:
             subprocess.call(cmd)

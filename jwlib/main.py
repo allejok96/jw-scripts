@@ -155,7 +155,7 @@ def main():
 
     # Check / set paths
     if not s.work_dir.is_dir():
-        msg('not a directory: ' + s.work_dir.str)
+        msg('not a directory: ' + str(s.work_dir))
         exit(1)
 
     if s.mode not in ('', 'stdout'):

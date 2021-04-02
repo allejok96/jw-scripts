@@ -275,7 +275,7 @@ def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOut
 
     for media in all_media:
         if (s.work_dir / s.sub_dir / media.filename).exists():
-            source = Path('.', s.sub_dir, media.filename).str
+            source = str(Path('.', s.sub_dir, media.filename))
         else:
             source = media.url
         writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))
