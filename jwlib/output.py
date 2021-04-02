@@ -1,5 +1,6 @@
 import html
 import subprocess
+from os.path import relpath
 from random import shuffle
 from typing import List, Type
 
@@ -8,10 +9,6 @@ from .common import Path, Settings, msg
 
 
 class FileParseError(Exception):
-    pass
-
-
-class CategoryGlobError(Exception):
     pass
 
 
@@ -39,10 +36,7 @@ class AbstractOutputWriter:
     end_string = ''
     ext = ''
 
-    def __init__(self, s: Settings, filename: str):
-        """
-        :param filename: File name (can also be a relative path)
-        """
+    def __init__(self, s: Settings, file: Path):
         self.quiet = s.quiet
         self.reverse = s.sort == 'newest'
 
@@ -90,23 +84,14 @@ class TxtWriter(AbstractOutputWriter):
     4. Write out the queue to wherever (reversing happens here).
     """
 
-    def __init__(self, s, filename):
-        super().__init__(s, filename)
-        self.append = s.append
-
-        # File name expansion
-        if '*' in filename:
-            matches = list(s.work_dir.glob(filename))
-            if len(matches) == 1:
-                self.file = matches[0]
-            else:
-                raise CategoryGlobError
-        else:
-            self.file = s.work_dir / filename
+    def __init__(self, s: Settings, file: Path):
+        super().__init__(s, file)
+        self.file = file
 
         # Get existing lines from file
         self.loaded_data = ''
-        if s.append:
+        self.append = s.append
+        if self.append:
             self.load_existing()
 
     def load_existing(self):
@@ -212,8 +197,8 @@ class StdoutWriter(AbstractOutputWriter):
 
 
 class CommandWriter(AbstractOutputWriter):
-    def __init__(self, s, filename):
-        super().__init__(s, filename)
+    def __init__(self, s, file):
+        super().__init__(s, file)
         self.command = s.command
 
     def dump_queue(self):
@@ -282,7 +267,7 @@ def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOut
 
     try:
         # Filename falls back to the name of the first category
-        writer = writercls(s, s.output_filename or data[0].safe_name + writercls.ext)
+        writer = writercls(s, s.work_dir / (s.output_filename or data[0].safe_name + writercls.ext))
     except CategoryNameError:
         msg('please specify filename for output')
         exit(1)
@@ -316,16 +301,22 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
             file = data_dir / (category.key + writercls.ext)
         else:
             # "Flat" mode: file is outside subdir, has both ugly and nice name
-            file = s.work_dir / (category.key + ' - ' + category.optional_name + writercls.ext)
+            try:
+                file = s.work_dir / (category.key + ' - ' + category.safe_name + writercls.ext)
+            except CategoryNameError:
+                # Try to guess the file name if we only have the key
+                pattern = category.key + ' - *' + writercls.ext
+                matches = list(s.work_dir.glob(pattern))  # need list to get len
+                if len(matches) == 1:
+                    file = matches[0]
+                else:
+                    if s.quiet < 2:
+                        msg('failed to find: ' + pattern)
+                    continue
 
         # Open the output file
         try:
             writer = writercls(s, file)
-        except CategoryGlobError:
-            # optional_name have triggered a glob search with no luck
-            if s.quiet < 2:
-                msg('failed to find: ' + file)
-            continue
         except FileParseError:
             # File cannot be appended to
             if s.quiet < 2:
@@ -337,7 +328,9 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
             if isinstance(item, Category):
                 # Only link to categories if we are creating a tree structure
                 if tree:
-                    source = (data_dir / (item.key + writer.ext)).relative_to(file).str
+                    # Note: Path.relative_to() won't give us paths with '../'
+                    # Also: relpath's second arg should be a directory
+                    source = relpath(str(data_dir / (item.key + writer.ext)), str(file.parent))
                     writer.add_to_queue(PlaylistEntry(item.name.upper(), source))
 
         media_items = [m for m in category.contents if isinstance(m, Media)]
@@ -345,7 +338,7 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
 
         for media in media_items:
             if (data_dir / media.filename).exists():
-                source = (data_dir / media.filename).relative_to(file).str
+                source = relpath(str(data_dir / media.filename), str(file.parent))
             else:
                 source = media.url
             writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))

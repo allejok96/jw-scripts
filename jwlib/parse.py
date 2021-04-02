@@ -37,14 +37,6 @@ class Category:
             raise CategoryNameError
         return format_filename(self.name)
 
-    @property
-    def optional_name(self):
-        """Returns name with special characters removed, or '*' if unset"""
-        try:
-            return self.safe_name
-        except CategoryNameError:
-            return '*'
-
 
 class Media:
     """Object to put media info in."""
