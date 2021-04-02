@@ -87,8 +87,7 @@ def format_filename(string):
         forbidden = '<>|?\\*/\0\n'
     else:
         # Unix forbidden characters
-        # Remove asterisk as this is used by glob expansion later in the script
-        forbidden = '/\0*'
+        forbidden = '/\0'
 
     return ''.join(x for x in string if x not in forbidden)
 
