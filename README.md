@@ -14,7 +14,7 @@ Take a look at [installation methods](https://github.com/allejok96/jw-scripts/wi
 
 For example, to download the latest videos in Swedish, you would run:
 
-    python jwb-index --download --latest --lang=Z
+    jwb-index --download --latest --lang=Z
 
 Next, check out the [Wiki pages](https://github.com/allejok96/jw-scripts/wiki) for more examples and options.
 
