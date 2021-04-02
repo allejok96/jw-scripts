@@ -3,6 +3,8 @@ import os
 import pathlib
 import sys
 
+from typing import List
+
 
 def msg(s):
     print(s, file=sys.stderr, flush=True)
@@ -54,48 +56,50 @@ class Path(type(pathlib.Path()), pathlib.Path):
 class Settings:
     """Global settings and defaults"""
 
-    quiet = 0
-    list_languages = False
+    # Typing like crazy because PyCharm won't believe me otherwise
+
+    quiet = 0  # type: int
+    list_languages = False  # type: bool
 
     # Depending on mode
-    positional_arguments = []
-    work_dir = Path('.')
-    sub_dir = ''
-    output_filename = ''
-    command = []
+    positional_arguments = []  # type: List[str]
+    work_dir = Path('.')  # type: Path
+    sub_dir = ''  # type: str
+    output_filename = ''  # type: str
+    command = []  # type: List[str]
 
     # API parsing stuff
-    lang = 'E'
-    quality = 1080
-    hard_subtitles = False
-    min_date = 0  # 1970-01-01
-    include_categories = ['VideoOnDemand']
-    exclude_categories = ['VODSJJMeetings']
-    filter_categories = []
-    print_category = ''
-    latest = False
+    lang = 'E'  # type: str
+    quality = 1080  # type: int
+    hard_subtitles = False  # type:bool
+    min_date = 0  # type: int # 1970-01-01
+    include_categories = ['VideoOnDemand']  # type: List[str]
+    exclude_categories = ['VODSJJMeetings']  # type: List[str]
+    filter_categories = []  # type: List[str]
+    print_category = ''  # type: str
+    latest = False  # type: bool
 
     # Disk space check stuff
-    keep_free = 0  # bytes
-    warning = True  # warn if limit is set too low
+    keep_free = 0  # type: int # bytes
+    warning = True  # type: bool # warn if limit is set too low
 
     import_dir = None  # type: Path
 
     # Download stuff
-    download = False
-    download_subtitles = False
-    friendly_filenames = False
-    rate_limit = 1.0  # MB/s
-    checksums = False
-    overwrite_bad = False
+    download = False  # type: bool
+    download_subtitles = False  # type: bool
+    friendly_filenames = False  # type: bool
+    rate_limit = 1.0  # type: float # MB/s
+    checksums = False  # type: bool
+    overwrite_bad = False  # type: bool
 
     # Output stuff
-    append = False
-    clean_all_symlinks = False
-    update = False
-    mode = ''
-    safe_filenames = False
-    sort = ''
+    append = False  # type: bool
+    clean_all_symlinks = False  # type: bool
+    update = False  # type: bool
+    mode = ''  # type: str
+    safe_filenames = False  # type: bool
+    sort = ''  # type: str
 
     def __setattr__(self, key, value):
         # This will raise an error if the attribute we are trying to set doesn't already exist
