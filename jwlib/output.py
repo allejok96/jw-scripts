@@ -1,11 +1,11 @@
 import html
 import subprocess
-from os.path import relpath
 from random import shuffle
 from typing import List, Type
 
-from .parse import Category, Media, CategoryNameError
 from .common import Path, Settings, msg
+from .constants import *
+from .parse import Category, Media, CategoryNameError
 
 
 class FileParseError(Exception):
@@ -37,8 +37,9 @@ class AbstractOutputWriter:
     ext = ''
 
     def __init__(self, s: Settings, file: Path):
+        # Note: all OutputWriters accepts a file argument, but this class does not use it
         self.quiet = s.quiet
-        self.reverse = s.sort == 'newest'
+        self.reverse = s.sort == SORT_NEW
 
         self.queue = []
         self.history = set()
@@ -127,8 +128,6 @@ class TxtWriter(AbstractOutputWriter):
             return
         if self.reverse:
             self.queue.reverse()
-
-        self.file.parent.mkdir(parents=True, exist_ok=True)
 
         if self.quiet < 1:
             if self.loaded_data:
@@ -220,13 +219,13 @@ class CommandWriter(AbstractOutputWriter):
 def sort_media(media_list: List[Media], sort: str):
     """Sort a list of Media objects in place"""
 
-    if sort in ('none', ''):
+    if sort == SORT_NONE:
         return
-    elif sort == 'name':
+    elif sort == SORT_NAME:
         media_list.sort(key=lambda x: x.name)
-    elif sort in ('newest', 'oldest'):
+    elif sort in (SORT_NEW, SORT_OLD):
         media_list.sort(key=lambda x: x.date)
-    elif sort == 'random':
+    elif sort == SORT_RANDOM:
         shuffle(media_list)
     else:
         raise RuntimeError
@@ -235,26 +234,26 @@ def sort_media(media_list: List[Media], sort: str):
 def create_output(s: Settings, data: List[Category]):
     """Call correct output function"""
 
-    if s.mode == 'filesystem':
+    if s.mode == M_FILESYSTEM:
         clean_symlinks(s)
         output_filesystem(s, data)
         return
-    elif s.mode == 'run':
+    elif s.mode == M_RUN:
         writer = CommandWriter
-    elif s.mode.startswith('html'):
+    elif s.mode in (M_HTML, M_HTML_TREE):
         writer = HtmlWriter
-    elif s.mode.startswith('m3u'):
+    elif s.mode in (M_M3U, M_M3U_TREE, M_M3U_MULTI):
         writer = M3uWriter
-    elif s.mode.startswith('stdout'):
+    elif s.mode == M_STDOUT:
         writer = StdoutWriter
-    elif s.mode.startswith('txt'):
+    elif s.mode == M_TXT:
         writer = TxtWriter
     else:
         raise RuntimeError
 
-    if s.mode.endswith('multi'):
+    if s.mode == M_M3U_MULTI:
         output_multi(s, data, writer, tree=False)
-    elif s.mode.endswith('tree'):
+    elif s.mode in (M_HTML_TREE, M_M3U_TREE):
         output_multi(s, data, writer, tree=True)
     else:
         output_single(s, data, writer)
@@ -268,18 +267,20 @@ def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOut
 
     try:
         # Filename falls back to the name of the first category
-        writer = writercls(s, s.work_dir / (s.output_filename or data[0].safe_name + writercls.ext))
+        outputfile = s.work_dir / (s.output_filename or data[0].safe_name + writercls.ext)
+        writer = writercls(s, outputfile)
     except CategoryNameError:
         msg('please specify filename for output')
         exit(1)
         raise
 
     for media in all_media:
-        if (s.work_dir / s.sub_dir / media.filename).exists():
-            source = str(Path('.', s.sub_dir, media.filename))
+        mediafile = s.media_dir / media.filename
+        if mediafile.exists():
+            source = mediafile.relative_to(outputfile.parent)
         else:
             source = media.url
-        writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))
+        writer.add_to_queue(PlaylistEntry(media.name, str(source), media.duration))
 
     writer.dump_queue()
 
@@ -290,26 +291,24 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
     :keyword writercls: a PlaylistWriter class
     :keyword tree: create an hierarchy vs everything at top level
     """
-    data_dir = s.work_dir / s.sub_dir
-
     for category in data:
         if tree and category.home:
             # Root of tree: file is outside subdir, with nice name
             # Note: CategoryNameError cannot occur on home categories
-            file = s.work_dir / (category.safe_name + writercls.ext)
+            outputfile = s.work_dir / (category.safe_name + writercls.ext)
         elif tree:
             # Sub-categories in tree: file is inside subdir, with ugly name
-            file = data_dir / (category.key + writercls.ext)
+            outputfile = s.index_dir / (category.key + writercls.ext)
         else:
             # "Flat" mode: file is outside subdir, has both ugly and nice name
             try:
-                file = s.work_dir / (category.key + ' - ' + category.safe_name + writercls.ext)
+                outputfile = s.work_dir / (category.key + ' - ' + category.safe_name + writercls.ext)
             except CategoryNameError:
                 # Try to guess the file name if we only have the key
                 pattern = category.key + ' - *' + writercls.ext
                 matches = list(s.work_dir.glob(pattern))  # need list to get len
                 if len(matches) == 1:
-                    file = matches[0]
+                    outputfile = matches[0]
                 else:
                     if s.quiet < 2:
                         msg('failed to find: ' + pattern)
@@ -317,11 +316,11 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
 
         # Open the output file
         try:
-            writer = writercls(s, file)
+            writer = writercls(s, outputfile)
         except FileParseError:
             # File cannot be appended to
             if s.quiet < 2:
-                msg('badly formatted file: ' + file)
+                msg('badly formatted file: ' + outputfile)
             continue
 
         # All categories go on top of the queue
@@ -329,20 +328,19 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
             if isinstance(item, Category):
                 # Only link to categories if we are creating a tree structure
                 if tree:
-                    # Note: Path.relative_to() won't give us paths with '../'
-                    # Also: relpath's second arg should be a directory
-                    source = relpath(str(data_dir / (item.key + writer.ext)), str(file.parent))
-                    writer.add_to_queue(PlaylistEntry(item.name.upper(), source))
+                    source = (s.index_dir / (item.key + writer.ext)).relative_to(outputfile.parent)
+                    writer.add_to_queue(PlaylistEntry(item.name.upper(), str(source)))
 
         media_items = [m for m in category.contents if isinstance(m, Media)]
         sort_media(media_items, s.sort)
 
         for media in media_items:
-            if (data_dir / media.filename).exists():
-                source = relpath(str(data_dir / media.filename), str(file.parent))
+            mediafile = s.media_dir / media.filename
+            if mediafile.exists():
+                source = mediafile.relative_to(outputfile.parent)
             else:
                 source = media.url
-            writer.add_to_queue(PlaylistEntry(media.name, source, media.duration))
+            writer.add_to_queue(PlaylistEntry(media.name, str(source), media.duration))
 
         writer.dump_queue()
 
@@ -350,64 +348,43 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
 def output_filesystem(s: Settings, data: List[Category]):
     """Creates a directory structure with symlinks to videos"""
 
-    data_dir = s.work_dir / s.sub_dir
-
-    if s.quiet < 1:
-        msg('creating directory structure')
-
     for category in data:
 
         # Create the directory
-        cat_dir = data_dir / category.key
-        cat_dir.mkdir(parents=True, exist_ok=True)
+        cat_dir = s.index_dir / category.key
+        if s.quiet < 1:
+            msg('preparing: {}'.format(cat_dir))
+        cat_dir.mkdir(exist_ok=True)
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
             # Note: CategoryNameError cannot occur on home categories
-            try:
-                if s.safe_filenames:
-                    (s.work_dir / category.safe_name).symlink_to(data_dir.absolute() / category.key,
-                                                                 target_is_directory=True)
-                else:
-                    (s.work_dir / category.safe_name).symlink_to(data_dir.relative_to(s.work_dir) / category.key,
-                                                                 target_is_directory=True)
-            except FileExistsError:
-                pass
-            except OSError:
-                print('Could not create symlink. If you are on Windows 10, try enabling developer mode.')
-                raise
+            home_link = s.work_dir / category.safe_name
+            if s.quiet < 1:
+                msg('linking: {} -> {}'.format(home_link, cat_dir))
+            home_link.symlink_to(cat_dir)
 
         for item in category.contents:
 
             if isinstance(item, Category):
-                link_dest = data_dir / item.key
-                link_dest.mkdir(parents=True, exist_ok=True)
+                link_dest = s.index_dir / item.key
+                link_dest.mkdir(exist_ok=True)
                 # Note: CategoryNameError cannot occur on categories inside other categories contents
                 link_file = cat_dir / item.safe_name
 
             else:
-                link_dest = data_dir / item.filename
+                link_dest = s.media_dir / item.filename
                 if not link_dest.exists():
                     continue
                 link_file = cat_dir / item.friendly_filename
 
-            try:
-                if s.safe_filenames:
-                    link_file.symlink_to(link_dest.absolute(),
-                                         target_is_directory=link_dest.is_dir())  # needed on win
-                else:
-                    link_file.symlink_to(link_dest.relative_to(data_dir),
-                                         target_is_directory=link_dest.is_dir())
-            except FileExistsError:
-                pass
-            except OSError:
-                print('Could not create symlink. If you are on Windows 10, try enabling developer mode.')
+            link_file.symlink_to(link_dest)
 
 
 def clean_symlinks(s: Settings):
     """Clean out broken (or all) symlinks from work dir"""
 
-    for link in (s.work_dir / s.sub_dir).glob('*/*'):
+    for link in s.index_dir.glob('*/*'):
         if link.is_symlink():
             # If link is neither dir nor file it's probably broken
             if s.clean_all_symlinks or (not link.is_dir() and not link.is_file()):

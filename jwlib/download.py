@@ -21,8 +21,6 @@ class DiskLimitReached(Exception):
 def download_all(s: Settings, data: List[Category]):
     """Download/check media files"""
 
-    wd = s.work_dir / s.sub_dir
-
     media_list = [x for cat in data
                   for x in cat.contents
                   if isinstance(x, Media)]
@@ -31,7 +29,7 @@ def download_all(s: Settings, data: List[Category]):
     media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
 
     if s.download_subtitles:
-        download_all_subtitles(s, media_list, wd)
+        download_all_subtitles(s, media_list)
 
     if not s.download:
         return
@@ -48,7 +46,7 @@ def download_all(s: Settings, data: List[Category]):
         # (there may be multiple Media objects referring to the same file)
         if media.filename not in checked_files:
             checked_files.append(media.filename)
-            if not check_media(s, media, wd):
+            if not check_media(s, media):
                 # Queue missing or bad files
                 download_list.append(media)
 
@@ -56,7 +54,7 @@ def download_all(s: Settings, data: List[Category]):
     for num, media in enumerate(download_list):
         if s.keep_free > 0:
             try:
-                disk_cleanup(s, wd, media)
+                disk_cleanup(s, media)
             except MissingTimestampError:
                 if s.quiet < 2:
                     msg('low disk space and missing metadata, skipping: {}'.format(media.name))
@@ -67,39 +65,36 @@ def download_all(s: Settings, data: List[Category]):
         # Download the video
         if s.quiet < 2:
             print('[{}/{}]'.format(num + 1, len(download_list)), end=' ', file=stderr)
-        download_media(s, media, wd)
+        download_media(s, media)
 
 
-def download_all_subtitles(s: Settings, media_list: List[Media], directory: Path):
+def download_all_subtitles(s: Settings, media_list: List[Media]):
     """Download VTT files from Media"""
-
-    directory.mkdir(exist_ok=True)
 
     # Get all Media that needs subtitle downloaded
     queue = set(
         media for media in media_list
         if media.subtitle_url
         # Note: --fix-broken will re-download all subtitle files...
-        if s.overwrite_bad or not (directory / media.subtitle_filename).exists()
+        if s.overwrite_bad or not (s.media_dir / media.subtitle_filename).exists()
     )
 
     for i, media in enumerate(queue):
         if s.quiet < 2:
             msg('[{}/{}] downloading: {}'.format(i + 1, len(queue), media.subtitle_filename))
-        download_file(media.subtitle_url, directory / media.subtitle_filename)
+        download_file(media.subtitle_url, s.media_dir / media.subtitle_filename)
 
 
-def check_media(s: Settings, media: Media, directory: Path):
+def check_media(s: Settings, media: Media):
     """Download media file and check it.
 
     Download file, check MD5 sum and size, delete file if it missmatches.
 
     :param s: Global settings
     :param media: a Media instance
-    :param directory: dir where files are located
     :return: True if check is successful
     """
-    file = directory / media.filename
+    file = s.media_dir / media.filename
     if not file.exists():
         return False
 
@@ -119,17 +114,15 @@ def check_media(s: Settings, media: Media, directory: Path):
     return True
 
 
-def download_media(s: Settings, media: Media, directory: Path):
+def download_media(s: Settings, media: Media):
     """Download media file and check it.
 
     :param s: Global settings
     :param media: a Media instance
-    :param directory: dir to save the files to
     :return: True if download was successful
     """
-    directory.mkdir(exist_ok=True)
-    file = directory / media.filename
-    tmpfile = directory / (media.filename + '.part')
+    file = s.media_dir / media.filename
+    tmpfile = s.media_dir / (media.filename + '.part')
 
     # Check for partially downloaded files
     if tmpfile.exists():
@@ -288,17 +281,13 @@ def download_file(url: str, file: Path, resume=False, rate_limit=0.0, progress=F
                         pass
 
 
-def disk_cleanup(s: Settings, directory: Path, reference_media: Media):
+def disk_cleanup(s: Settings, reference_media: Media):
     """Clean up old videos until there is enough space"""
     assert s.keep_free
     assert reference_media.size
 
-    # As this runs before download, the subdirectory may not exist
-    if not directory.exists():
-        return
-
     while True:
-        space = shutil.disk_usage(str(directory)).free
+        space = shutil.disk_usage(str(s.media_dir)).free
         needed = reference_media.size + s.keep_free
         if space > needed:
             break
@@ -311,9 +300,9 @@ def disk_cleanup(s: Settings, directory: Path, reference_media: Media):
 
         try:
             # Get the oldest .mp4 file in the working directory
-            oldest = min((f for f in directory.iterdir() if f.is_mp4()), key=lambda f: f.mtime)
+            oldest = min((f for f in s.media_dir.iterdir() if f.is_mp4()), key=lambda f: f.mtime)
         except ValueError:
-            msg('cannot free more disk space, no videos in {}'.format(directory))
+            msg('cannot free more disk space, no videos in {}'.format(s.media_dir))
             exit(1)
             raise
 
@@ -335,15 +324,12 @@ def copy_files(s: Settings):
     Fancy copy of files from one directory to another
     """
 
-    dest_dir = s.work_dir / s.sub_dir
-    dest_dir.mkdir(exist_ok=True)
-
     # Create a list of all mp4 files to be copied
     source_files = []
     for source in s.import_dir.iterdir():
         try:
             # Just a simple size check, no checksum etc
-            if source.is_mp4() and source.size != (dest_dir / source.name).size:
+            if source.is_mp4() and source.size != (s.media_dir / source.name).size:
                 source_files.append(source)
         except OSError:
             pass
@@ -354,10 +340,10 @@ def copy_files(s: Settings):
     total = len(source_files)
     for source_file in source_files:
         if s.keep_free > 0:
-            disk_cleanup(s, directory=dest_dir, reference_media=source_file)
+            disk_cleanup(s, reference_media=source_file)
 
         if s.quiet < 1:
             i = source_files.index(source_file)
             msg('copying [{}/{}]: {}'.format(i + 1, total, source_file.name))
 
-        shutil.copy2(source_file.path, dest_dir / source_file.name)
+        shutil.copy2(source_file.path, s.media_dir / source_file.name)

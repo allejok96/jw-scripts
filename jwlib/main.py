@@ -3,7 +3,8 @@ import json
 import time
 import urllib.request
 
-from jwlib.common import Path, Settings, action_factory, msg
+from jwlib.common import AbsolutePath, Path, Settings, action_factory, msg
+from jwlib.constants import *
 from jwlib.download import copy_files, download_all, disk_usage_info
 from jwlib.output import create_output
 from jwlib.parse import parse_broadcasting, get_categories
@@ -46,12 +47,12 @@ def main():
                                 argument_default=argparse.SUPPRESS)  # Do not overwrite attributes with None
 
     p.add_argument('--append', action='store_true',
-                   help='append to file instead of overwriting')
+                   help='append to index files instead of overwriting them')
     p.add_argument('--category', '-c', dest='include_categories', metavar='CODE',
                    action=action_factory(lambda x: x.split(',')),
-                   help='comma separated list of categories to index')
+                   help='comma separated list of categories to include')
     p.add_argument('--checksum', action='store_true', dest='checksums',
-                   help="validate MD5 checksums")
+                   help='validate MD5 checksums')
     p.add_argument('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
                    help='remove all old symlinks (mode=filesystem)')
     p.add_argument('--download', '-d', action='store_true',
@@ -67,11 +68,15 @@ def main():
                    action=action_factory(lambda x: x * 1024 * 1024),  # MiB to B
                    help='disk space in MiB to keep free (warning: deletes old MP4 files, use separate folder!)')
     p.add_argument('--friendly', '-H', action='store_true', dest='friendly_filenames',
-                   help='save downloads with human readable names')
+                   help='save downloads with human readable names (alternative to --mode=filesystem)')
     p.add_argument('--hard-subtitles', action='store_true',
                    help='prefer videos with hard-coded subtitles')
     p.add_argument('--import', dest='import_dir', metavar='DIR',
+                   action=action_factory(lambda x: Path(x)),
                    help='import of media files from this directory (offline)')
+    p.add_argument('--index-dir', metavar='DIR',
+                   action=action_factory(lambda x: AbsolutePath(x)),
+                   help='directory to store index files in')
     p.add_argument('--lang', '-l', action=action_factory(verify_language),
                    help='language code')
     p.add_argument('--languages', '-L', nargs=0, action=action_factory(print_language),
@@ -80,26 +85,29 @@ def main():
                    help='index the "Latest Videos" category only')
     p.add_argument('--limit-rate', '-R', metavar='RATE', type=float, dest='rate_limit',
                    help='maximum download rate, in megabytes/s (default = 1 MB/s, 0 = no limit)')
-    p.add_argument('--list-categories', '-C', nargs='?', const='VideoOnDemand', metavar='CODE', dest='print_category',
+    p.add_argument('--list-categories', '-C', nargs='?', const=CATEGORY_DEFAULT, metavar='CODE', dest='print_category',
                    help='print a list of (sub) category names')
+    p.add_argument('--media-dir', metavar='DIR',
+                   action=action_factory(lambda x: AbsolutePath(x)),
+                   help='directory to store media files in')
     p.add_argument('--mode', '-m',
-                   choices=['filesystem', 'html', 'html_tree', 'm3u', 'm3u_multi', 'm3u_tree', 'run', 'stdout', 'txt'],
-                   help='output mode (see wiki)')
+                   choices=MODES,
+                   help='indexing mode (see https://github.com/allejok96/jw-scripts/wiki)')
     p.add_argument('--no-warning', dest='warning', action='store_false',
                    help='do not warn when space limit seems wrong')
     p.add_argument('--quality', '-Q', type=int,
                    choices=[240, 360, 480, 720],
                    help='maximum video quality')
     p.add_argument('--quiet', '-q', action='count',
-                   help='Less info, can be used multiple times')
+                   help='less info, can be used multiple times')
     p.add_argument('--since', metavar='YYYY-MM-DD', dest='min_date',
                    action=action_factory(lambda x: time.mktime(time.strptime(x, '%Y-%m-%d'))),
-                   help='only index media newer than this date')
+                   help='only include media newer than this date')
     p.add_argument('--sort',
-                   choices=['newest', 'oldest', 'name', 'random'],
+                   choices=SORTS,
                    help='sort output')
     p.add_argument('--update', action='store_true',
-                   help='update existing categories with the latest videos (implies --append --latest --sort=newest)')
+                   help='update existing index with the latest videos (implies --append --latest --sort=newest)')
     p.add_argument('positional_arguments', nargs='*', metavar='DIR|FILE|COMMAND',
                    help='where to send output (depends on mode)')
 
@@ -120,20 +128,20 @@ def main():
         s.append = True
         s.latest = True
         if not s.sort:
-            s.sort = 'newest'
+            s.sort = SORT_NEW
     if s.latest:
         for key in s.include_categories:
-            if key != 'VideoOnDemand':
+            if key != CATEGORY_DEFAULT:
                 # Add key and its sub categories to the filter
                 s.filter_categories.append(key)
                 if s.quiet < 1:
                     msg('preparing filter: ' + key)
                 s.filter_categories += get_categories(s, key)
-        s.include_categories = ['LatestVideos']
+        s.include_categories = [CATEGORY_LATEST]
 
     # Handle positional arguments depending on mode
     # COMMAND [ARGS]
-    if s.mode == 'run':
+    if s.mode == M_RUN:
         if not s.positional_arguments:
             msg('--mode=run requires a command')
             exit(1)
@@ -142,7 +150,7 @@ def main():
     elif len(s.positional_arguments) == 1:
         path = Path(s.positional_arguments[0])
         # FILE
-        if s.mode in ('txt', 'm3u', 'html') and not path.is_dir():
+        if s.mode in MODES_WITH_SINGLE_FILE and not path.is_dir():
             s.output_filename = path.name
             s.work_dir = path.parent
         # DIR
@@ -158,8 +166,36 @@ def main():
         msg('not a directory: ' + str(s.work_dir))
         exit(1)
 
-    if s.mode not in ('', 'stdout'):
-        s.sub_dir = 'jwb-' + s.lang
+    if s.media_dir is None:
+        if s.mode in MODES_WITH_MEDIA_SUBDIR:
+            s.media_dir = s.work_dir / 'jwb-data' / 'media'
+            # Backwards compatibility
+            old_media_dir = s.work_dir / ('jwb-' + s.lang)
+            if not s.media_dir.exists() and any(old_media_dir.glob('*.mp4')):
+                msg('deprecation warning: media stored in {} (should be in {})'.format(old_media_dir, s.media_dir))
+                s.media_dir = old_media_dir
+        else:
+            s.media_dir = s.work_dir
+        if s.download or s.download_subtitles or s.import_dir:
+            s.media_dir.mkdir(parents=True, exist_ok=True)
+    elif not s.media_dir.is_dir():
+        msg('directory does not exist: ' + str(s.media_dir))
+        exit(1)
+
+    if s.index_dir is None:
+        if s.mode in MODES_WITH_INDEX_SUBDIR:
+            s.index_dir = s.work_dir / 'jwb-data' / 'index' / s.lang
+            # Backwards compatibility
+            old_index_dir = s.work_dir / ('jwb-' + s.lang)
+            if not s.index_dir.exists() and old_index_dir.exists():
+                msg('deprecation warning: index stored in {} (should be in {})'.format(old_index_dir, s.index_dir))
+                s.index_dir = old_index_dir
+            s.index_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            s.index_dir = s.work_dir
+    elif not s.index_dir.is_dir():
+        msg('directory does not exist: ' + str(s.index_dir))
+        exit(1)
 
     # Warning if disk space is already below limit
     if (s.download or s.import_dir) and s.keep_free > 0:
