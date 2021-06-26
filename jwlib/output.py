@@ -275,7 +275,7 @@ def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOut
         raise
 
     for media in all_media:
-        mediafile = s.media_dir / media.filename
+        mediafile = media.find_file(s.media_dir)
         if mediafile.exists():
             source = mediafile.relative_to(outputfile.parent)
         else:
@@ -335,7 +335,7 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
         sort_media(media_items, s.sort)
 
         for media in media_items:
-            mediafile = s.media_dir / media.filename
+            mediafile = media.find_file(s.media_dir)
             if mediafile.exists():
                 source = mediafile.relative_to(outputfile.parent)
             else:
@@ -373,10 +373,14 @@ def output_filesystem(s: Settings, data: List[Category]):
                 link_file = cat_dir / item.safe_name
 
             else:
-                link_dest = s.media_dir / item.filename
+                link_dest = item.find_file(s.media_dir)
                 if not link_dest.exists():
                     continue
                 link_file = cat_dir / item.friendly_filename
+
+                subtitle = item.find_subtitle(s.media_dir)
+                if subtitle.exists():
+                    (cat_dir / item.friendly_subtitle).symlink_to(subtitle)
 
             link_file.symlink_to(link_dest)
 

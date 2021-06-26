@@ -7,6 +7,7 @@ from sys import stderr
 from typing import List
 
 from .common import Path, Settings, msg
+from .constants import MODES_WITH_MEDIA_SUBDIR
 from .parse import Category, Media
 
 
@@ -21,12 +22,15 @@ class DiskLimitReached(Exception):
 def download_all(s: Settings, data: List[Category]):
     """Download/check media files"""
 
-    media_list = [x for cat in data
-                  for x in cat.contents
-                  if isinstance(x, Media)]
+    # There may be multiple Media objects referring to the same file, so we get only one of each
+    unique_media = {item.url: item
+                    for cat in data
+                    for item in cat.contents
+                    if isinstance(item, Media)}
+
     # Sort download queue with newest files first
     # This is important for the --free flag's disk_cleanup() to work as expected
-    media_list = sorted(media_list, key=lambda x: x.date or 0, reverse=True)
+    media_list = sorted(unique_media.values(), key=lambda x: x.date or 0, reverse=True)
 
     if s.download_subtitles:
         download_all_subtitles(s, media_list)
@@ -34,24 +38,14 @@ def download_all(s: Settings, data: List[Category]):
     if not s.download:
         return
 
-    # Search for local media before initiating the download
-    # (to get correct progress info for the download in next step)
+    # Check existing local media before initiating the download (to get correct progress info)
     if s.quiet < 1:
         msg('scanning local files')
 
-    checked_files = []
-    download_list = []
-    for media in media_list:
-        # Only run this check once per filename
-        # (there may be multiple Media objects referring to the same file)
-        if media.filename not in checked_files:
-            checked_files.append(media.filename)
-            if not check_media(s, media):
-                # Queue missing or bad files
-                download_list.append(media)
+    download_list = [media for media in media_list if not check_media(s, media)]
 
-    # Start downloading
     for num, media in enumerate(download_list):
+        # Make room
         if s.keep_free > 0:
             try:
                 disk_cleanup(s, media)
@@ -72,17 +66,17 @@ def download_all_subtitles(s: Settings, media_list: List[Media]):
     """Download VTT files from Media"""
 
     # Get all Media that needs subtitle downloaded
-    queue = set(
-        media for media in media_list
-        if media.subtitle_url
-        # Note: --fix-broken will re-download all subtitle files...
-        if s.overwrite_bad or not (s.media_dir / media.subtitle_filename).exists()
-    )
+    # Name of subtitle will be set to name of video file
+    queue = [media for media in media_list
+             if media.subtitle_url
+             # Note: --fix-broken will re-download all subtitle files...
+             if s.overwrite_bad or not media.find_subtitle(s.media_dir).exists()]
 
     for i, media in enumerate(queue):
+        file = media.find_subtitle(s.media_dir)
         if s.quiet < 2:
-            msg('[{}/{}] downloading: {}'.format(i + 1, len(queue), media.subtitle_filename))
-        download_file(media.subtitle_url, s.media_dir / media.subtitle_filename)
+            msg('[{}/{}] downloading: {} ({})'.format(i + 1, len(queue), media.subtitle_filename, media.name))
+        download_file(media.subtitle_url, file)
 
 
 def check_media(s: Settings, media: Media):
@@ -94,7 +88,7 @@ def check_media(s: Settings, media: Media):
     :param media: a Media instance
     :return: True if check is successful
     """
-    file = s.media_dir / media.filename
+    file = media.find_file(s.media_dir)
     if not file.exists():
         return False
 
@@ -121,8 +115,8 @@ def download_media(s: Settings, media: Media):
     :param media: a Media instance
     :return: True if download was successful
     """
-    file = s.media_dir / media.filename
-    tmpfile = s.media_dir / (media.filename + '.part')
+    file = media.find_file(s.media_dir)
+    tmpfile = file.with_name(file.name + '.part')
 
     # Check for partially downloaded files
     if tmpfile.exists():

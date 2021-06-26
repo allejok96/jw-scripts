@@ -1,3 +1,4 @@
+import itertools
 import json
 import os
 import re
@@ -7,7 +8,7 @@ import urllib.request
 from typing import List, Union
 from urllib.error import HTTPError
 
-from .common import msg, Settings
+from .common import msg, Settings, Path
 
 SAFE_FILENAMES = False
 FRIENDLY_FILENAMES = False
@@ -52,29 +53,48 @@ class Media:
     def __repr__(self):
         return "Media('{}')".format(self.filename)
 
-    def _get_filename(self, url=''):
+    @staticmethod
+    def _url_basename(url):
         return format_filename(os.path.basename(urllib.parse.urlparse(url).path))
-
-    def _get_friendly_filename(self, url=''):
-        return format_filename((self.name or '') + os.path.splitext(self._get_filename(url))[1])
 
     @property
     def filename(self):
-        if FRIENDLY_FILENAMES:
-            return self._get_friendly_filename(self.url)
-        else:
-            return self._get_filename(self.url)
-
-    @property
-    def friendly_filename(self):
-        return self._get_friendly_filename(self.url)
+        return self._url_basename(self.url)
 
     @property
     def subtitle_filename(self):
-        if FRIENDLY_FILENAMES:
-            return self._get_friendly_filename(self.subtitle_url)
+        return self._url_basename(self.subtitle_url)
+
+    @property
+    def friendly_filename(self):
+        return format_filename((self.name or '') + os.path.splitext(self._url_basename(self.url))[1])
+
+    @property
+    def friendly_subtitle(self):
+        return format_filename((self.name or '') + os.path.splitext(self._url_basename(self.subtitle_url))[1])
+
+    def find_file(self, directory: Path):
+        """Return existing file or fall back to default filename
+
+        This is mainly to keep compatibility with filenames containing the video resolution
+        """
+        # TODO should we match friendly if not in that mode?
+        for name in self.filename, self.friendly_filename:
+            if (directory / name).exists():
+                return directory / name
         else:
-            return self._get_filename(self.subtitle_url)
+            # Match a different quality (highest first)
+            pattern = re.sub(r'_r[0-9]{3,4}P\.', '_r*P.', self.filename)
+            for file in sorted(directory.glob(pattern), key=lambda f: get_quality_from_filename(f.name), reverse=True):
+                return file
+            else:
+                # Fallback to default (non-existent) name
+                return directory / (self.friendly_filename if FRIENDLY_FILENAMES else self.filename)
+
+    def find_subtitle(self, directory: Path):
+        """Return name of subtitle same as found (or default) video name, but with correct extension"""
+
+        return self.find_file(directory).with_suffix(os.path.splitext(self._url_basename(self.subtitle_url))[1])
 
 
 def format_filename(string):
@@ -90,6 +110,14 @@ def format_filename(string):
         forbidden = '/\0'
 
     return ''.join(x for x in string if x not in forbidden)
+
+
+def get_quality_from_filename(name):
+    match = re.match(r'_r([1-9][0-9]{2,3})P\.', name)
+    if match:
+        return int(match[1])
+    else:
+        return 0
 
 
 # Whoops, copied this from the Kodi plug-in
