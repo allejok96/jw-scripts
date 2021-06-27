@@ -1,174 +1,140 @@
 import argparse
 import json
-import signal
+import random
 import subprocess
 import time
-from random import shuffle
 
 from jwlib.common import Path, msg
 
-class VideoManager:
-    """Main class of jwb-offline
 
-    Play video files, keep track of history
-    """
-    video = None  # type: Path
-    start_time = None  # type: float
-    pos = 0
-    errors = 0
+class NoVideos(Exception):
+    pass
 
-    def __init__(self, wd: Path, replay=0, cmd=None, verbose=False):
-        """Initialize self.
 
-        :param wd: working directory
-        :keyword replay: seconds to replay of last video
-        :keyword cmd: list with video player command
-        """
-        self.replay = replay
-        self.wd = wd
-        self.dump_file = wd / 'dump.json'
+class RuntimeInfo:
+    def __init__(self):
+        # List of names of played videos with the most recent as the last
         self.history = []
-        self.verbose = verbose
+        # Where the last video was paused (in seconds)
+        self.resume = 0
+        # When the last video started playing (as a POSIX timestamp)
+        self.playback_started = 0.0
+        # Number of times the video player exited too quickly
+        self.failed_playbacks = 0
 
-        if cmd and len(cmd) > 0:
-            self.cmd = cmd
-        else:
-            self.cmd = ('omxplayer', '--pos', '{}', '--no-osd')
+    @classmethod
+    def load(cls, path: Path):
+        try:
+            with path.open() as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            data = {}
 
-    def write_dump(self):
-        """Dump data to JSON file"""
-        d = {'video': str(self.video),
-             'pos': self.calculate_pos(),
-             'history': self.history}
-        with self.dump_file.open('w') as output_file:
-            output_file.write(json.dumps(d))
+        info = cls()
+        info.history = data.get('history', [])
+        info.resume = int(data.get('resume', 0))
+        return info
 
-    def read_dump(self):
-        """Load data from JSON file"""
-        if self.dump_file.exists():
-            with self.dump_file.open('r') as input_file:
-                d = json.loads(input_file.read())
-            if 'history' in d and type(d['history']) is list:
-                self.history = d['history']
-            if 'video' in d and type(d['video']) is str:
-                self.video = Path(d['video'])
-            if 'pos' in d and type(d['pos']) is int:
-                self.pos = d['pos']
+    def save(self, path: Path):
+        data = {
+            'history': self.history,
+            'resume': int(time.time() - self.playback_started) if self.playback_started else 0
+        }
+        with path.open('w') as f:
+            json.dump(data, f)
 
-    def set_random_video(self):
-        """Get a random video from working directory"""
-        if self.video:
-            self.start_time = time.time()
-            return True
-        files = self.list_videos()
-        shuffle(files)
-        for vid in files:
-            if vid in self.history:
-                continue
-            self.video = vid
-            self.pos = 0
-            return True
-        return False
+    def register_start(self, video_name: str):
+        try:
+            self.history.remove(video_name)
+        except ValueError:
+            pass
+        self.history.append(video_name)
+        self.playback_started = time.time()
+        self.resume = 0
 
-    def calculate_pos(self):
-        """Calculate the playback position in the currently playing video"""
-        if self.start_time:
-            p = int(time.time() - self.start_time + self.pos - self.replay)
-            if p < 0:
-                p = 0
-            return p
-        else:
-            return 0
-
-    def play_video(self):
-        """Play a video"""
-        self.write_dump()
-        msg('playing: ' + self.video.name)
-        cmd = [arg.replace('{}', str(self.pos)) for arg in self.cmd] + [str(self.video)]
-        self.start_time = time.time()
-        if self.verbose:
-            subprocess.call(cmd)
-        else:
-            subprocess.call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        if self.calculate_pos() == 0:
-            self.errors = self.errors + 1
-        else:
-            self.errors = 0
-        if self.errors > 10:
+    def register_stop(self):
+        if self.failed_playbacks > 10:
             raise RuntimeError('video player restarting too quickly')
+        elif time.time() - self.playback_started < 0:
+            self.failed_playbacks += 1
+        else:
+            self.failed_playbacks = 0
 
-        self.add_to_history(self.video)
-        self.video = None
+        self.playback_started = 0.0
 
-    def add_to_history(self, video):
-        """Add a video to the history and trim it to half of the amount of videos"""
-        max_len = len(self.list_videos()) // 2
-        self.history.append(video)
-        self.history = self.history[-max_len:]
-
-    def list_videos(self):
-        """Return a list of all MP4 files in working dir"""
-        return [f for f in self.wd.iterdir() if f.is_mp4()]
+    def get_resume(self, dir: Path, rewind: int = 0):
+        if self.resume and self.history:
+            video = dir / self.history[-1]
+            if video.is_mp4():
+                # Rewind, but not past 0
+                return video, max(0, self.resume - rewind)
+        raise NoVideos
 
 
 def main():
-    """jwb-offline
-
-    Video player script
-    """
-
-    def handler(signal, frame):
-        raise KeyboardInterrupt
-
-    signal.signal(signal.SIGTERM, handler)
+    """jwb-offline"""
 
     parser = argparse.ArgumentParser(prog='jwb-offline',
-                                     usage='%(prog)s [DIR] [COMMAND]',
+                                     usage='%(prog)s -d [DIR] -- COMMAND [ARGS]',
                                      description='Shuffle and play videos in DIR')
-    parser.add_argument('dir',
-                        nargs='?',
-                        metavar='DIR',
-                        default='.')
-    parser.add_argument('cmd',
-                        nargs='+',
-                        metavar='COMMAND',
-                        help='video player command, "{}" gets replaced by starting position in secs')
-    parser.add_argument('--replay-sec',
-                        metavar='SEC',
-                        type=int,
-                        default=30,
-                        dest='replay',
-                        help='seconds to replay after a restart')
-    parser.add_argument('--verbose',
-                        action='store_true',
+    parser.add_argument('--dir', '-d', metavar='DIR', default='.',
+                        help='video directory')
+    parser.add_argument('--replay-sec', metavar='SEC', type=int, default=30,
+                        help='seconds to replay when resuming a video')
+    parser.add_argument('--verbose', '-v', action='store_true',
                         help='show video player output')
+    parser.add_argument('cmd', metavar='COMMAND', nargs='+',
+                        help='video player command, "{}" gets replaced by starting position in secs')
 
     args = parser.parse_args()
-    args.dir = Path(args.dir)
+    dir = Path(args.dir)
+    cmd_output = None if args.verbose else subprocess.DEVNULL
 
-    m = VideoManager(args.dir, replay=args.replay, cmd=args.cmd, verbose=args.verbose)
+    info = RuntimeInfo.load(dir / 'history.json')
+    show_wait_msg = True
 
-    try:
-        m.read_dump()
-    except json.JSONDecodeError:
-        pass
-
-    showmsg = True
+    # Save info before exit
     try:
         while True:
-            if m.set_random_video():
-                m.play_video()
-                showmsg = True
-            else:
-                if showmsg:
+            videos = [v for v in dir.iterdir() if v.is_mp4()]
+
+            # Wait for videos
+            if not videos:
+                if show_wait_msg:
                     msg('no videos to play yet')
-                    showmsg = False
+                    show_wait_msg = False
                 time.sleep(10)
                 continue
-    except KeyboardInterrupt:
-        msg('aborted')
-        m.write_dump()
+            show_wait_msg = True
+
+            try:
+                # Resume if possible
+                video, resume_pos = info.get_resume(dir, rewind=args.replay_sec)
+
+            except NoVideos:
+                while True:
+                    try:
+                        # Find a random video that wasn't played recently
+                        video = random.choice([v for v in videos if v.name not in info.history])
+                        resume_pos = 0
+                        break
+                    # Raised by choice if list is empty
+                    except IndexError:
+                        if info.history:
+                            # Remove the oldest 20 history entries and try again
+                            info.history = info.history[20:]
+                        else:
+                            # This can never happen as long as videos is non-empty
+                            raise RuntimeError
+
+            msg('playing: ' + video.name)
+            info.register_start(video.name)
+            subprocess.call([arg.replace('{}', str(resume_pos)) for arg in args.cmd] + [str(video)],
+                            stdout=cmd_output, stderr=cmd_output)
+            info.register_stop()
+
+    finally:
+        info.save(dir / 'history.json')
 
 
 if __name__ == '__main__':
