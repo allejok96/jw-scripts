@@ -126,7 +126,7 @@ class Settings:
 
     # Download stuff
     download = False  # type: bool
-    download_subtitles = False  # type: bool
+    download_subtitles = []  # type: List[str]
     friendly_filenames = False  # type: bool
     rate_limit = 1.0  # type: float # MB/s
     checksums = False  # type: bool
@@ -137,7 +137,6 @@ class Settings:
     clean_all_symlinks = False  # type: bool
     update = False  # type: bool
     mode = M_NONE  # type: str
-    safe_filenames = False  # type: bool
     sort = SORT_NONE  # type: str
 
     def __setattr__(self, key, value):

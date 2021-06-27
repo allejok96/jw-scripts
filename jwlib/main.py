@@ -1,49 +1,60 @@
 import argparse
-import json
 import time
-import urllib.request
+from typing import Dict
 
+import jwlib.parse
 from jwlib.common import AbsolutePath, Path, Settings, action_factory, msg
 from jwlib.constants import *
-from jwlib.download import copy_files, download_all, disk_usage_info
+from jwlib.download import copy_files, download_all, download_all_subtitles, disk_usage_info
 from jwlib.output import create_output
-from jwlib.parse import parse_broadcasting, get_categories
-
-
-def get_jwb_languages():
-    """Returns [ {'code': str, 'name': str}, ... ]"""
-
-    url = 'https://data.jw-api.org/mediator/v1/languages/E/web?clientType=www'
-    with urllib.request.urlopen(url) as response:
-        return json.loads(response.read().decode('utf-8'))['languages']
+from jwlib.parse import Media, get_languages, get_categories, index_broadcasting, index_alternative_media
 
 
 def verify_language(code):
     if code != 'E':
-        for l in get_jwb_languages():
-            if l['code'] == code:
-                break
-        else:
-            raise ValueError(code + ': invalid language code')
+        if code not in get_languages():
+            msg(code + ': invalid language code')
+            exit(1)
     return code
+
+
+def verify_languages(codes: str):
+    code_list = codes.split(',')
+    for code in code_list:
+        verify_language(code)
+    return code_list
 
 
 def print_language(x):
     msg('language codes:')
-    for l in get_jwb_languages():
-        msg('{:>3}  {:<}'.format(l['code'], l['name']))
+    for code, values in get_languages().items():
+        msg('{:>3}  {:<}'.format(code, values[0]))
     exit()
 
 
 def main():
     usage = '''
-      %(prog)s [options] [DIR]
-      %(prog)s [options] --mode=html|m3u|txt [FILE]
-      %(prog)s [options] --mode=run COMMAND [ARGS]'''
+  %(prog)s [options] [DIR]
+  %(prog)s [options] --mode=filesystem --download [DIR]
+  %(prog)s [options] --mode=html|m3u|txt [FILE]
+  %(prog)s [options] --mode=run COMMAND [ARGS]'''
+
+    epilog = '''
+indexing modes:
+  filesystem            create a directory structure (plex)
+  html                  create a single HTML file
+  m3u                   create a single playlist
+  m3u_multi             create a playlist for each subcategory
+  html_tree, m3u_tree   create hierarchy of HTML files or playlists
+  run                   run a command
+  stdout                print to the terminal
+  txt                   create a text file'''
 
     p = argparse.ArgumentParser(prog='jwb-index',
                                 usage=usage,
                                 description='Index or download media from jw.org',
+                                epilog=epilog,
+                                formatter_class=argparse.RawDescriptionHelpFormatter,  # do not line-wrap epilog
                                 argument_default=argparse.SUPPRESS)  # Do not overwrite attributes with None
 
     p.add_argument('--append', action='store_true',
@@ -51,17 +62,20 @@ def main():
     p.add_argument('--category', '-c', dest='include_categories', metavar='CODE',
                    action=action_factory(lambda x: x.split(',')),
                    help='comma separated list of categories to include')
+    p.add_argument('--categories', '-C', nargs='?', const=CATEGORY_DEFAULT, metavar='CODE', dest='print_category',
+                   help='display a list of valid category or subcategory names')
     p.add_argument('--checksum', action='store_true', dest='checksums',
                    help='validate MD5 checksums')
     p.add_argument('--clean-symlinks', action='store_true', dest='clean_all_symlinks',
                    help='remove all old symlinks (mode=filesystem)')
     p.add_argument('--download', '-d', action='store_true',
                    help='download media files')
-    p.add_argument('--download-subtitles', action='store_true',
-                   help='download VTT subtitle files')
+    p.add_argument('--download-subtitles', '-s', nargs='?', const=True, metavar='LANG',
+                   action=action_factory(verify_languages),
+                   help='download subtitle files (optional comma separated list of languages)')
     p.add_argument('--exclude', metavar='CODE', dest='exclude_categories',
                    action=action_factory(lambda x: x.split(',')),
-                   help='comma separated list of categories to skip (sub-categories will also be skipped)')
+                   help='comma separated list of categories to skip (subcategories will also be skipped)')
     p.add_argument('--fix-broken', action='store_true', dest='overwrite_bad',
                    help='check existing files and re-download them if they are broken')
     p.add_argument('--free', type=int, metavar='MiB', dest='keep_free',
@@ -73,7 +87,7 @@ def main():
                    help='prefer videos with hard-coded subtitles')
     p.add_argument('--import', dest='import_dir', metavar='DIR',
                    action=action_factory(lambda x: Path(x)),
-                   help='import of media files from this directory (offline)')
+                   help='import media files from this directory (offline update)')
     p.add_argument('--index-dir', metavar='DIR',
                    action=action_factory(lambda x: AbsolutePath(x)),
                    help='directory to store index files in')
@@ -85,14 +99,12 @@ def main():
                    help='index the "Latest Videos" category only')
     p.add_argument('--limit-rate', '-R', metavar='RATE', type=float, dest='rate_limit',
                    help='maximum download rate, in megabytes/s (default = 1 MB/s, 0 = no limit)')
-    p.add_argument('--list-categories', '-C', nargs='?', const=CATEGORY_DEFAULT, metavar='CODE', dest='print_category',
-                   help='print a list of (sub) category names')
     p.add_argument('--media-dir', metavar='DIR',
                    action=action_factory(lambda x: AbsolutePath(x)),
                    help='directory to store media files in')
     p.add_argument('--mode', '-m',
                    choices=MODES,
-                   help='indexing mode (see https://github.com/allejok96/jw-scripts/wiki)')
+                   help='what to do with the indexed data (see below)')
     p.add_argument('--no-warning', dest='warning', action='store_false',
                    help='do not warn when space limit seems wrong')
     p.add_argument('--quality', '-Q', type=int,
@@ -111,9 +123,13 @@ def main():
     p.add_argument('positional_arguments', nargs='*', metavar='DIR|FILE|COMMAND',
                    help='where to send output (depends on mode)')
 
+    #
+    # Argument parsing / validation
+    #
+
     s = p.parse_args(namespace=Settings())
 
-    # Quick print of categories list
+    # Quick print of categories list (stops here)
     if s.print_category:
         print(*get_categories(s, s.print_category), sep='\n')
         exit()
@@ -161,7 +177,13 @@ def main():
         msg('unexpected argument: {}'.format(s.positional_arguments[1]))
         exit(1)
 
-    # Check / set paths
+    # Ugly way to configure parser
+    jwlib.parse.FRIENDLY_FILENAMES = s.friendly_filenames
+
+    #
+    # Path checks / creation
+    #
+
     if not s.work_dir.is_dir():
         msg('not a directory: ' + str(s.work_dir))
         exit(1)
@@ -197,6 +219,10 @@ def main():
         msg('directory does not exist: ' + str(s.index_dir))
         exit(1)
 
+    #
+    # Filesystem checks
+    #
+
     # Warning if disk space is already below limit
     if (s.download or s.import_dir) and s.keep_free > 0:
         disk_usage_info(s)
@@ -208,28 +234,49 @@ def main():
 
     # NTFS compatibility (try to create a forbidden file)
     try:
-        (s.work_dir / '?').touch(exist_ok=False)
-        (s.work_dir / '?').unlink()
-    except FileExistsError:
-        pass
+        for directory in s.work_dir, s.index_dir, s.media_dir:
+            try:
+                (directory / '?').touch(exist_ok=False)
+                (directory / '?').unlink()
+            except FileExistsError:
+                pass
     except OSError:
-        s.safe_filenames = True
+        jwlib.parse.SAFE_FILENAMES = True
 
     # Some heads-up
     if s.quiet < 1:
         if s.download and s.rate_limit:
             msg('note: download rate limit is active')
-        if s.safe_filenames:
+        if jwlib.parse.SAFE_FILENAMES:
             msg('note: using NTFS/FAT compatible file names')
 
-    # Do the indexing
-    data = parse_broadcasting(s)
+    #
+    # Start of main... thing
+    #
 
-    if s.download or s.download_subtitles:
-        download_all(s, data)
+    index = index_broadcasting(s)
+
+    # Get all unique Media objects
+    all_media: Dict[str, Media] = {media.key: media for cat in index for media in cat.items}
+
+    # Sort newest first, this is important for --free to work as expected
+    download_queue = sorted(all_media.values(), key=lambda x: x.date or 0, reverse=True)
+
+    # Index other languages and merge subtitles from that into current
+    if s.download_subtitles:
+        for other in index_alternative_media(s, all_media.values()):
+            try:
+                all_media[other.key].subtitles.update(other.subtitles)
+            except KeyError:
+                pass
+
+        download_all_subtitles(s, download_queue)
+
+    if s.download:
+        download_all(s, download_queue)
 
     if s.mode:
-        create_output(s, data)
+        create_output(s, index)
 
 
 if __name__ == '__main__':

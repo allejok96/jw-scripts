@@ -5,7 +5,7 @@ from typing import List, Type
 
 from .common import Path, Settings, msg
 from .constants import *
-from .parse import Category, Media, CategoryNameError
+from .parse import Category, Media, MissingCategoryName
 
 
 class FileParseError(Exception):
@@ -262,14 +262,14 @@ def create_output(s: Settings, data: List[Category]):
 def output_single(s: Settings, data: List[Category], writercls: Type[AbstractOutputWriter]):
     """Create a concatenated output file"""
 
-    all_media = [item for category in data for item in category.contents if isinstance(item, Media)]
+    all_media = [item for category in data for item in category.items]
     sort_media(all_media, s.sort)
 
     try:
         # Filename falls back to the name of the first category
         outputfile = s.work_dir / (s.output_filename or data[0].safe_name + writercls.ext)
         writer = writercls(s, outputfile)
-    except CategoryNameError:
+    except MissingCategoryName:
         msg('please specify filename for output')
         exit(1)
         raise
@@ -294,7 +294,7 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
     for category in data:
         if tree and category.home:
             # Root of tree: file is outside subdir, with nice name
-            # Note: CategoryNameError cannot occur on home categories
+            # Note: MissingCategoryName cannot occur on home categories
             outputfile = s.work_dir / (category.safe_name + writercls.ext)
         elif tree:
             # Sub-categories in tree: file is inside subdir, with ugly name
@@ -303,7 +303,7 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
             # "Flat" mode: file is outside subdir, has both ugly and nice name
             try:
                 outputfile = s.work_dir / (category.key + ' - ' + category.safe_name + writercls.ext)
-            except CategoryNameError:
+            except MissingCategoryName:
                 # Try to guess the file name if we only have the key
                 pattern = category.key + ' - *' + writercls.ext
                 matches = list(s.work_dir.glob(pattern))  # need list to get len
@@ -324,14 +324,13 @@ def output_multi(s: Settings, data: List[Category], writercls: Type[AbstractOutp
             continue
 
         # All categories go on top of the queue
-        for item in category.contents:
-            if isinstance(item, Category):
-                # Only link to categories if we are creating a tree structure
-                if tree:
-                    source = (s.index_dir / (item.key + writer.ext)).relative_to(outputfile.parent)
-                    writer.add_to_queue(PlaylistEntry(item.name.upper(), str(source)))
+        for item in category.subcategories:
+            # Only link to categories if we are creating a tree structure
+            if tree:
+                source = (s.index_dir / (item.key + writer.ext)).relative_to(outputfile.parent)
+                writer.add_to_queue(PlaylistEntry(item.name.upper(), str(source)))
 
-        media_items = [m for m in category.contents if isinstance(m, Media)]
+        media_items = [m for m in category.items]
         sort_media(media_items, s.sort)
 
         for media in media_items:
@@ -358,31 +357,29 @@ def output_filesystem(s: Settings, data: List[Category]):
 
         # Index/starting/home categories: create link outside subdir
         if category.home:
-            # Note: CategoryNameError cannot occur on home categories
+            # Note: MissingCategoryName cannot occur on home categories
             home_link = s.work_dir / category.safe_name
             if s.quiet < 1:
                 msg('linking: {} -> {}'.format(home_link, cat_dir))
             home_link.symlink_to(cat_dir)
 
-        for item in category.contents:
+        for subcat in category.subcategories:
+            subdir = s.index_dir / subcat.key
+            subdir.mkdir(exist_ok=True)
+            # Note: MissingCategoryName cannot occur on categories inside other categories contents
+            (cat_dir / subcat.safe_name).symlink_to(subdir)
 
-            if isinstance(item, Category):
-                link_dest = s.index_dir / item.key
-                link_dest.mkdir(exist_ok=True)
-                # Note: CategoryNameError cannot occur on categories inside other categories contents
-                link_file = cat_dir / item.safe_name
+        for media in category.items:
+            mediafile = media.find_file(s.media_dir)
+            if not mediafile.exists():
+                continue
+            link = cat_dir / media.friendly_filename
+            link.symlink_to(mediafile)
 
-            else:
-                link_dest = item.find_file(s.media_dir)
-                if not link_dest.exists():
-                    continue
-                link_file = cat_dir / item.friendly_filename
-
-                subtitle = item.find_subtitle(s.media_dir)
-                if subtitle.exists():
-                    (cat_dir / item.friendly_subtitle).symlink_to(subtitle)
-
-            link_file.symlink_to(link_dest)
+            # TODO this works slightly by chance right now
+            for subtitle in s.media_dir.glob(mediafile.stem + '.*.*'):
+                # Grab the last two suffixes (from subtitle-name.language.vtt)
+                link.with_suffix(''.join(subtitle.suffixes[-2:])).symlink_to(subtitle)
 
 
 def clean_symlinks(s: Settings):

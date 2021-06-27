@@ -21,6 +21,10 @@ SORT_NAME = 'name'
 SORT_RANDOM = 'random'
 SORTS = SORT_NEW, SORT_OLD, SORT_NAME, SORT_RANDOM
 
+API_BASE = 'https://b.jw-cdn.org/apis/mediator/v1'
+
 CATEGORY_DEFAULT = 'VideoOnDemand'
 CATEGORY_LATEST = 'LatestVideos'
 CATEGORY_SONGS = 'VODSJJMeetings'
+
+TAG_HIDDEN = 'WWWExclude'

@@ -1,4 +1,5 @@
 import hashlib
+import os
 import shutil
 import time
 import urllib.parse
@@ -7,8 +8,7 @@ from sys import stderr
 from typing import List
 
 from .common import Path, Settings, msg
-from .constants import MODES_WITH_MEDIA_SUBDIR
-from .parse import Category, Media
+from .parse import Media, get_languages, url_basename
 
 
 class MissingTimestampError(Exception):
@@ -19,29 +19,13 @@ class DiskLimitReached(Exception):
     pass
 
 
-def download_all(s: Settings, data: List[Category]):
+def download_all(s: Settings, media_list: List[Media]):
     """Download/check media files"""
 
-    # There may be multiple Media objects referring to the same file, so we get only one of each
-    unique_media = {item.url: item
-                    for cat in data
-                    for item in cat.contents
-                    if isinstance(item, Media)}
-
-    # Sort download queue with newest files first
-    # This is important for the --free flag's disk_cleanup() to work as expected
-    media_list = sorted(unique_media.values(), key=lambda x: x.date or 0, reverse=True)
-
-    if s.download_subtitles:
-        download_all_subtitles(s, media_list)
-
-    if not s.download:
-        return
-
-    # Check existing local media before initiating the download (to get correct progress info)
     if s.quiet < 1:
         msg('scanning local files')
 
+    # Check existing local media before initiating the download (to get correct progress info)
     download_list = [media for media in media_list if not check_media(s, media)]
 
     for num, media in enumerate(download_list):
@@ -63,20 +47,26 @@ def download_all(s: Settings, data: List[Category]):
 
 
 def download_all_subtitles(s: Settings, media_list: List[Media]):
-    """Download VTT files from Media"""
+    """Download all VTT files giving them the correct name and language code"""
 
-    # Get all Media that needs subtitle downloaded
-    # Name of subtitle will be set to name of video file
-    queue = [media for media in media_list
-             if media.subtitle_url
-             # Note: --fix-broken will re-download all subtitle files...
-             if s.overwrite_bad or not media.find_subtitle(s.media_dir).exists()]
+    queue = []
+    for media in media_list:
+        mediafile = media.find_file(s.media_dir)
+        for lang, url in media.subtitles.items():
+            if lang in s.download_subtitles or (lang == s.lang and True in s.download_subtitles):
+                # ISO 639 language code (some language codes have extra suffix, we remove that)
+                isolang = get_languages()[lang][1].split('_')[0]
+                name = mediafile.stem + '.' + isolang + os.path.splitext(url_basename(url))[1]
+                subfile = mediafile.with_name(name)
+                # --fix-broken will re-download subtitle files
+                if s.overwrite_bad or not subfile.exists():
+                    queue.append((url, subfile, media.name))
 
-    for i, media in enumerate(queue):
-        file = media.find_subtitle(s.media_dir)
+    for i, queue_entry in enumerate(queue):
+        url, file, name = queue_entry
         if s.quiet < 2:
-            msg('[{}/{}] downloading: {} ({})'.format(i + 1, len(queue), media.subtitle_filename, media.name))
-        download_file(media.subtitle_url, file)
+            msg('[{}/{}] downloading: {} ({})'.format(i + 1, len(queue), url_basename(url), name))
+        download_file(url, file)
 
 
 def check_media(s: Settings, media: Media):

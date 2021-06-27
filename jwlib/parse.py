@@ -1,103 +1,112 @@
-import itertools
 import json
 import os
 import re
 import time
 import urllib.parse
 import urllib.request
-from typing import List, Union
+from typing import List, Dict, Iterable
 from urllib.error import HTTPError
 
 from .common import msg, Settings, Path
+from .constants import TAG_HIDDEN, API_BASE
 
 SAFE_FILENAMES = False
 FRIENDLY_FILENAMES = False
+LANGUAGE_TABLE = {'E': ('English', 'en')}  # just for reference
 
 
-class CategoryNameError(Exception):
+class MissingCategoryName(Exception):
+    """When trying to get a human readable name on a category is lazily created with primaryCategory (--update)"""
+    pass
+
+
+class InvalidCategory(Exception):
+    """When a category request returns 404 or empty"""
+    pass
+
+
+class InvalidMedia(Exception):
+    """When media request returns 404 or empty, or it should not be parsed"""
     pass
 
 
 class Category:
     """Object to put category info in."""
-    key = ''
-    name = ''
-    home = False  # whether or not this is a "starting point"
+    key: str = ''
+    name: str = ''
+    home: bool = False  # whether or not this is a "starting point"
 
     def __init__(self):
-        self.contents = []  # type: List[Union[Category, Media]]
+        self.subcategories: List[Category] = []
+        self.items: List[Media] = []
 
     # misleading use of repr, but it's only for debugging...
     def __repr__(self):
-        return "Category('{}', {})".format(self.key, self.contents)
+        return "Category('{}', {}, {})".format(self.key, self.subcategories, self.items)
 
     @property
     def safe_name(self):
         """Returns name with special characters removed, or raises CategoryError if unset"""
         if not self.name:
-            raise CategoryNameError
+            raise MissingCategoryName
         return format_filename(self.name)
 
 
 class Media:
     """Object to put media info in."""
-    date = 0
-    duration = 0
-    md5 = ''
-    name = ''
-    size = 0
-    subtitle_url = ''
-    url = ''
+    date: int = 0
+    duration: int = 0
+    key: str = ''
+    md5: str = ''
+    name: str = ''
+    size: int = 0
+    url: str = ''
+    _file: Path = None
+
+    def __init__(self):
+        self.subtitles: Dict[str, str] = {}  # {language: URL}
 
     # misleading use of repr, but it's only for debugging...
     def __repr__(self):
-        return "Media('{}')".format(self.filename)
-
-    @staticmethod
-    def _url_basename(url):
-        return format_filename(os.path.basename(urllib.parse.urlparse(url).path))
+        return "Media('{}')".format(self.key)
 
     @property
     def filename(self):
-        return self._url_basename(self.url)
-
-    @property
-    def subtitle_filename(self):
-        return self._url_basename(self.subtitle_url)
+        return url_basename(self.url)
 
     @property
     def friendly_filename(self):
-        return format_filename((self.name or '') + os.path.splitext(self._url_basename(self.url))[1])
-
-    @property
-    def friendly_subtitle(self):
-        return format_filename((self.name or '') + os.path.splitext(self._url_basename(self.subtitle_url))[1])
+        return format_filename((self.name or '') + os.path.splitext(self.filename)[1])
 
     def find_file(self, directory: Path):
-        """Return existing file or fall back to default filename
+        """Find and return existing media file or fall back to default filename"""
 
-        This is mainly to keep compatibility with filenames containing the video resolution
-        """
-        # TODO should we match friendly if not in that mode?
-        for name in self.filename, self.friendly_filename:
-            if (directory / name).exists():
-                return directory / name
-        else:
-            # Match a different quality (highest first)
-            pattern = re.sub(r'_r[0-9]{3,4}P\.', '_r*P.', self.filename)
-            for file in sorted(directory.glob(pattern), key=lambda f: get_quality_from_filename(f.name), reverse=True):
-                return file
+        if self._file is None:
+            # TODO should we match friendly if not in that mode?
+            for name in self.filename, self.friendly_filename:
+                if (directory / name).exists():
+                    self._file = directory / name
+                    break
             else:
-                # Fallback to default (non-existent) name
-                return directory / (self.friendly_filename if FRIENDLY_FILENAMES else self.filename)
+                # Match a different quality (highest first)
+                pattern = re.sub(r'_r[0-9]{3,4}P\.', '_r*P.', self.filename)
+                for file in sorted(directory.glob(pattern),
+                                   key=lambda f: get_quality_from_filename(f.name),
+                                   reverse=True):
+                    self._file = file
+                    break
+                else:
+                    # Fallback to default (non-existent) name
+                    self._file = directory / (self.friendly_filename if FRIENDLY_FILENAMES else self.filename)
 
-    def find_subtitle(self, directory: Path):
-        """Return name of subtitle same as found (or default) video name, but with correct extension"""
-
-        return self.find_file(directory).with_suffix(os.path.splitext(self._url_basename(self.subtitle_url))[1])
+        return self._file
 
 
-def format_filename(string):
+def url_basename(url):
+    return format_filename(os.path.basename(urllib.parse.urlparse(url).path))
+
+
+def format_filename(string: str):
     """Remove unsafe characters from file names"""
 
     if SAFE_FILENAMES:
@@ -154,46 +163,77 @@ def get_best_video(videos: list, quality: int, subtitles: bool):
     return rankings[-1][1]
 
 
-def get_json(lang, key):
-    """Return loaded JSON from API"""
+def get_languages():
+    """Get languages from the API"""
 
-    url = 'https://data.jw-api.org/mediator/v1/categories/{}/{}?detailed=1'.format(lang, key)
+    global LANGUAGE_TABLE
+
+    if len(LANGUAGE_TABLE) == 1:
+        with urllib.request.urlopen(API_BASE + '/languages/E/web') as response:
+            for L in json.loads(response.read().decode('utf-8'))['languages']:
+                LANGUAGE_TABLE[L['code']] = L['name'], L['locale']
+
+    return LANGUAGE_TABLE
+
+
+def request_category(lang, key) -> dict:
+    """Make an API request for category data"""
+
     try:
+        # Note: looking up an invalid category results in 404
+        url = API_BASE + '/categories/{}/{}?detailed=1'.format(lang, key)
         with urllib.request.urlopen(url) as data:
-            return json.loads(data.read().decode('utf-8'))
+            return json.loads(data.read().decode('utf-8'))['category']
     except HTTPError as e:
         if e.code == 404:
-            e.msg = '{} not found'.format(key)
-            raise e
+            raise InvalidCategory
+    except KeyError:
+        raise InvalidCategory
 
 
-def get_categories(s: Settings, key):
+def request_media(lang, key) -> dict:
+    """Make an API request for media data"""
+
+    try:
+        # Note: looking up an invalid media key results in {'media': []}
+        url = API_BASE + '/media-items/{}/{}'.format(lang, key)
+        with urllib.request.urlopen(url) as data:
+            return json.loads(data.read().decode('utf-8'))['media'][0]
+    except HTTPError as e:
+        if e.code == 404:
+            raise InvalidMedia
+    except (KeyError, IndexError, AssertionError):
+        raise InvalidMedia
+
+
+def get_categories(s: Settings, key: str):
     """Return a list of sub category keys"""
 
-    j = get_json(s.lang, key)
+    j = request_category(s.lang, key)
     return [sub['key'] for sub in j['category'].get('subcategories', [])]
 
 
-def parse_broadcasting(s: Settings):
-    """Index JW Broadcasting categories recursively and return a list with Category objects
+def index_broadcasting(s: Settings, lang: str = None, ignore_missing=False) -> List[Category]:
+    """Index JW Broadcasting categories recursively and return a list with Category objects"""
 
-    :param s: Global settings object
-    """
-    # TODO this is really ugly
-    global FRIENDLY_FILENAMES, SAFE_FILENAMES
-    FRIENDLY_FILENAMES = s.friendly_filenames
-    SAFE_FILENAMES = s.safe_filenames
+    if lang is None:
+        lang = s.lang
 
     # Make a copy because we'll append stuff here later
     queue = s.include_categories.copy()
     result = []
 
     for key in queue:
-        j = get_json(s.lang, key)
+        try:
+            cat_data = request_category(lang, key)
+        except InvalidCategory:
+            if ignore_missing:
+                continue
+            raise
 
         cat = Category()
-        cat.key = j['category']['key']
-        cat.name = j['category']['name']
+        cat.key = cat_data['key']
+        cat.name = cat_data['name']
         cat.home = cat.key in s.include_categories
         if not s.update:
             result.append(cat)
@@ -201,78 +241,127 @@ def parse_broadcasting(s: Settings):
         if s.quiet < 1:
             msg('indexing: {} ({})'.format(cat.key, cat.name))
 
-        for j_sub in j['category'].get('subcategories', []):
+        for sub_data in cat_data.get('subcategories', []):
+            # Do not dive into excluded categories
+            if TAG_HIDDEN in sub_data.get('tags', []):
+                continue
 
             sub = Category()
-            sub.key = j_sub['key']
-            sub.name = j_sub['name']
+            sub.key = sub_data['key']
+            sub.name = sub_data['name']
             # Note:
             # We always add an sub-category entry
             # but sometimes it is --exclude'ed so it won't get parsed
             # This will create broken symlinks etc
             # But if script is re-run with these categories included, the links will start to work
             # We call it implementation detail instead of bug...
-            cat.contents.append(sub)
+            cat.subcategories.append(sub)
             # Add subcategory key to queue for parsing later
             if sub.key not in queue and sub.key not in s.exclude_categories:
                 queue.append(sub.key)
 
-        for j_media in j['category'].get('media', []):
-            # Skip videos marked as hidden
-            if 'tags' in j_media.get('tags', []):
-                continue
-            # Apply category filter
-            if s.filter_categories and j_media['primaryCategory'] not in s.filter_categories:
-                continue
+        for media_data in cat_data.get('media', []):
+            # Create a Media object
             try:
-                if j_media.get('type') == 'audio':
-                    # Simply pick first audio stream for the time being...
-                    j_media_file = j_media['files'][0]
-                else:
-                    # Note: empty list will raise IndexError
-                    j_media_file = get_best_video(j_media['files'], quality=s.quality, subtitles=s.hard_subtitles)
-            except IndexError:
-                if s.quiet < 1:
-                    msg('no media files found for: {}'.format(j_media['title']))
+                media = parse_media_data(s, media_data, lang)
+            except InvalidMedia:
                 continue
 
-            media = Media()
-            media.url = j_media_file['progressiveDownloadURL']
-            media.name = j_media['title']
-            media.md5 = j_media_file.get('checksum')
-            media.size = j_media_file.get('filesize')
-            media.duration = j_media_file.get('duration')
-            if j_media_file.get('subtitles'):
-                media.subtitle_url = j_media_file['subtitles']['url']
-
-            # Save time data
-            if 'firstPublished' in j_media:
-                try:
-                    # Remove last stuff from date, what is it anyways?
-                    date_string = re.sub('\\.[0-9]+Z$', '', j_media['firstPublished'])
-                    # Try to convert it to seconds
-                    date = time.mktime(time.strptime(date_string, '%Y-%m-%dT%H:%M:%S'))
-                    if date < s.min_date:
-                        continue
-                    media.date = date
-                except ValueError:
-                    if s.quiet < 1:
-                        msg('could not get timestamp on: {}'.format(j_media['title']))
-
+            # Add Media object to a Category
             if s.update:
                 try:
                     # Find a previously added category
-                    pcat = next(c for c in result if c.key == j_media["primaryCategory"])
+                    pcat = next(c for c in result if c.key == media_data['primaryCategory'])
                 except StopIteration:
                     # Create a new homeless category
                     pcat = Category()
-                    pcat.key = j_media["primaryCategory"]
+                    pcat.key = media_data['primaryCategory']
                     pcat.home = False
                     result.append(pcat)
                 # Add media to its primary category
-                pcat.contents.append(media)
+                pcat.items.append(media)
             else:
                 # Add media to current category
-                cat.contents.append(media)
+                cat.items.append(media)
 
     return result
+
+
+def parse_media_data(s: Settings, media_data: dict, lang: str, verbose=False):
+    """Create a Media object from JSON data
+
+    :param s: Global settings object (needed for filtering, quality etc)
+    :param media_data: Dictionary containing media metadata
+    :param lang: Language code (needed for subtitles)
+    :param verbose: Print media name
+    """
+
+    # Skip videos marked as hidden
+    if TAG_HIDDEN in media_data.get('tags', []):
+        raise InvalidMedia
+    # Apply category filter
+    if s.filter_categories and media_data['primaryCategory'] not in s.filter_categories:
+        raise InvalidMedia
+
+    media = Media()
+    media.key = media_data['languageAgnosticNaturalKey']
+    media.name = media_data['title']
+    if verbose and s.quiet < 1:
+        msg('indexing: {} ({})'.format(media.key, media.name))
+
+    # Save time data
+    try:
+        # Try to convert it to seconds
+        date = time.mktime(time.strptime(media_data['firstPublished'][:19], '%Y-%m-%dT%H:%M:%S'))
+        if date < s.min_date:
+            raise InvalidMedia
+        media.date = date
+    except (ValueError, KeyError):
+        if s.quiet < 1:
+            msg('could not get timestamp on: {}'.format(media.name))
+
+    # Select preferred file
+    try:
+        if media_data.get('type') == 'audio':
+            # Simply pick first audio stream for the time being...
+            j_media_file = media_data['files'][0]
+        else:
+            # Note: empty list will raise IndexError
+            j_media_file = get_best_video(media_data['files'], quality=s.quality, subtitles=s.hard_subtitles)
+    except IndexError:
+        if s.quiet < 1:
+            msg('no media files found for: {}'.format(media.name))
+        raise InvalidMedia
+
+    media.url = j_media_file['progressiveDownloadURL']
+    media.md5 = j_media_file.get('checksum')
+    media.size = j_media_file.get('filesize')
+    media.duration = j_media_file.get('duration')
+    if j_media_file.get('subtitles'):
+        media.subtitles[lang] = j_media_file['subtitles']['url']
+
+    return media
+
+
+def index_alternative_media(s: Settings, media_items: Iterable[Media]) -> Iterable[Media]:
+    """Make a new Broadcasting index and add subtitles from the result to a previous result"""
+
+    for other_lang in s.download_subtitles:
+        if other_lang is True or other_lang == s.lang:
+            continue
+
+        # When getting subtitles from Latest Videos, lookup each video individually
+        # since the list may differ between languages
+        if s.latest:
+            for media in media_items:
+                try:
+                    data = request_media(other_lang, media.key)
+                    yield parse_media_data(s, data, other_lang, verbose=True)
+                except InvalidMedia:
+                    pass
+
+        # Otherwise lookup a whole category recursively
+        else:
+            for cat in index_broadcasting(s, other_lang, ignore_missing=True):
+                for media in cat.items:
+                    yield media
