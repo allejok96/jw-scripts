@@ -78,7 +78,7 @@ class Path(type(pathlib.Path()), pathlib.Path):
             pass
         except OSError:
             print('Could not create symlink. If you are on Windows 10, try enabling developer mode.')
-            raise
+            exit(1)
 
 
 class AbsolutePath(Path):
