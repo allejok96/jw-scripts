@@ -396,7 +396,7 @@ def output_filesystem(s: Settings, data: List[Category]):
                     link_file.symlink_to(link_dest.absolute(),
                                          target_is_directory=link_dest.is_dir())  # needed on win
                 else:
-                    link_file.symlink_to(link_dest.relative_to(data_dir),
+                    link_file.symlink_to(relpath(link_dest, link_file.parent),
                                          target_is_directory=link_dest.is_dir())
             except FileExistsError:
                 pass
