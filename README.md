@@ -18,6 +18,8 @@ For example, to download the latest videos in Swedish, you would run:
 
 Next, check out the [Wiki pages](https://github.com/allejok96/jw-scripts/wiki) for more examples and options.
 
+There's also a [more recent Go fork](https://github.com/darkace1998/jw-scripts) of this project by @darkace1998.
+
 ## Questions
 
 #### Isn't there an easier way to watch JW Broadcasting in Kodi?
